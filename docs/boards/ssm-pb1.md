@@ -31,9 +31,10 @@ is a safety switch that gates the programming voltage.
 The manual and the retrocmp page agree on the control-port bits and the sample software's
 addresses. The manual's object listings (sections 4.2–4.5) are authoritative for the driver
 code — the two burners (2708/2716) and the two verify routines (erase-check, copy-verify). They
-call the **SSM 8080 monitor** (`JMP F021H` / `CALL F009H`, manual §3.3). The 2708 burner,
-transcribed verbatim, is `tests/media/pb1/PROG2708.HEX`, and `acceptance-pb1` runs it against
-the board.
+call the **SSM 8080 monitor** (`JMP F021H` / `CALL F009H`, manual §3.3), which is the built-in
+ROM `ssm-8080mon`. The 2708 burner, the erase check and the copy verify, transcribed verbatim,
+are `tests/media/pb1/PROG2708.HEX`, `ERACHK.HEX` and `CPYVFY.HEX`, and `acceptance-pb1` runs
+them against the board under that monitor.
 
 ## Register reference
 
@@ -108,14 +109,21 @@ an optional read-only window above `8000H` for the on-board area.
 ## Verification
 
 - `test_pb1` (unit): drives a real bus for the decode, the arm/type/AND/disarm mechanics, the
-  socket selection and chip sizes, the read-only on-board area, and a SNAPSHOT round-trip — and
-  then **runs the actual SSM 2708 programmer** (the manual's object code) through an 8080 to its
-  HLT and checks that all 1024 source bytes landed in the socket, and that the result round-trips
-  through Intel HEX.
-- `acceptance-pb1`: boots the `tests/media/pb1/pb1.toml` machine, `LOAD`s `tests/media/pb1/PROG2708.HEX`,
-  runs it (breaking at `F021`, where the burner returns to the monitor), and `SAVE`s the socket
-  to a host hex file — asserting the burned chip equals the source and that the file is valid
-  Intel HEX. **If it fails, the board is wrong, not the software.**
+  socket selection and chip sizes, the read-only on-board area, and a SNAPSHOT round-trip. It
+  then runs the SSM software two ways:
+  - **The 2708 programmer with its exit changed to `HLT`**, on a machine with no monitor. This
+    tests the board alone: all 1024 source bytes land in the socket, and the result round-trips
+    through Intel HEX.
+  - **The manual's object code, unpatched, under the SSM 8080 monitor** (`builtin:ssm-8080mon`
+    at `F000`, console on an `io4`). The test types `G140`, `G100` and `G180` at the monitor's
+    `.` prompt. The erase check prints `P`, the programmer returns to the monitor through
+    `F021` with the socket equal to the source, the verify prints `P`, and both check programs
+    print `F` when they must.
+- `acceptance-pb1`: copies the `tests/media/pb1/` machine out of the tree and drives it through
+  the real CLI over `--mcp`. It cold-starts the monitor, `LOAD`s the three programs, types the
+  same `G` commands at the monitor, and `SAVE`s the socket to a host hex file. It asserts the
+  `P`/`F` results, that the burned chip equals the source, and that the file is valid Intel
+  HEX. **If it fails, the board or the machine file is wrong, not the software.**
 
 ## References
 

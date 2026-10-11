@@ -1937,8 +1937,9 @@ altairsim> SAVE eprom.hex D000-D3FF
   there.
 - `LOAD PROG2708.HEX` loads the 2708 routine.
 - `BREAK F021` is needed because SSM's routine ends with a jump to SSM's own system monitor, at
-  `F021`. This machine does not have that monitor. The breakpoint stops the machine at that
-  jump, after the chip is programmed.
+  `F021`. A machine without that monitor has nothing at `F021`. The breakpoint stops the
+  machine at that jump, after the chip is programmed. The next section shows a machine that
+  has the monitor, and needs no breakpoint.
 - `RUN 100` runs the routine. It arms the board and programs the 2708.
 - `SAVE` reads the socket window from the bus and writes it to a file. After it is programmed,
   the socket reads like other memory. `eprom.hex` is an ordinary Intel HEX image of the chip.
@@ -1946,6 +1947,91 @@ altairsim> SAVE eprom.hex D000-D3FF
 
 Your own routine works in the same way. It writes `01` to port `10` (or `02` for a 2716), and
 then writes the data into the window. After it runs, `SAVE` the window.
+
+#### With the SSM monitor
+
+SSM wrote the routines for the **SSM 8080 System Monitor**. Each routine ends with a jump to
+the monitor at `F021`. The manual also has two check routines, which print `P` (pass) or `F`
+(fail) through the monitor's console-output routine at `F009`. The package has that monitor as
+the built-in ROM `ssm-8080mon`. Put it in the machine, and the routines run as SSM wrote them.
+
+The monitor has its console on a serial port at `00` and `01`, as an `io4` has by default. Thus
+this machine has an `io4` as its console, RAM below the window of the `pb1`, and the monitor at
+`F000`:
+
+```toml
+[machine]
+name = "pb1"
+
+[[board]]
+type = "8080"
+id   = "cpu0"
+
+[[board]]
+type = "io4"
+id   = "io40"
+
+  [board.unit.a]
+  connect = "console"
+
+[[board]]
+type   = "pb1"
+id     = "pb1"
+port   = 10
+window = D000
+
+[[board]]
+type = "memory"
+id   = "mem0"
+
+  [[board.region]]
+  type = "ram"
+  at   = 0000
+  size = "52K"
+
+  [[board.region]]
+  type  = "rom"
+  at    = F000
+  mount = "builtin:ssm-8080mon"
+```
+
+Put the data and the routine in memory as before, and then start the monitor:
+
+```
+altairsim> FILL 4000-43FF E5
+altairsim> LOAD PROG2708.HEX
+altairsim> RUN F000
+```
+
+The monitor prints its name and its prompt, which is a period:
+
+```
+MONITOR V1.0
+.
+```
+
+Type `G100` and press Enter. `G` is the monitor's command to run a program. The routine programs
+the chip and then jumps to `F021`, and the monitor prints its name and its prompt again:
+
+```
+.G100
+
+MONITOR V1.0
+.
+```
+
+Press `Ctrl-E` to go back to the `altairsim>` prompt, and `SAVE` the window as before.
+
+A check routine runs in the same way, with `G` and its start address. It prints its result
+before the monitor prints its name. This is the manual's copy-verify routine, which starts at
+`0180`, after a good burn:
+
+```
+.G180
+P
+MONITOR V1.0
+.
+```
 
 The board also has an optional **EPROM area on the board** (U11 to U14 on the real board). These
 are read-only chips that you mount above `8000` with `[[board.prom]]` (`at` and `mount`). Use

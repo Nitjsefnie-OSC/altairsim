@@ -10,6 +10,15 @@ register, the bit or the command that was wrong.
 
 ---
 
+## Unreleased
+
+**The manual shows how to run the SSM PB1 routines from the SSM 8080 monitor.** SSM's EPROM
+programmer routines end with a jump to that monitor at `F021`, and the check routines print
+`P` or `F` through it. The `pb1` section of the boards chapter used a breakpoint at `F021`
+only. It now also gives a machine file that has the built-in ROM `ssm-8080mon` at `F000` and an
+`io4` console. On that machine you start a routine with the monitor's `G` command, and the
+routine returns to the monitor.
+
 ## 1.3.3
 
 **1.3.3 adds the Cromemco Dazzler II, a mirror on a real serial port and a start-up file in your
