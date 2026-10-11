@@ -17,7 +17,8 @@ ask.
 someone can do now that they could not do in the last release. **A new document in the archive
 and an example that now ships both count** — "it is only documentation" is how this gets missed,
 and it has been. CI refuses the PR otherwise (the `Changelog entry` job); the way past it is a
-real entry, or a `no changelog` label when a human decides one is not wanted. A release removes
+real entry, or a `no changelog` label when a human decides one is not wanted. An entry for a
+fix names what the simulator did wrong (see `work-task`), not only what the guest does now. A release removes
 the `## Unreleased` header; if it is not there, the entry adds it, above the newest `## X.Y.Z`.
 
 - Stage exactly the files that were reviewed, by name. Never `git add -A` or `git add .`.
