@@ -202,12 +202,15 @@ There is no exception any more. `EX 0 RAW mem0` was one — the PROM burner reac
 
 ```
 altairsim> BOARDS
-  ID    TYPE    I/O    UNITS            MEMORY
-  ----  ------  -----  ---------------  ---------------------------
-  cpu0  8080    -      1 cpu: 8080      -
-  sio0  2sio    10,12  2 serial: a*, b  -
-  mem0  memory  -      1 rom: rom0      0000-DFFF  ram  56K
-                                        FF00-FFFF  rom  dbl  phantom:all
+  ID    TYPE        I/O       UNITS                                                               MEMORY
+  ----  ----------  --------  ------------------------------------------------------------------  --------------------------------
+  fp0   fp          FF        -                                                                   -
+  cpu0  8080        -         1 cpu: 8080                                                         -
+  sio0  2sio        10,12     2 serial: a*, b                                                     -
+  dsk0  dcdd        08,09,0A  4 disk: drive0(empty), drive1(empty), drive2(empty), drive3(empty)  -
+  hb0   hostbridge  B0,B1     -                                                                   -
+  mem0  memory      -         1 rom: rom0                                                         0000-DFFF  ram  56K
+                                                                                                  FF00-FFFF  rom  dbl  phantom:all
 
   * holds the console
 ```
@@ -324,7 +327,13 @@ console  (the host keyboard and screen -- not a tty)
 
   held by  sio0:a
 
+  The transforms (UPPER, STRIP7OUT, CRLF, BSDEL...) are the CONSOLE's, and
+  nothing else's: SET CONSOLE UPPER=ON. A board's line is 8-bit clean whatever
+  is plugged into it -- a filter there would corrupt XMODEM, silently.
+  What a board has instead is line coding: SHOW sio0 (baud, data_bits...).
+
 altairsim> CONSOLE stop=1D          ← make it ^]
+console: stop=1D
 ```
 
 `CONSOLE k=v` sets, bare `CONSOLE` shows. (`SET CONSOLE` and `SHOW CONSOLE` are the same thing said the long way.) It used to *enter* console mode, and that was wrong twice over: a command that starts the CPU because you asked to look at a setting is a trap, and "start the machine" already has a name.
