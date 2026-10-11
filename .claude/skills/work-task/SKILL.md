@@ -104,8 +104,11 @@ The docs are part of the change under review, not a follow-up. Update whichever 
   changes**. Not only code: a new document in the archive, an example that now ships, a chapter
   that answers something it did not, all count. The trap is filing a change as "only
   documentation" when the document IS the thing that shipped. A fix for a bug nobody reported
-  still gets no entry. CI enforces this (the `Changelog entry` job in `ci.yml`), so a missing
-  entry reds the PR rather than reaching a release unannounced. **A release removes the
+  still gets no entry. **An entry for a fix says what the simulator did wrong** — the register,
+  bit or command, and why the guest failed — then what it does now, with the guest as the
+  example. "X now works" is not an entry. Check it against the commit message. CI enforces this
+  (the `Changelog entry` job in `ci.yml`), so a missing entry reds the PR rather than reaching
+  a release unannounced. **A release removes the
   `## Unreleased` header.** If it is not there, add it: below the `---` rule, above the newest
   `## X.Y.Z`.
 

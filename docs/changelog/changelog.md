@@ -4,6 +4,10 @@ Every release of **altairsim**, newest first. Each entry is the short version â€
 do here that you could not do in the release before it. The User Manual describes the program
 as it is now; this document is the record of how it got there.
 
+An entry for a fix says what the simulator did wrong, and what it does now. It uses the guest
+as the example: the program, the message it printed, the board and the setting. It names the
+register, the bit or the command that was wrong.
+
 ---
 
 ## Unreleased
@@ -30,11 +34,13 @@ picture at an address with no RAM, and it can show the second 2 KB half (the `pa
 `[machine]` ends with `Valid keys: base name startup`. An unknown property of a board, a unit,
 `[console]`, `[display]` or `[terminal]` ends with `Valid properties:` and the names in
 alphabetical order. Before, the `[machine]` error gave no list, and the other lists were in
-the order of the code.
+the order of the code, under the word `Known:`.
 
 **The error for a wrong key in a drive or region table gives the correct line.** When a key in
 a `[[board.drive]]` or `[[board.region]]` table was refused, the error gave the line where the
-table started. It now gives the line of the key, and says which table the key is in.
+table started. A key that follows a table belongs to that table, so a key far below the header,
+such as the `name` of a second machine file pasted after the first, was reported at a line that
+told you nothing. It now gives the line of the key, and says which table the key is in.
 
 **The error for two machine names on the command line is clearer.** Before, `altairsim` said
 "more than one machine given" even when the shell had cut one file name at a space. It now says
@@ -48,13 +54,18 @@ drive was to stop the boot with ESC and type the RDOS command, for example `BB`.
 
 **An 8-inch CDOS disk boots on the Cromemco 64FDC board.** Before, the disk printed the CDOS
 sign-on on the `64fdc` board and then stopped with `Read error` and `Status=10`. The board gave
-the wrong value for one bit of port 04. CDOS reads that bit to learn how to move the head to
-track 0, and the wrong value made it use a signal that the 64FDC does not have.
+the wrong value for bit D6 of port 04: it read `0`, as the 16FDC does, and the 64FDC always
+reads `1`. CDOS reads that bit for each 8-inch drive. A `0` marks a PerSci drive, which CDOS
+homes with the `Â¬RESTORE` line of port 04 (D3), and the 64FDC has no such line. The head never
+reached track 0. Now the bit reads `1` and CDOS homes the drive with the disk chip.
 
 **The Cromemco 16FDC and 64FDC boards check the density.** The double-density bit of port 34 (D6)
 must now agree with the density of the track, as on the hardware. A read or a write at the wrong
-density gives Record Not Found. A 5.25-inch double-density track that a program formats on these
-boards is now recorded as double density; before, it was recorded as single density.
+density gives Record Not Found. Before, the chip took the density from the data rate, and these
+boards run 5.25-inch double density at the same 250 kbit/s as single density, so the chip could
+not tell and no check was possible. The density is now its own input to the chip, set from D6 of
+port 34. A 5.25-inch double-density track that a program formats on these boards is now
+recorded as double density; before, it was recorded as single density.
 
 **The two long files in the AI skill now open with a list of contents.** `driving-with-ai.md`
 and `cheatsheet.md` are long, and an assistant that reads only the top of a file did not see most
@@ -72,29 +83,40 @@ set it. A setting that only shows live state has no default, and has no line.
 
 **The Tarbell double-density board checks the density.** The `OUT FC` density bit of the
 `tarbelldd` board must now agree with the density of the track, as on the hardware. A read or a
-write at the wrong density gives Record Not Found. The two double-density CP/M disks in the
-Tarbell example have a new boot loader, built from Tarbell's own source with the double-density
+write at the wrong density gives Record Not Found. Before, the chip set its data rate from that
+bit and did not compare the rate with the track, so a read at the wrong density worked. The two
+double-density CP/M disks in the Tarbell example have a new boot loader, built from Tarbell's own source with the double-density
 option on; the old loader read track 1 with the bit clear. A disk of your own that has the old
 loader no longer boots: write the boot sector again from `2DBOOT24.ASM` with `DOUBDEN TRUE`.
 
 **A drive select written directly after a Restore or a Seek is obeyed with the default `timing`.**
 The Tarbell CBIOS writes a Restore command and then selects the new drive, with no wait between
-them. With `timing = full` the old drive moved and the new drive did not. Now the drive that is
-selected when the head moves is the drive that moves, on the Tarbell, VersaFloppy and Cromemco
-boards.
+them. With `timing = full` the old drive moved and the new drive did not: the chip stepped as
+soon as it was given the command, before the select arrived. Now the chip steps at the next
+access of the guest to the board, so the drive that is selected when the head moves is the
+drive that moves, on the Tarbell, VersaFloppy and Cromemco boards.
 
-**A single-density disk boots on the SD Systems VersaFloppy.** The DDBIOS PROM finds the type
-of a disk by a read of an address at each density, double density first. The `versafloppy`
-board gave a good address at each density, so the PROM used a single-density disk as a
-double-density disk and stopped with `COLD BOOT ERROR`. Now a read at the wrong density gives
-Record Not Found, as on the hardware, and the PROM finds the correct type. Double-density disks
-boot as before.
+**The `versafloppy` board checks the density, and a single-density disk boots.** The board set
+the data rate of its disk chip from the density bit of port 63, but the chip did not compare
+that rate with the density of the track. A Read Address, a sector read and the seek verify all
+worked at the wrong density. The real chip finds no ID field that was recorded at the other
+density, and the command ends in Record Not Found. The SD Systems DDBIOS PROM depends on this:
+it finds the type of a disk by a Read Address at double density first, then at single density.
+In the simulator the first try always worked, so the PROM took a single-density disk for a
+double-density disk and stopped with `COLD BOOT ERROR`. Now a read at the wrong density ends in
+Record Not Found, and a seek with verify ends in Seek Error. Double-density disks boot as
+before.
 
-**The SD Systems `FORMAT` program formats a disk with the default `timing`.** `FORMAT.COM` for
-CP/M Plus sends a track that is shorter than one revolution of the disk. It then waits for the
-controller to end the command at the index pulse. With `timing = full` the controller waited for
-more bytes and never ended the command, so `FORMAT` stopped after the first track and the disk
-was not formatted. Now the command ends at the index pulse, as on the hardware.
+**A Write Track command ends at the index pulse with the default `timing`.** With
+`timing = full` the simulated disk chip ended a Write Track only after the guest had sent one
+full revolution of bytes. The real chip ends the command at the index pulse, also when the guest
+has stopped sending. `FORMAT.COM` for CP/M Plus on the SD Systems board sends 9,672 bytes of a
+10,416-byte track and then reads the status until the command ends. The chip waited for the rest
+of the bytes for ever, so `FORMAT` stopped after the first track and the disk was not formatted.
+Now the command ends one revolution after the last request for a byte: the rest of the track is
+zeros, Lost Data is set and the track is written, as on the hardware. A guest that keeps
+sending is not affected, however slow it is. This applies to every board that runs the chip with
+wait states: `versafloppy`, `tarbelldd` and the Cromemco FDCs.
 
 ## 1.3.2
 
