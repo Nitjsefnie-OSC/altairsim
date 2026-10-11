@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "boards/io4.h"
 #include "boards/mits-88cpu.h"
 #include "boards/s100-memory.h"
 #include "boards/ssm-pb1.h"
@@ -7,6 +8,7 @@
 #include "core/hex.h"
 #include "core/machine.h"
 #include "core/statefile.h"
+#include "host/stream.h"
 
 #include <cstdio>
 #include <fstream>
@@ -18,8 +20,8 @@ using namespace altair;
 namespace {
 
 // A machine with a PB1 in it: 52K of RAM (0000-CFFF), the programming window at D000, and the
-// control port at 10 -- exactly tests/media/pb1/pb1.toml. The RAM stops below the window so nothing
-// contends with the board.
+// control port at 10 -- the PB1 half of tests/media/pb1/pb1.toml. The RAM stops below the window
+// so nothing contends with the board. No monitor and no console: MonRig below adds those.
 struct Rig {
     Machine   m;
     Pb1Board* pb = nullptr;
@@ -48,6 +50,103 @@ struct Rig {
     void    wr(uint16_t a, uint8_t v) { m.bus.memWrite(a, v); }  // a bus write (may burn)
     uint8_t rd(uint16_t a) { return m.bus.memRead(a); }          // a bus read (disarms in-window)
     uint8_t look(uint16_t a) { return m.bus.peek(a); }           // a peek -- no side effects
+};
+
+// THE WHOLE MACHINE of tests/media/pb1/pb1.toml: the PB1, plus the SSM 8080 System Monitor as a
+// ROM at F000 and an SSM IO-4 whose Serial A is the console. This is what the PB1 manual's
+// software was written for -- every program exits with JMP F021 (the monitor's re-entry) and
+// the two check programs print through CALL F009 (its console-out). The console is a
+// ScriptedStream, so the test types at the monitor's prompt and reads what it prints.
+struct MonRig {
+    Machine         m;
+    Pb1Board*       pb  = nullptr;
+    Io4Board*       io  = nullptr;
+    ScriptedStream* tty = nullptr;
+
+    MonRig() {
+        std::string err;
+
+        auto*  mem = dynamic_cast<MemoryBoard*>(m.add("memory", "mem0", err));
+        Region ram;
+        ram.kind = RegionKind::Ram;
+        ram.at   = 0;
+        ram.size = 0xD000;  // 0000-CFFF -- below the PB1 window
+        mem->addRegion(ram, err);
+        Region rom;
+        rom.kind  = RegionKind::Rom;
+        rom.at    = 0xF000;
+        rom.mount = "builtin:ssm-8080mon";
+        CHECK(mem->addRegion(rom, err), "the SSM 8080 monitor ROM mounts at F000");
+        setProperty(*mem, "fill", "zero", err);
+
+        pb = dynamic_cast<Pb1Board*>(m.add("pb1", "pb1", err));
+        setProperty(*pb, "port", "10", err);
+        setProperty(*pb, "window", "D000", err);
+
+        io     = dynamic_cast<Io4Board*>(m.add("io4", "io40", err));
+        auto s = std::make_unique<ScriptedStream>();
+        tty    = s.get();
+        CHECK(io->connectStream("a", std::move(s), err), "the IO-4's Serial A gets the console");
+
+        m.add("8080", "cpu0", err);
+        m.power();
+        m.cpu()->setPc(0xF000);  // cold-start the monitor at its ORG
+    }
+
+    // Run until `text` has reached the console. The console is baud-paced, so the clock must
+    // advance with the CPU. The step limit is far above the longest run here (the 2708 burn).
+    bool until(const std::string& text) {
+        for (int i = 0; i < 40000000; ++i) {
+            if (tty->out().find(text) != std::string::npos) return true;
+            StepResult st = m.master()->step(m.bus);
+            m.clock.advance(st.tStates);
+            io->pump();
+        }
+        return false;
+    }
+
+    // The monitor's banner and its '.' prompt. It prints both at cold start AND each time a
+    // program comes back through F021, because REENT falls into the cold-start code.
+    bool prompt() { return until("MONITOR V1.0\r\n."); }
+
+    // Type one command at the '.' prompt, as an operator does: a key at a time, each one sent
+    // only after the monitor has echoed the one before. Leaves the console holding only what
+    // the monitor printed after the command line.
+    bool type(const std::string& cmd) {
+        for (char ch : cmd) {
+            tty->clearOut();
+            tty->feed(std::string(1, ch));
+            if (!until(std::string(1, ch))) return false;
+        }
+        tty->clearOut();
+        tty->feed("\r");
+        return true;
+    }
+
+    void    load(uint16_t at, const std::vector<uint8_t>& prog) {
+        for (uint8_t b : prog) m.bus.memWrite(at++, b);
+    }
+    void    wr(uint16_t a, uint8_t v) { m.bus.memWrite(a, v); }
+    uint8_t look(uint16_t a) { return m.bus.peek(a); }
+};
+
+// THE PB1 MANUAL'S OBJECT CODE, VERBATIM -- nothing patched, the exits still JMP F021.
+// Section 4.2, the 2708 programmer, ORG 0100 (tests/media/pb1/PROG2708.HEX).
+const std::vector<uint8_t> kProg2708 = {
+    0x3E, 0x01, 0xD3, 0x10, 0x06, 0xFF, 0x0E, 0x03, 0x11, 0x00, 0xD0, 0x21, 0x00, 0x40, 0x7E, 0x12,
+    0x13, 0x23, 0x7A, 0xA1, 0xB3, 0xC2, 0x0E, 0x01, 0x05, 0xC2, 0x08, 0x01, 0x1B, 0x1A, 0xC3, 0x21,
+    0xF0,
+};
+// Section 4.4, the erase check, ORG 0140 (tests/media/pb1/ERACHK.HEX). Prints P or F.
+const std::vector<uint8_t> kEraChk = {
+    0x0E, 0x03, 0x11, 0x00, 0xD0, 0x1A, 0x13, 0xFE, 0xFF, 0x3E, 0x46, 0xC2, 0x56, 0x01, 0x7A, 0xA1,
+    0xB3, 0xC2, 0x45, 0x01, 0x3E, 0x50, 0x4F, 0xCD, 0x09, 0xF0, 0xC3, 0x21, 0xF0,
+};
+// Section 4.5, the copy verify, ORG 0180 (tests/media/pb1/CPYVFY.HEX). Prints P or F.
+const std::vector<uint8_t> kCpyVfy = {
+    0x0E, 0x03, 0x11, 0x00, 0xD0, 0x21, 0x00, 0x40, 0x46, 0x1A, 0x13, 0x23, 0xB8, 0x3E, 0x46, 0xC2,
+    0x9A, 0x01, 0x7A, 0xA1, 0xB3, 0xC2, 0x88, 0x01, 0x3E, 0x50, 0x4F, 0xCD, 0x09, 0xF0, 0xC3, 0x21,
+    0xF0,
 };
 
 } // namespace
@@ -131,9 +230,9 @@ void test_pb1() {
 
         // The SSM PB1 manual's 2708 programmer (section 4.2), object code verbatim, exit HLT.
         // Arms the 2708, copies 1K from 4000 into the window at D000, then reads the socket once
-        // to disarm. This is the same program as tests/media/pb1/PROG2708.HEX; here the
-        // exit is HLT so the test stops cleanly, where that copy returns to the SSM
-        // monitor at F021 (manual section 4.2).
+        // to disarm. This is the same program as tests/media/pb1/PROG2708.HEX, but its exit
+        // is HLT, so this section tests the board with no monitor in the machine. The next
+        // section runs the unpatched program, which returns to the SSM monitor at F021.
         const uint8_t prog[] = {
             0x3E, 0x01,        // MVI A,01     ; 2708 mode
             0xD3, 0x10,        // OUT 10       ; arm + latch type
@@ -171,6 +270,50 @@ void test_pb1() {
         // The final LDAX D disarmed the board: a stray write can no longer burn.
         g.wr(0xD3FF, 0x00);
         CHECK(g.look(0xD3FF) == 0xFF, "the burner's closing read left the board disarmed");
+    }
+
+    SECTION("pb1 -- the manual's programs run under the SSM 8080 monitor, unpatched");
+    {
+        // What an operator did in 1978: at the monitor's '.' prompt, G<addr> starts a program,
+        // and the program comes back to the monitor by itself. Nothing is patched and no
+        // breakpoint catches the exit.
+        MonRig g;
+        g.load(0x0100, kProg2708);
+        g.load(0x0140, kEraChk);
+        g.load(0x0180, kCpyVfy);
+        for (int i = 0; i < 1024; ++i) g.wr((uint16_t)(0x4000 + i), (uint8_t)(i * 7 + 1));
+
+        CHECK(g.prompt(), "the monitor cold-starts to its banner and prompt");
+        // The monitor sized memory on the way: its stack must sit in RAM below the window, and
+        // the probe must not have burned anything into the unarmed socket.
+        CHECK(g.look(0xD000) == 0xFF && g.look(0xD3FF) == 0xFF,
+              "the monitor's memory sizing left the erased socket alone");
+
+        CHECK(g.type("G140") && g.prompt(), "ERACHK runs and returns to the monitor");
+        CHECK(g.tty->out().find("P\r\nMONITOR") != std::string::npos,
+              "the erase check prints P for an erased chip, through the monitor's F009");
+
+        CHECK(g.type("G100") && g.prompt(), "the 2708 burner returns to the monitor at F021");
+        bool ok = true;
+        for (int i = 0; i < 1024; ++i)
+            if (g.look((uint16_t)(0xD000 + i)) != (uint8_t)(i * 7 + 1)) ok = false;
+        CHECK(ok, "every one of the 1024 source bytes landed in the 2708 socket");
+        CHECK(g.tty->out().find('P') == std::string::npos &&
+                  g.tty->out().find('F') == std::string::npos,
+              "the burner itself prints nothing");
+
+        CHECK(g.type("G180") && g.prompt(), "CPYVFY runs and returns to the monitor");
+        CHECK(g.tty->out().find("P\r\nMONITOR") != std::string::npos,
+              "the verify prints P when the chip equals the source");
+
+        g.wr(0x4123, (uint8_t)~g.look(0x4123));  // the source no longer equals the chip
+        CHECK(g.type("G180") && g.prompt(), "CPYVFY runs again");
+        CHECK(g.tty->out().find("F\r\nMONITOR") != std::string::npos,
+              "the verify prints F when one byte is different");
+
+        CHECK(g.type("G140") && g.prompt(), "ERACHK runs again");
+        CHECK(g.tty->out().find("F\r\nMONITOR") != std::string::npos,
+              "the erase check prints F for the burned chip");
     }
 
     SECTION("pb1 -- the burned socket saves to an Intel HEX file and round-trips (issue #382)");

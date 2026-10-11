@@ -2,27 +2,38 @@
 #
 #     cd tests/media/pb1 && altairsim pb1.toml
 #
-# The PB1 is a board, not a machine -- this is just a stock Altair (8080, RAM, a
-# 2SIO console, the front panel) with the PB1 added. The manual's own burner
-# software (PROG2708.HEX / PROG2716.HEX) hard-codes the SSM example addresses:
-# control port 10H and the programming window at D000H. So this machine keeps
-# those two addresses free -- the console 2SIO is moved down to port 00, and RAM
-# stops at CFFF so the PB1's 4K window at D000 is not also RAM.
+# The PB1 is a board, not a machine -- this is a plain Altair (8080, RAM, a
+# serial console, the front panel) with the PB1 added, and the SSM 8080 System
+# Monitor in a ROM at F000. The PB1 manual's software (PROG2708.HEX and the
+# others) is written for that monitor: each program ends with a jump to its
+# re-entry at F021, and the two check programs print through its console-out
+# routine at F009.
 #
-# BURN AND SAVE (the manual's software does no console I/O -- it just runs and
-# jumps back to the monitor at F021, which altairsim does not ship yet, so catch
-# the return with a breakpoint):
+# The software also hard-codes the SSM example addresses: control port 10H and
+# the programming window at D000H. So this machine keeps those two free -- the
+# console is an SSM IO-4 at ports 00-05, and RAM stops at CFFF so the PB1's 4K
+# window at D000 is not also RAM.
+#
+# WHAT YOU SEE: the machine cold-starts the monitor (startup RUN F000) and prints
+#
+#     MONITOR V1.0
+#     .
+#
+# BURN AND SAVE. Press ^E for the altairsim> prompt, then:
 #
 #     altairsim> LOAD your-data.hex        ; put the bytes to burn at 4000
 #     altairsim> LOAD PROG2708.HEX         ; the SSM 2708 burner (section 4.2)
-#     altairsim> BREAK F021                ; where the burner returns "to the monitor"
-#     altairsim> RUN 100                   ; burns the 2708 in the socket window
+#     altairsim> RUN                       ; back to the monitor
+#     G100                                 ; burn; the monitor's . prompt returns
+#     ^E
 #     altairsim> SAVE eprom.hex D000-D3FF  ; the burn, as an Intel HEX file on the host
 #
-# See the README beside this file and reference/SSM PB1 EPROM Programmer.md.
+# tests/acceptance/pb1.cmake runs this machine; reference/SSM PB1 EPROM Programmer.md
+# is the board's manual.
 
 [machine]
-name = "pb1"
+name    = "pb1"
+startup = ["RUN F000"]                 # cold-start the SSM 8080 monitor at its ORG
 
 # THE CPU. A stock 8080; clock_hz = 0 runs it flat out.
 [[board]]
@@ -30,12 +41,13 @@ type     = "8080"
 id       = "cpu0"
 clock_hz = 0
 
-# THE CONSOLE, moved down to ports 00-03 so the PB1's control port can keep its
-# documented 10H (the SSM burner software hard-codes CPORT = 10H).
+# THE CONSOLE: an SSM IO-4. Serial A (ports 0/1) is the console. The board
+# ships strapped altair-rev1, the SSM monitor's console convention, so no straps
+# are needed here. Serial B answers 2/3 and the parallel section 4/5, which
+# leaves the PB1's control port at its documented 10H.
 [[board]]
-type = "2sio"
-id   = "sio0"
-port = 00
+type = "io4"
+id   = "io40"
 
   [board.unit.a]
   connect = "console"
@@ -58,8 +70,10 @@ id     = "pb1"
 port   = 10
 window = D000
 
-# 52K OF RAM (0000-CFFF): the burner runs at 0100 and its source data sits at 4000,
-# both below the PB1 window at D000. Real static RAM does not come up zeroed.
+# 52K OF RAM (0000-CFFF) + the SSM 8080 monitor as a ROM at F000-F7FF. The
+# burner runs at 0100 and its source data sits at 4000, both below the PB1 window
+# at D000. The monitor sizes memory at cold start and puts its stack at the top
+# of the RAM it finds. Real static RAM does not come up zeroed.
 [[board]]
 type = "memory"
 id   = "mem0"
@@ -68,4 +82,9 @@ fill = "random"
   [[board.region]]
   type = "ram"
   at   = 0000
-  size = "52K"                     # 0000-CFFF
+  size = "52K"                         # 0000-CFFF
+
+  [[board.region]]
+  type  = "rom"
+  at    = F000
+  mount = "builtin:ssm-8080mon"        # SSM 8080 System Monitor V1.0
