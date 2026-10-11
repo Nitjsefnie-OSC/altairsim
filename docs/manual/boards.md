@@ -58,6 +58,19 @@ altairsim> SHOW BOARD dcdd
   SHOW BOARD dcdd UNITS for their properties.
 ```
 
+Under the legal values of each setting, `SHOW BOARD` gives a `default:` line. It is the value
+that the setting has when a machine file does not set it. A setting that only shows live state
+has no default, and has no line:
+
+```
+altairsim> SHOW BOARD 2sio
+  PROPERTY  HELP
+  --------  ------------------------------------------------------------------
+  port      Base address. The board decodes four ports: BASE+0 .. BASE+3
+            values: 0x0 .. 0xFC
+            default: 0x10
+```
+
 Add `UNITS` to see only the units. Each unit has a heading with its **kind**, and after the
 kind, the **command that fills it**:
 
@@ -1187,6 +1200,14 @@ Add a `vfii`, mount an 8″ double-density SDOS disk, and use the **DDBIOS** of 
 disk commands of the monitor then work: **`C`** boots SDOS, and **`R`** and **`W`** read and
 write sectors.
 
+#### It checks the density
+
+The density bit of port `63` must agree with the density of the track, as on the hardware. A
+read at the wrong density ends in **Record Not Found**, and a seek with verify ends in Seek
+Error. The DDBIOS finds the type of a disk this way: it reads an address at double density
+first, then at single density. A single-density disk boots, and a double-density disk boots as
+before.
+
 #### It cannot format a blank disk
 
 The `Z` command **formats** a disk. On this board, it cannot make a disk from nothing. A disk
@@ -1226,6 +1247,13 @@ This board does everything that the `tarbell` does. It adds double density, and 
 register** at port `FD`. With DMA, the board moves data to memory itself, without the processor.
 Use this board for a double-density Tarbell image, and the `tarbell` for a single-density image.
 The board recognizes the two kinds by the size of the image.
+
+The board checks the density. The density bit of `OUT FC` must agree with the density of the
+track, as on the hardware, and a read or a write at the wrong density gives **Record Not Found**.
+A mixed-density disk needs a boot loader that sets the bit for the double-density tracks. The
+two double-density CP/M disks of the Tarbell example have one. A disk of your own with an older
+loader, one that reads track 1 with the bit clear, does not boot: write its boot sector again
+with a loader that sets the bit.
 
 ### `icom`: iCOM FD3712 / FD3812 8″ floppy
 
@@ -1354,6 +1382,16 @@ type       = "64fdc"
 id         = "fdc0"
 boot_drive = "B"
 ```
+
+The boards check the density. Bit D6 of port `34` must agree with the density of the track, as
+on the hardware, and a read or a write at the wrong density gives **Record Not Found**. A
+5.25-inch double-density track that a program formats is recorded as double density. Both boards
+use the same density bit at the same 250 kbit/s for 5.25-inch single and double density, so the
+bit is the only thing that tells the two apart.
+
+Port `04` bit D6 reads `0` on the 16FDC. On the 64FDC it always reads `1`. CDOS reads this bit
+for each 8-inch drive: a `0` marks a PerSci drive, which CDOS homes with the `¬RESTORE` line of
+port `04` (D3). The 64FDC has no such line, so CDOS homes its drive with the disk chip.
 
 The boards are polled. They deliver no interrupts. The other switches of the boards are fixed:
 the console has a preset baud rate, and RDOS boots from a floppy disk.

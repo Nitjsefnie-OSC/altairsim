@@ -10,7 +10,11 @@ register, the bit or the command that was wrong.
 
 ---
 
-## Unreleased
+## 1.3.3
+
+**1.3.3 adds the Cromemco Dazzler II, a mirror on a real serial port and a start-up file in your
+home folder. It also makes the floppy controllers check the density, and corrects three floppy
+bugs that stopped a guest from booting or formatting.**
 
 **`~/altairsim.ini` runs at every start.** Put monitor commands in a file called
 `altairsim.ini` in your home folder, and `altairsim` runs them before the machine's own
@@ -30,27 +34,10 @@ a real Dazzler II. It shows random data when a program draws before it sets the 
 picture at an address with no RAM, and it can show the second 2 KB half (the `page` property).
 `IN 0E` gives `0` in bits 0 to 5. The `dazzler` is not changed.
 
-**A wrong key in a machine file now lists the keys that are valid.** An unknown key in
-`[machine]` ends with `Valid keys: base name startup`. An unknown property of a board, a unit,
-`[console]`, `[display]` or `[terminal]` ends with `Valid properties:` and the names in
-alphabetical order. Before, the `[machine]` error gave no list, and the other lists were in
-the order of the code, under the word `Known:`.
-
-**The error for a wrong key in a drive or region table gives the correct line.** When a key in
-a `[[board.drive]]` or `[[board.region]]` table was refused, the error gave the line where the
-table started. A key that follows a table belongs to that table, so a key far below the header,
-such as the `name` of a second machine file pasted after the first, was reported at a line that
-told you nothing. It now gives the line of the key, and says which table the key is in.
-
-**The error for two machine names on the command line is clearer.** Before, `altairsim` said
-"more than one machine given" even when the shell had cut one file name at a space. It now says
-that only one machine file or built-in name may be given, says what each name is, and says how
-to start from a built-in and change it: put `base = "name"` under `[machine]` in a file.
-
 **The Cromemco 16FDC and 64FDC boards can boot from drive B, C or D.** The new `boot_drive`
-setting of the `16fdc` and `64fdc` boards sets the boot-drive switches, which RDOS reads for an
-automatic boot. Before, the switches were fixed at drive A, and the only way to boot a different
-drive was to stop the boot with ESC and type the RDOS command, for example `BB`.
+setting sets the boot-drive switches, which RDOS reads for an automatic boot. Before, the
+switches were fixed at drive A, and the only way to boot a different drive was to stop the boot
+with ESC and type the RDOS command, for example `BB`.
 
 **An 8-inch CDOS disk boots on the Cromemco 64FDC board.** Before, the disk printed the CDOS
 sign-on on the `64fdc` board and then stopped with `Read error` and `Status=10`. The board gave
@@ -59,64 +46,61 @@ reads `1`. CDOS reads that bit for each 8-inch drive. A `0` marks a PerSci drive
 homes with the `¬RESTORE` line of port 04 (D3), and the 64FDC has no such line. The head never
 reached track 0. Now the bit reads `1` and CDOS homes the drive with the disk chip.
 
-**The Cromemco 16FDC and 64FDC boards check the density.** The double-density bit of port 34 (D6)
-must now agree with the density of the track, as on the hardware. A read or a write at the wrong
-density gives Record Not Found. Before, the chip took the density from the data rate, and these
-boards run 5.25-inch double density at the same 250 kbit/s as single density, so the chip could
-not tell and no check was possible. The density is now its own input to the chip, set from D6 of
-port 34. A 5.25-inch double-density track that a program formats on these boards is now
-recorded as double density; before, it was recorded as single density.
+**The floppy controllers check the density.** The density bit must now agree with the density of
+the track, as on the hardware, and a read or a write at the wrong density gives Record Not
+Found. This applies to the `tarbelldd` (`OUT FC`), the `versafloppy` (port 63) and the Cromemco
+`16fdc` and `64fdc` (D6 of port 34). Before, the chip set its data rate from the bit and did not
+compare the rate with the track, so a read at the wrong density worked. The chip now has the
+density as its own input, because the Cromemco boards run 5.25-inch double density at the same
+250 kbit/s as single density, and the rate could not tell the two apart. A 5.25-inch
+double-density track that a program formats on these boards is now recorded as double density.
 
-**The two long files in the AI skill now open with a list of contents.** `driving-with-ai.md`
-and `cheatsheet.md` are long, and an assistant that reads only the top of a file did not see most
-of the sections. Each file now starts with a `Contents` list.
+**A disk of your own for the `tarbelldd` may need a new boot sector.** The two double-density
+CP/M disks in the Tarbell example have a new boot loader, built from Tarbell's own source with
+the double-density option on; the old loader read track 1 with the bit clear. A disk that has the
+old loader no longer boots: write the boot sector again with the double-density option on.
 
-**`CONFIG SAVE` marks the settings that have the default value.** A saved file used to list every
-setting, and you could not tell a default from a value that was set on purpose. Now a setting that
-has the default value ends with a comment, for example `baud = 9600  # default X.Y.Z`, and `X.Y.Z`
-is the release that the default belongs to. A setting without the comment was set on purpose. The
-comment does nothing when the file loads.
-
-**`SHOW BOARD <type>` shows the default of each property.** Under the legal values of each
-setting, it now gives a `default:` line: the value the setting has when a machine file does not
-set it. A setting that only shows live state has no default, and has no line.
-
-**The Tarbell double-density board checks the density.** The `OUT FC` density bit of the
-`tarbelldd` board must now agree with the density of the track, as on the hardware. A read or a
-write at the wrong density gives Record Not Found. Before, the chip set its data rate from that
-bit and did not compare the rate with the track, so a read at the wrong density worked. The two
-double-density CP/M disks in the Tarbell example have a new boot loader, built from Tarbell's own source with the double-density
-option on; the old loader read track 1 with the bit clear. A disk of your own that has the old
-loader no longer boots: write the boot sector again from `2DBOOT24.ASM` with `DOUBDEN TRUE`.
-
-**A drive select written directly after a Restore or a Seek is obeyed with the default `timing`.**
-The Tarbell CBIOS writes a Restore command and then selects the new drive, with no wait between
-them. With `timing = full` the old drive moved and the new drive did not: the chip stepped as
-soon as it was given the command, before the select arrived. Now the chip steps at the next
-access of the guest to the board, so the drive that is selected when the head moves is the
-drive that moves, on the Tarbell, VersaFloppy and Cromemco boards.
-
-**The `versafloppy` board checks the density, and a single-density disk boots.** The board set
-the data rate of its disk chip from the density bit of port 63, but the chip did not compare
-that rate with the density of the track. A Read Address, a sector read and the seek verify all
-worked at the wrong density. The real chip finds no ID field that was recorded at the other
-density, and the command ends in Record Not Found. The SD Systems DDBIOS PROM depends on this:
-it finds the type of a disk by a Read Address at double density first, then at single density.
-In the simulator the first try always worked, so the PROM took a single-density disk for a
-double-density disk and stopped with `COLD BOOT ERROR`. Now a read at the wrong density ends in
-Record Not Found, and a seek with verify ends in Seek Error. Double-density disks boot as
-before.
+**A single-density disk boots on the `versafloppy` board.** The SD Systems DDBIOS PROM finds
+the type of a disk by a Read Address at double density first, then at single density. The board
+did not check the density, so the first try always worked, and the PROM took a single-density
+disk for a double-density disk and stopped with `COLD BOOT ERROR`. A read at the wrong density
+now ends in Record Not Found, and a seek with verify ends in Seek Error. Double-density disks
+boot as before.
 
 **A Write Track command ends at the index pulse with the default `timing`.** With
 `timing = full` the simulated disk chip ended a Write Track only after the guest had sent one
 full revolution of bytes. The real chip ends the command at the index pulse, also when the guest
 has stopped sending. `FORMAT.COM` for CP/M Plus on the SD Systems board sends 9,672 bytes of a
 10,416-byte track and then reads the status until the command ends. The chip waited for the rest
-of the bytes for ever, so `FORMAT` stopped after the first track and the disk was not formatted.
-Now the command ends one revolution after the last request for a byte: the rest of the track is
-zeros, Lost Data is set and the track is written, as on the hardware. A guest that keeps
-sending is not affected, however slow it is. This applies to every board that runs the chip with
-wait states: `versafloppy`, `tarbelldd` and the Cromemco FDCs.
+of the bytes for ever, so `FORMAT` stopped after the first track. Now the command ends one
+revolution after the last request for a byte: the rest of the track is zeros, Lost Data is set
+and the track is written, as on the hardware. This applies to `versafloppy`, `tarbelldd` and the
+Cromemco FDCs.
+
+**A drive select written directly after a Restore or a Seek is obeyed with the default `timing`.**
+The Tarbell CBIOS writes a Restore command and then selects the new drive, with no wait between
+them. With `timing = full` the old drive moved and the new drive did not. Now the chip steps at
+the next access of the guest to the board, so the drive that is selected when the head moves is
+the drive that moves, on the Tarbell, VersaFloppy and Cromemco boards.
+
+**`SHOW BOARD <type>` shows the default of each property, and `CONFIG SAVE` marks the settings
+that have it.** Under the legal values of each setting, `SHOW BOARD` gives a `default:` line. A
+saved file ends a setting that has the default value with a comment, for example
+`baud = 9600  # default X.Y.Z`, where `X.Y.Z` is the release that the default belongs to. A
+setting without the comment was set on purpose. The comment does nothing when the file loads.
+
+**The errors for a wrong machine file or command line say more.** An unknown key in `[machine]`
+ends with `Valid keys: base name startup`, and an unknown property of a board, a unit,
+`[console]`, `[display]` or `[terminal]` ends with `Valid properties:` and the names in
+alphabetical order. An error for a key in a `[[board.drive]]` or `[[board.region]]` table gives
+the line of the key, and the table it is in; before, it gave the line where the table started.
+Two machine names on the command line now say that only one machine file or built-in name may be
+given, and how to start from a built-in and change it: put `base = "name"` under `[machine]` in a
+file.
+
+**The AI skill's two long files open with a list of contents.** `driving-with-ai.md` and
+`cheatsheet.md` each start with a `Contents` list, so an assistant that reads only the top of a
+file sees every section.
 
 ## 1.3.2
 
