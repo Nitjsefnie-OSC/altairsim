@@ -351,7 +351,16 @@ bool guestIsWaiting(const SliceWork& w, uint64_t ratio = 32);
 // a console line but no tty -- is NOT paced: a script has no wall clock to match, and pacing
 // it would only make a `-c` run and the CPU tests slow for nobody's benefit. Gating on the
 // console alone left a socket-or-serial-only machine pacing against nothing (#6).
-bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool free);
+//
+// A BOARD CAN BE THE REAL-TIME THING (`realTimeBoard`, Machine::keepsRealTime): a speaker
+// that plays. Sound has no meaning at any speed but real time, so a piped run is paced for
+// as long as a speaker plays and is flat out before and after (#726).
+bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool realTimeBoard, bool free);
+
+// SHOW CLOCK's `pacing` row: what RUN will do with this machine, from the same inputs.
+// A crystal with no terminal and no remote line is NOT paced, and the row says so; it
+// used to read free() alone and say `paced` on a run that took no real time (#726).
+std::string pacingRow(bool anyConsole, bool tty, bool anyRemoteLine, bool free);
 
 // MAY THE RUN LOOP NAP at an idle prompt this run?
 //

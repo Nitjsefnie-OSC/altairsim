@@ -595,6 +595,14 @@ public:
     // scheduler happened to deliver a packet.
     virtual void pump() {}
 
+    // IS THE HOST OBSERVING THIS BOARD IN REAL TIME, RIGHT NOW? A speaker that plays is:
+    // its samples are made at one second of sound per emulated second, so the run must
+    // keep the crystal or the sound is wrong. The run loop asks every slice and paces
+    // while any board says yes, terminal or no terminal (shouldPace, cli/monitor.h; #726).
+    // It is a fact about the HOST side, like pump(), and a guest cannot read it back.
+    // Most boards have nothing of the kind.
+    virtual bool keepsRealTime() const { return false; }
+
     // THE OPERATOR-VISIBLE RUN STATE, fanned out from the monitor when a RUN session
     // starts and stops (Machine::setRunning). A board that drives a run/stop control
     // lamp -- the front panel's WAIT indicator -- watches it here. This is emphatically
