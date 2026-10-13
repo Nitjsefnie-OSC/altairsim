@@ -472,6 +472,34 @@ void test_d7a() {
         CHECK(g.aud.only().size() == 4410, "only the time from here on is played");
     }
 
+    SECTION("D+7A -- a speaker that plays holds the run to the crystal, and only then (#726)");
+    {
+        Rig g;
+        g.m.clock.setHz(2000000);
+        CHECK(!g.d7a->keepsRealTime(), "a speaker nobody has driven keeps nothing");
+        g.tone(0x19, 200000, 1000);
+        CHECK(g.d7a->keepsRealTime(), "a driven, wired speaker with a crystal does");
+        CHECK(g.m.keepsRealTime(), "and the machine says so for its boards");
+
+        // Half an emulated second after the last change it is silence again.
+        g.m.clock.advance(1000001);
+        CHECK(!g.d7a->keepsRealTime(), "a speaker left alone lets the run go");
+
+        g.tone(0x19, 200000, 1000);
+        g.aud.device = false;
+        CHECK(!g.d7a->keepsRealTime(), "no sound device: nobody can hear it, nothing to keep");
+        g.aud.device = true;
+
+        std::string err;
+        CHECK(setProperty(*g.d7a, "speaker1", "none", err), "unplug speaker 1");
+        g.tone(0x19, 200000, 1000);
+        CHECK(!g.d7a->keepsRealTime(), "a port with no speaker on it keeps nothing");
+
+        Rig f;                                 // no crystal
+        f.tone(0x19, 200000, 1000);
+        CHECK(!f.d7a->keepsRealTime(), "flat out there is no real time to keep");
+    }
+
     SECTION("D+7A -- a speaker left alone goes quiet");
     {
         Rig g;

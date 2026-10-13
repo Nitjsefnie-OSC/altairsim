@@ -60,6 +60,12 @@ Board* Machine::adopt(std::unique_ptr<Board> b) {
     return raw;
 }
 
+bool Machine::keepsRealTime() const {
+    for (const auto& b : boards_)
+        if (b->keepsRealTime()) return true;
+    return false;
+}
+
 void Machine::pump() {
     for (auto& b : boards_) b->pump();
 

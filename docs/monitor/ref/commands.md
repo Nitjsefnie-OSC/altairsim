@@ -129,9 +129,13 @@ cpu0 clock_hz=2000000` buys back the 2 MHz machine AND its 110 seconds. What
 the guest sees is identical either way -- the tape still costs the same
 T-states -- so the crystal buys period FEEL, not period behaviour.
 
-With no console connected there is no keyboard to hand over, and nothing to
-pace against: it simply runs, ^C stops it. Either way it stops on a breakpoint
-or on a HLT nothing can wake, and it ALWAYS says which.
+A CRYSTAL IS KEPT ONLY WHEN SOMETHING KEEPS REAL TIME WITH IT: a console on a
+terminal, a line on a socket or a serial port, or a speaker that plays. A
+script with none of these runs at full speed, and SHOW CLOCK says which.
+
+With no console connected there is no keyboard to hand over: it simply runs,
+^C stops it. Either way it stops on a breakpoint or on a HLT nothing can wake,
+and it ALWAYS says which.
 
 ```
 RUN F800  ; boot the monitor PROM

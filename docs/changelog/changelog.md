@@ -12,6 +12,16 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**A crystal with no terminal: `SHOW CLOCK` and the speaker now agree with the run.** When the
+program is started from a script, with no terminal, a run is at full speed although `clock_hz`
+is set. That is deliberate. But `SHOW CLOCK` read only the crystal and printed `pacing  paced`,
+and a `d7a` or `music6` speaker played on the crystal alone. A machine that played a 60-second
+song from its `startup` list reached its `HLT` in about one second, and all of the song went to
+the sound device in that second. A speaker that plays now holds the run to the crystal, so the
+song takes 60 seconds, and the run is at full speed before the first note and after the last
+one. `SHOW CLOCK` prints `full speed`, with the cause, when a crystal is set and the run will
+not keep it. `HELP RUN` gives the rule.
+
 **`W` uses text mode for a text file without the `T`.** `W` copies a file from CP/M to the host.
 With no mode, it used binary mode for every file, and wrote every byte of every 128-byte
 record. A text file ends at a `Ctrl-Z`, and the remainder of its last record holds more

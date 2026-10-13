@@ -33,6 +33,10 @@ bool Speaker::driven(const Clock& clock) const {
     return now >= lastChange_ && now - lastChange_ <= (uint64_t)clock.hz() / 2;
 }
 
+bool Speaker::playing(const Clock& clock, bool wired) const {
+    return g_audio && g_audio->available() && wired && !clock.free() && driven(clock);
+}
+
 void Speaker::resync(uint64_t now, int8_t level) {
     pcm_.clear();
     pcm_.edge(0, level);
@@ -82,6 +86,8 @@ void Speaker::couple(size_t from, int rate) {
 //                   the slice is dropped. Nothing is played, at any pitch.
 //   not driven      a level that does not move is silence. Nothing is pushed, so a guest
 //                   that never touches the speaker never opens a sound device.
+//   no device       the host's device failed to open. The slice is dropped, and the run
+//                   is not held to the crystal for a sound nobody can hear.
 //   queue empty     the device has caught up (or has not started). A short cushion goes
 //                   in first, or the device would run dry between this slice and the
 //                   next and every slice would start with a gap.
@@ -97,7 +103,7 @@ void Speaker::pump(const Clock& clock, bool wired) {
     const uint64_t from  = pcm_.renderedTo();
     const bool     moved = now < from || now - from > hz;
 
-    if (!g_audio || !wired || clock.free() || moved || !driven(clock)) {
+    if (moved || !playing(clock, wired)) {
         skip(now);
         return;
     }

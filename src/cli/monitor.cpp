@@ -68,10 +68,49 @@ bool guestIsWaiting(const SliceWork& w, uint64_t ratio) {
     return w.hungry * ratio >= w.steps;
 }
 
-bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool free) {
+bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool realTimeBoard, bool free) {
     if (free) return false;  // no crystal asked for -> flat out, always
-    return (anyConsole && tty) || anyRemoteLine;
+    return (anyConsole && tty) || anyRemoteLine || realTimeBoard;
 }
+
+std::string pacingRow(bool anyConsole, bool tty, bool anyRemoteLine, bool free) {
+    if (free) return "free -- emulated seconds pass as fast as the host allows";
+    if ((anyConsole && tty) || anyRemoteLine)
+        return "paced -- emulated seconds keep step with real ones";
+    return "full speed -- the console is not a terminal, and no socket or serial\n"
+           "             line is attached. A run keeps real time only while a speaker plays.";
+}
+
+// WHAT THE MACHINE'S SERIAL LINES ARE WIRED TO -- the two questions the run loop asks
+// (runMachine has the reasoning), in one place so that SHOW CLOCK reports the pacing RUN
+// will do and not a second opinion (#726).
+namespace {
+struct LineWiring {
+    bool        anyConsole    = false;  // a line holds the host keyboard
+    bool        anyRemoteLine = false;  // a line is on a socket, a serial port, a terminal
+    std::string remoteLabel;  // scheme of the first live console-CAPABLE non-console line
+};
+
+LineWiring lineWiring(const Machine& m) {
+    LineWiring w;
+    for (const auto& b : m.boards())
+        for (const auto& u : b->units()) {
+            if (u.kind != UnitKind::Serial) continue;
+            if (u.state == "console") w.anyConsole = true;
+            else if (u.state != "null") {  // socket:/serial:/terminal -- a live wire
+                w.anyRemoteLine = true;
+                // ...but only a line the GUEST talks over can be "the console" the banner
+                // names. The front panel's graphical bridge is a live socket wire too, yet
+                // the guest never does I/O on it -- naming it read "(console on socket)" for
+                // a machine whose console was on a terminal window (#295). It still counts
+                // for anyRemoteLine (pacing): it is a real-time observer either way.
+                if (u.consoleCapable && w.remoteLabel.empty())
+                    w.remoteLabel = u.state.substr(0, u.state.find_first_of(":?"));
+            }
+        }
+    return w;
+}
+} // namespace
 
 bool mayNap(bool idle, bool anyConsole, bool tty, bool paced) {
     if (paced) return false;  // the throttle is this run's sleep, and it keeps the time (#606)
@@ -1425,9 +1464,10 @@ void Monitor::showClock(std::ostream& out) {
     std::snprintf(buf, sizeof buf, "%lld Hz   SET cpu0 clock_hz=N", hz);
     row("crystal", buf);
 
-    row("pacing", m_.clock.free()
-                      ? "free -- emulated seconds pass as fast as the host allows"
-                      : "paced -- emulated seconds keep step with real ones");
+    // The row says what RUN will do, which a crystal alone does not decide (#726).
+    const LineWiring wires = lineWiring(m_);
+    row("pacing", pacingRow(wires.anyConsole, Console::instance().isTty(),
+                            wires.anyRemoteLine, m_.clock.free()));
 
     out << "\n  Elapsed is the GUEST's time, counted from the crystal above: the same\n"
            "  division a 9600-baud line does to turn a character into T-states. It is\n"
@@ -1677,32 +1717,19 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
     // real UART PACED AGAINST NOTHING: `clock_hz` was a divisor every board obeyed with no
     // wall-clock behind it, and a 2 MHz machine ran at whatever the host could do. Same root
     // cause as the nap: the run loop asked the CONSOLE a question that belongs to the LINE.
-    bool        anyConsole    = false;
-    bool        anyRemoteLine = false;
-    std::string remoteLabel;  // scheme of the first live console-CAPABLE non-console line
-    for (const auto& b : m_.boards())
-        for (const auto& u : b->units()) {
-            if (u.kind != UnitKind::Serial) continue;
-            if (u.state == "console") anyConsole = true;
-            else if (u.state != "null") {  // socket:/serial:/terminal -- a live wire
-                anyRemoteLine = true;
-                // ...but only a line the GUEST talks over can be "the console" the banner
-                // names. The front panel's graphical bridge is a live socket wire too, yet
-                // the guest never does I/O on it -- naming it read "(console on socket)" for
-                // a machine whose console was on a terminal window (#295). It still counts
-                // for anyRemoteLine (pacing): it is a real-time observer either way.
-                if (u.consoleCapable && remoteLabel.empty())
-                    remoteLabel = u.state.substr(0, u.state.find_first_of(":?"));
-            }
-        }
+    const LineWiring   wires         = lineWiring(m_);
+    const bool         anyConsole    = wires.anyConsole;
+    const bool         anyRemoteLine = wires.anyRemoteLine;
+    const std::string& remoteLabel   = wires.remoteLabel;
 
     Console& con = Console::instance();
     char     buf[96];
 
     using clk = std::chrono::steady_clock;
     const long long hz     = m_.clock.hz();
-    const uint64_t  startT = m_.clock.now();  // the throttle's baseline
-    const auto      start  = clk::now();
+    uint64_t        startT = m_.clock.now();  // the throttle's baseline
+    auto            start  = clk::now();
+    bool            paced  = false;           // was the last slice paced (the re-base, below)
     const bool      tty    = con.isTty();
     const char      attn   = (char)('A' + con.attn() - 1);
 
@@ -1986,7 +2013,8 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
                              con.hungry() - wasHungry};
 
         // Does the throttle pace this run? The reasoning is at the throttle, below.
-        const bool pace = shouldPace(anyConsole, tty, anyRemoteLine, m_.clock.free());
+        const bool pace = shouldPace(anyConsole, tty, anyRemoteLine, m_.keepsRealTime(),
+                                     m_.clock.free());
 
         const bool idling = mayNap(m_.clock.idle(), anyConsole, tty, pace) &&
                             guestIsWaiting(work, kIdleRatio);
@@ -2020,6 +2048,23 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
         // the wire, or (with a fixed-rate peer) simply lied about the speed. A PIPED console
         // -- state "console" but no tty -- is deliberately still NOT paced: a script has no
         // wall clock to keep in step with, which is what a `-c` run and a CPU test want.
+        //
+        // A SPEAKER THAT PLAYS IS A REAL-TIME OBSERVER TOO, AND IT COMES AND GOES (#726).
+        // Its samples are one second of sound for each emulated second, so a piped run
+        // that played a 60-second song got it all in the second the run took. A board
+        // with a speaker that plays says so (Board::keepsRealTime), and the run is paced
+        // for as long as it does: a script is at full speed until the first note and
+        // again after the last one.
+        //
+        // SO PACING CAN START IN THE MIDDLE OF A RUN, and the time before it is not owed.
+        // The baseline is the start of the run; a minute of emulated time that went by
+        // flat out would be a minute of sleep here before the first note. Count from the
+        // slice where pacing starts.
+        if (pace && !paced) {
+            startT = m_.clock.now();
+            start  = clk::now();
+        }
+        paced = pace;
         if (pace) {
             double want = (double)(m_.clock.now() - startT) / (double)hz;
             double got  = std::chrono::duration<double>(clk::now() - start).count();
