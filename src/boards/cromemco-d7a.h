@@ -64,7 +64,6 @@ public:
     void reset(Reset r) override;
     void power() override;
     void pump() override;
-    bool keepsRealTime() const override;
 
     // SNAPSHOT/RESTORE (DESIGN.md 13). The software-visible latches: the seven A/D input
     // shadows, the seven D/A output latches, and the two parallel bytes. The port strap,

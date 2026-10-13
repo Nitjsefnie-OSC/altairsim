@@ -471,11 +471,10 @@ The program counts the T-states since power on, and divides them by the crystal.
 the guest's time, not your time. A CP/M boot takes the same guest time at full speed and at 2
 MHz. Use this number to measure a guest's own timeout.
 
-**The `pacing` line tells you if a run keeps real time.** A crystal is kept only when something
-keeps real time with the machine: a console on a terminal, a serial line on a socket or a serial
-port, or a speaker that plays. When you start the program from a script, with no terminal, a run
-is at full speed although a crystal is set. The `pacing` line then starts with `full speed` and
-gives the cause.
+**The `pacing` line tells you if a run keeps real time.** It reads `paced` when a crystal is
+set, and `free` when `clock_hz` is 0. A crystal is always kept, also when you start the program
+from a script with no terminal. If a script must be fast, leave `clock_hz` at 0, or put
+`SET cpu0 clock_hz=0` at the start of the script.
 
 ### `idle`: the processor rests at a prompt
 
@@ -916,8 +915,8 @@ speaker2 = 2
 ```
 
 **Sound needs a crystal.** At full speed (`clock_hz = 0`, the default), the guest does not keep
-real time, and the board plays nothing. While a speaker plays, the machine keeps real time,
-also when you start it from a script with no terminal. Set the speed of the machine to hear the
+real time, and the board plays nothing. With a crystal the machine keeps real time, also when
+you start it from a script with no terminal. Set the speed of the machine to hear the
 sound:
 
 ```
@@ -971,8 +970,8 @@ changes only bit 0 or bit 1 is silent. The board has no input port: you cannot r
 back. A reset does not clear the value. Only the power switch does.
 
 **Sound needs a crystal.** At full speed (`clock_hz = 0`, the default), the guest does not keep
-real time, and the board plays nothing. While the speaker plays, the machine keeps real time,
-also when you start it from a script with no terminal. The programs that Newtech supplied with
+real time, and the board plays nothing. With a crystal the machine keeps real time, also when
+you start it from a script with no terminal. The programs that Newtech supplied with
 the board are timed for an 8080 at 2 MHz:
 
 ```

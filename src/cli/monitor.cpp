@@ -68,26 +68,16 @@ bool guestIsWaiting(const SliceWork& w, uint64_t ratio) {
     return w.hungry * ratio >= w.steps;
 }
 
-bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool realTimeBoard, bool free) {
-    if (free) return false;  // no crystal asked for -> flat out, always
-    return (anyConsole && tty) || anyRemoteLine || realTimeBoard;
-}
-
-std::string pacingRow(bool anyConsole, bool tty, bool anyRemoteLine, bool free) {
+std::string pacingRow(bool free) {
     if (free) return "free -- emulated seconds pass as fast as the host allows";
-    if ((anyConsole && tty) || anyRemoteLine)
-        return "paced -- emulated seconds keep step with real ones";
-    return "full speed -- the console is not a terminal, and no socket or serial\n"
-           "             line is attached. A run keeps real time only while a speaker plays.";
+    return "paced -- emulated seconds keep step with real ones";
 }
 
-// WHAT THE MACHINE'S SERIAL LINES ARE WIRED TO -- the two questions the run loop asks
-// (runMachine has the reasoning), in one place so that SHOW CLOCK reports the pacing RUN
-// will do and not a second opinion (#726).
+// WHAT THE MACHINE'S SERIAL LINES ARE WIRED TO -- what the run loop asks of them
+// (runMachine has the reasoning).
 namespace {
 struct LineWiring {
-    bool        anyConsole    = false;  // a line holds the host keyboard
-    bool        anyRemoteLine = false;  // a line is on a socket, a serial port, a terminal
+    bool        anyConsole = false;  // a line holds the host keyboard
     std::string remoteLabel;  // scheme of the first live console-CAPABLE non-console line
 };
 
@@ -98,12 +88,10 @@ LineWiring lineWiring(const Machine& m) {
             if (u.kind != UnitKind::Serial) continue;
             if (u.state == "console") w.anyConsole = true;
             else if (u.state != "null") {  // socket:/serial:/terminal -- a live wire
-                w.anyRemoteLine = true;
-                // ...but only a line the GUEST talks over can be "the console" the banner
-                // names. The front panel's graphical bridge is a live socket wire too, yet
-                // the guest never does I/O on it -- naming it read "(console on socket)" for
-                // a machine whose console was on a terminal window (#295). It still counts
-                // for anyRemoteLine (pacing): it is a real-time observer either way.
+                // Only a line the GUEST talks over can be "the console" the banner names.
+                // The front panel's graphical bridge is a live socket wire too, yet the
+                // guest never does I/O on it -- naming it read "(console on socket)" for
+                // a machine whose console was on a terminal window (#295).
                 if (u.consoleCapable && w.remoteLabel.empty())
                     w.remoteLabel = u.state.substr(0, u.state.find_first_of(":?"));
             }
@@ -1465,10 +1453,7 @@ void Monitor::showClock(std::ostream& out) {
     std::snprintf(buf, sizeof buf, "%lld Hz   SET cpu0 clock_hz=N", hz);
     row("crystal", buf);
 
-    // The row says what RUN will do, which a crystal alone does not decide (#726).
-    const LineWiring wires = lineWiring(m_);
-    row("pacing", pacingRow(wires.anyConsole, Console::instance().isTty(),
-                            wires.anyRemoteLine, m_.clock.free()));
+    row("pacing", pacingRow(m_.clock.free()));
 
     out << "\n  Elapsed is the GUEST's time, counted from the crystal above: the same\n"
            "  division a 9600-baud line does to turn a character into T-states. It is\n"
@@ -1706,22 +1691,12 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
     // Without this a guest polling an absent UART would warn once, ever.
     m_.bus.resetUnclaimedWarnings();
 
-    // TWO QUESTIONS THAT ARE NOT THE SAME ONE, and conflating them was a bug (#6).
-    //
     // anyConsole: is a line wired to the INTERACTIVE console -- the host keyboard? That is
-    // what decides whether keystrokes reach the guest and whether ^E means anything.
-    //
-    // anyRemoteLine: is a line wired to something REAL-TIME that is not the host terminal --
-    // a socket a person has telnetted into, or a real serial port with hardware on it? Such
-    // a machine has NO console by the test above (its state is "socket:..."/"serial:..."),
-    // and the throttle used to gate on anyConsole alone -- so a machine whose only line was a
-    // real UART PACED AGAINST NOTHING: `clock_hz` was a divisor every board obeyed with no
-    // wall-clock behind it, and a 2 MHz machine ran at whatever the host could do. Same root
-    // cause as the nap: the run loop asked the CONSOLE a question that belongs to the LINE.
-    const LineWiring   wires         = lineWiring(m_);
-    const bool         anyConsole    = wires.anyConsole;
-    const bool         anyRemoteLine = wires.anyRemoteLine;
-    const std::string& remoteLabel   = wires.remoteLabel;
+    // what decides whether keystrokes reach the guest and whether ^E means anything. It
+    // does NOT decide the throttle: the crystal does, alone (below; #6, #731).
+    const LineWiring   wires       = lineWiring(m_);
+    const bool         anyConsole  = wires.anyConsole;
+    const std::string& remoteLabel = wires.remoteLabel;
 
     Console& con = Console::instance();
     char     buf[96];
@@ -1730,7 +1705,6 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
     const long long hz     = m_.clock.hz();
     uint64_t        startT = m_.clock.now();  // the throttle's baseline
     auto            start  = clk::now();
-    bool            paced  = false;           // was the last slice paced (the re-base, below)
     const bool      tty    = con.isTty();
     const char      attn   = (char)('A' + con.attn() - 1);
 
@@ -1801,8 +1775,8 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
             // Name the live line instead; keep "(no console connected)" for the truly
             // bare backplane (the ROM-talking-to-a-disk case above).
             //
-            // Gate on remoteLabel, NOT anyRemoteLine: the front panel's graphical bridge
-            // is a live remote wire (anyRemoteLine) that the guest never talks over, so
+            // Gate on remoteLabel, NOT on any live wire: the front panel's graphical
+            // bridge is a live remote wire that the guest never talks over, so
             // it is not console-capable and leaves remoteLabel empty. A machine whose only
             // live serial connector is that bridge therefore reads "(no console connected)"
             // -- correct -- instead of naming the panel's socket as a console (#295).
@@ -2014,8 +1988,7 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
                              con.hungry() - wasHungry};
 
         // Does the throttle pace this run? The reasoning is at the throttle, below.
-        const bool pace = shouldPace(anyConsole, tty, anyRemoteLine, m_.keepsRealTime(),
-                                     m_.clock.free());
+        const bool pace = !m_.clock.free();
 
         const bool idling = mayNap(m_.clock.idle(), anyConsole, tty, pace) &&
                             guestIsWaiting(work, kIdleRatio);
@@ -2041,31 +2014,17 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
         // T-states on every 300-baud byte (clock.h). We are not speeding up the
         // TAPE, we are declining to sit and wait for it.
         //
-        // PACE IF THERE IS ANYTHING REAL-TIME TO PACE FOR. An interactive console (a human
-        // at the host keyboard) is one such thing -- but so is a socket someone dialed into
-        // and so is a real serial port, and those have no console and no host tty at all.
-        // Gating on `anyConsole && tty` alone meant a machine whose only line was a real UART
-        // ran flat out no matter what crystal you asked for (#6): its transfers then outran
-        // the wire, or (with a fixed-rate peer) simply lied about the speed. A PIPED console
-        // -- state "console" but no tty -- is deliberately still NOT paced: a script has no
-        // wall clock to keep in step with, which is what a `-c` run and a CPU test want.
+        // A CRYSTAL IS ALWAYS KEPT (#731). The card has one or it has not, and that is
+        // the whole rule: a terminal, a pipe, `-x`, `-s` and `--mcp` all run the machine
+        // at the same speed. A script that must be fast leaves `clock_hz` at 0.
         //
-        // A SPEAKER THAT PLAYS IS A REAL-TIME OBSERVER TOO, AND IT COMES AND GOES (#726).
-        // Its samples are one second of sound for each emulated second, so a piped run
-        // that played a 60-second song got it all in the second the run took. A board
-        // with a speaker that plays says so (Board::keepsRealTime), and the run is paced
-        // for as long as it does: a script is at full speed until the first note and
-        // again after the last one.
-        //
-        // SO PACING CAN START IN THE MIDDLE OF A RUN, and the time before it is not owed.
-        // The baseline is the start of the run; a minute of emulated time that went by
-        // flat out would be a minute of sleep here before the first note. Count from the
-        // slice where pacing starts.
-        if (pace && !paced) {
-            startT = m_.clock.now();
-            start  = clk::now();
-        }
-        paced = pace;
+        // It used to be kept only for an observer -- a console on a terminal, then a
+        // socket or serial line (#6: a machine whose only line was a real UART ran flat
+        // out and its transfers outran the wire), then a speaker that played (#726: a
+        // 60-second song from a script took one second). Each was a report of a run that
+        // was at full speed when the operator had set a crystal, and a video window was
+        // the next. The same machine file kept time from a terminal and not from a
+        // script, and nothing in the file said so.
         if (pace) {
             double want = (double)(m_.clock.now() - startT) / (double)hz;
             double got  = std::chrono::duration<double>(clk::now() - start).count();

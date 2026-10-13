@@ -13,7 +13,7 @@
 # the PROM out so it can run from the 64K underneath.
 #
 # IT HAS TO BE AN EXPECT TEST, for the same two reasons as sdos.exp -- the auto-baud needs a
-# start bit in emulated time (only a tty paces to clock_hz), and a pipe cannot type `C`/`DIR`
+# start bit in emulated time, and a pipe cannot type `C`/`DIR`
 # at a guest. And, per ps2-int.exp: DO NOT TYPE INTO A RACE -- wait for each response before
 # sending the next line, or a keystroke is lost and the test "proves" the interrupt failed.
 #

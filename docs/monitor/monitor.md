@@ -368,10 +368,9 @@ speed changes how the machine *feels*, not how it *behaves*. `SHOW cpu0` shows `
 next to `clock_hz`. `achieved_hz` is the clock speed that the run loop reached. You can read it,
 but you cannot set it.
 
-A crystal is kept only when something keeps real time with the machine: a console on a
-terminal, a serial line on a socket or a serial port, or a speaker that plays. A script with
-none of these runs at full speed. `SHOW CLOCK` tells you which: its `pacing` line reads `paced`
-or `full speed`.
+A crystal is always kept: at the prompt, from a script, from a pipe and under `--mcp`. A script
+that must be fast leaves `clock_hz` at 0, or starts with `SET cpu0 clock_hz=0`. `SHOW CLOCK`
+tells you which: its `pacing` line reads `paced` or `free`.
 
 The speed matters to a guest that measures time against the *outside* world. An XMODEM transfer
 needs the real clock speed, and a cassette does not. For more information, see `clock_hz` and

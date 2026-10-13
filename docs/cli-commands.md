@@ -494,7 +494,7 @@ SET sio0 baud=9600                nine thousand six hundred
 
 A single global base was never really available — `baud=9600` cannot mean 38400 — so the rule had to bend somewhere. It bends where it means something. The alternative ("everything in a command is hex") buys one sentence of simplicity and pays for it with `STEP 20` stepping 32 times, silently, forever.
 
-**Overrides work everywhere, both directions**, because a rule you can't type your way out of is a trap: `0x20`, `$20` and `20h` force hex; `#32` forces decimal; `0b1010` is binary; `1_000` is just spacing.
+**Overrides work everywhere, both directions**, because a rule you can't type your way out of is a trap: `0x20`, `$20` and `20h` force hex; `#32` forces decimal; `%1010` forces binary (`0b1010` is binary only where the default is not hex); `1_000` is just spacing.
 
 **A `K`/`M` suffix is always decimal** — `10K` is 10,240, never 16K, which is why nobody has ever had to ask. So `0x10K` is a contradiction and is **rejected**, not guessed at:
 

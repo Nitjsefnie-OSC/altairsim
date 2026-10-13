@@ -225,22 +225,6 @@ void test_music6() {
               "line two gives the reason");
     }
 
-    SECTION("music6 -- a speaker that plays holds the run to the crystal, and only then (#726)");
-    {
-        Rig g;
-        g.m.clock.setHz(2000000);
-        CHECK(!g.mus->keepsRealTime(), "a latch nobody has written keeps nothing");
-        g.tone(0x24, 200000, 1000);
-        CHECK(g.mus->keepsRealTime(), "a driven speaker with a crystal does");
-        CHECK(g.m.keepsRealTime(), "and the machine says so for its boards");
-        g.m.clock.advance(1000001);            // half an emulated second, and one more
-        CHECK(!g.mus->keepsRealTime(), "a speaker left alone lets the run go");
-
-        Rig f;                                 // no crystal
-        f.tone(0x24, 200000, 1000);
-        CHECK(!f.mus->keepsRealTime(), "flat out there is no real time to keep");
-    }
-
     SECTION("music6 -- sound is pushed in pump(), not inside a bus cycle");
     {
         Rig g;

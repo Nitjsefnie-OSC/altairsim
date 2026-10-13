@@ -139,12 +139,6 @@ void D7aBoard::deserialize(StateReader& r) {
     resync(spk2_);
 }
 
-// A wired speaker that plays holds the run to the crystal (Board::keepsRealTime).
-bool D7aBoard::keepsRealTime() const {
-    return clock_ && (spk1_.spk.playing(*clock_, spk1_.ch != 0) ||
-                      spk2_.spk.playing(*clock_, spk2_.ch != 0));
-}
-
 // ---------------------------------------------------------------------------
 // The host turn: play the speakers, then read the joysticks and fold them into the A/D
 // and parallel-input latches. Once per slice, on the main thread -- never inside a bus

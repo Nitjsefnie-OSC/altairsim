@@ -35,9 +35,9 @@ run {input: "ASM FOO\r", until: "A>", timeout_ms: 120000}
   (`65280`); it is never read as 0.
 - **`timeout_ms` is a ceiling, not a wait.** A 50-second assembly under `timeout_ms: 120000`
   returns in 50 seconds. Set the worst case you will sit through and let `until` end the call.
-- **A guest that must keep real time is driven with `run`.** With `clock_hz` set, `run`
-  holds the guest to the crystal. A monitor `RUN` from a script, with no terminal, is at full
-  speed unless a speaker plays; `SHOW CLOCK` says which.
+- **A guest with `clock_hz` set keeps real time.** `run` holds the guest to the crystal, and
+  so does a monitor `RUN`, also from a script with no terminal. For speed, leave `clock_hz`
+  at 0; `SHOW CLOCK` says which.
 - **Never pick an `until` that recurs.** A disk that auto-runs `PROFILE.SUB` reprints `A>`
   several times, and input sent while a SUB is running is swallowed. Match something unique
   to the state you want.

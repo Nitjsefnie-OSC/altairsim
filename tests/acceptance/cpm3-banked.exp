@@ -15,7 +15,7 @@
 # end to end -- and DIR reading BNKBIOS3.SPR back off the platter is the disk path proven too.
 #
 # IT HAS TO BE AN EXPECT TEST, for the same reasons as cpm.exp/sdos.exp: the auto-baud needs a
-# start bit in emulated time (only a tty paces to clock_hz), and a pipe cannot type C/DIR at a
+# start bit in emulated time, and a pipe cannot type C/DIR at a
 # guest. Per ps2-int.exp: DO NOT TYPE INTO A RACE -- wait for each response before sending the
 # next line, or a keystroke is lost and the test "proves" the interrupt failed.
 #

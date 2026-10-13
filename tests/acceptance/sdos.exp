@@ -8,7 +8,7 @@
 #
 #   - THE AUTO-BAUD. The SBC-200 straps the 8251's RxD to /DSR; MSMONR21 times the start bit of
 #     the first CR to set the baud, and prints NOTHING until it sees one. A pipe cannot present
-#     a start bit in emulated time -- only a tty paces to clock_hz -- so the monitor never
+#     a start bit in emulated time, so the monitor never
 #     wakes. (See docs and the [[altairsim-pipe-cannot-type-at-a-guest]] rule.)
 #   - TYPING `C`. The boot is a command typed at the monitor prompt, and a piped run cannot type
 #     at a guest -- it can only assert what the machine says unprompted.
