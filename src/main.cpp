@@ -120,6 +120,7 @@ static void usage(std::ostream& o) {
          "                     it are relative to the script's folder.\n"
          "  -x, --exec <cmd>   run one monitor command (repeatable), then exit.\n"
          "  -i, --interactive  after --script/--exec, stay in the monitor.\n"
+         "                     -s, -x and -i cannot be used with --mcp.\n"
          "\n"
          "  An interactive launch first runs ~/altairsim.ini if it exists -- monitor commands,\n"
          "  one per line, for settings such as SET CONSOLE DEBUG. --mcp, -s and -x skip it.\n"
@@ -267,6 +268,26 @@ int main(int argc, char** argv) {
         std::cerr << "--log needs --mcp (it logs the console the MCP tools drive).\n"
                      "Without --mcp, log a line from the monitor: CONNECT <u> <ep>|"
                      "FILE?fmt=text\n";
+        return 2;
+    }
+
+    // -x, -s AND -i ARE THE MONITOR'S, AND --mcp NEVER REACHES THE MONITOR: main() hands the
+    // machine to the server and returns from there. They were accepted and dropped -- a
+    // `-x "SET cpu0 clock_hz=2000000"` changed nothing, a script that did not exist was not
+    // reported, and the exit status was 0 (issue #737). An option that does nothing is
+    // refused, and before the --log file below is emptied for a session that will not start.
+    if (mcp && (!exec.empty() || !script.empty() || interactive)) {
+        std::string given;
+        auto add = [&](bool on, const char* opt) {
+            if (!on) return;
+            if (!given.empty()) given += ", ";
+            given += opt;
+        };
+        add(!exec.empty(), "-x");
+        add(!script.empty(), "-s");
+        add(interactive, "-i");
+        std::cerr << given << " cannot be used with --mcp (stdout is the JSON-RPC transport).\n"
+                              "An MCP client sends monitor commands with the `monitor` tool.\n";
         return 2;
     }
 

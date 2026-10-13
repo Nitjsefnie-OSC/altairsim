@@ -1421,6 +1421,8 @@ altairsim [options] [<machine>]
 
 `-s script.cmd` is the CI/regression entry point: a script that fails exits non-zero. `-x` is the same thing for one-liners, which is what makes a bug report reproducible in a single pasteable line.
 
+**`-s`, `-x` and `-i` are refused with `--mcp`** (exit 2, issue #737). They belong to the monitor, and `--mcp` hands the machine to the server without reaching it: stdout is the JSON-RPC transport, so there is nowhere for a transcript to go. Until #737 they were accepted and dropped with exit status 0, which is the worse answer -- a `-x "SET ..."` that changes nothing looks like one that worked. A client sends the same commands through the `monitor` tool.
+
 **A built-in machine is a TOML file that lives in `.rodata`.** `machines/*.toml` are build-time inputs — CMake embeds them byte-for-byte, exactly as it does the ROM images, and `loadTomlText()` parses them at runtime with the *same* parser that reads a config off disk.
 
 Two things follow, and both are requirements rather than conveniences:

@@ -49,6 +49,7 @@ altairsim [machine] [options]
                      it are relative to the script's folder.
   -x, --exec <cmd>   run one monitor command (repeatable), then exit.
   -i, --interactive  after --script/--exec, stay in the monitor.
+                     -s, -x and -i cannot be used with --mcp.
       --mcp          MCP server on stdio.
       --mirror <sink>  with --mcp: mirror the console so a person can watch and
                      take over. socket:PORT (telnet in), or on macOS and Linux
