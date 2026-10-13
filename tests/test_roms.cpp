@@ -149,7 +149,7 @@ void test_roms() {
         // read FF (F5EE-F5FF and F6EA-F6FF) -> non-contiguous, CRC over the FF-filled 2K span.
         // Built with M80/L80 under CP/M (roms/SSM-8080MON/, docs/devguide/assembling-roms.md);
         // boots to "MONITOR V1.0" with a working prompt. This is the PB1 manual's MONIT.
-        {"ssm-8080mon", 0xF000, 0xF7FF, 2048, 0xDEB0D584u, false},
+        {"ssm-8080mon", 0xF000, 0xF7FF, 2048, 0x27636BB0u, false},
         // The North Star floppy boot PROMs, one per controller, each a complete 256-byte
         // part. The MDS-A's is assembled for E900 (the board answers it at E800 too); the
         // MDS-A-D's is the first page of the window, E800. Both are Martin Eberhard

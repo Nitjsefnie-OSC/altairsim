@@ -551,6 +551,77 @@ void test_io4() {
         CHECK(banner, "the IO-4 console prints MONITOR V1.0");
     }
 
+    SECTION("IO-4 -- the SSM 8080 monitor's X command shows the registers, and edits them");
+    {
+        // Issue #727. The register dump (label X7) read each register with `LDAX B`, where BC
+        // is size:letter and not an address, so every register printed the same constant byte
+        // ("A=27 B=27 ... M=8700"). The manual's printed listing (F5BC) has `LDAX D`: DE holds
+        // the saved register. Edit six registers and a pair through the X<reg> path, which was
+        // right all along, then read them back with the plain X dump, which was not.
+        std::string err;
+
+        Machine m;
+        auto*   mem = dynamic_cast<MemoryBoard*>(m.add("memory", "mem0", err));
+        Region  ram;
+        ram.kind = RegionKind::Ram;
+        ram.at   = 0;
+        ram.size = 0xF000;
+        mem->addRegion(ram, err);
+        Region rom;
+        rom.kind  = RegionKind::Rom;
+        rom.at    = 0xF000;
+        rom.mount = "builtin:ssm-8080mon";
+        CHECK(mem->addRegion(rom, err), "the monitor ROM mounts at F000");
+        setProperty(*mem, "fill", "zero", err);
+
+        auto* io = dynamic_cast<Io4Board*>(m.add("io4", "io0", err));
+        CHECK(io != nullptr, "the io4 board adds");
+        auto            s   = std::make_unique<ScriptedStream>();
+        ScriptedStream* tty = s.get();
+        std::string     cerr;
+        CHECK(io->connectStream("a", std::move(s), cerr), "channel A gets the console line");
+
+        m.add("8080", "cpu0", err);
+        m.power();
+        m.cpu()->setPc(0xF000);
+
+        // Run until `want` has been printed after the first `from` characters of output.
+        auto runUntil = [&](const std::string& want, std::size_t from) {
+            for (int i = 0; i < 4000000; ++i) {
+                StepResult st = m.master()->step(m.bus);
+                m.clock.advance(st.tStates);
+                io->pump();
+                if (tty->out().find(want, from) != std::string::npos) return true;
+            }
+            return false;
+        };
+
+        CHECK(runUntil("MONITOR V1.0\r\n.", 0), "the monitor reaches its prompt");
+
+        // XA: show A, then each value we type goes to A, B, C, D, E, F, H, L in table order.
+        std::size_t mark = tty->out().size();
+        tty->feed("XA");
+        CHECK(runUntil("-", mark), "XA shows A and the - prompt");
+        mark = tty->out().size();
+        tty->feed("12 34 56 78 9A BC DE F0\r");
+        CHECK(runUntil("\n.", mark), "the edit ends at the prompt");
+
+        mark = tty->out().size();
+        tty->feed("X\r");
+        CHECK(runUntil("\n.", mark), "X ends at the prompt");
+        std::string dump = tty->out().substr(mark);
+        CHECK(dump.find("A=") != std::string::npos, dump.c_str());  // the dump, if it fails
+        CHECK(dump.find("A=12") != std::string::npos, "A reads back 12");
+        CHECK(dump.find("B=34") != std::string::npos, "B reads back 34");
+        CHECK(dump.find("C=56") != std::string::npos, "C reads back 56");
+        CHECK(dump.find("D=78") != std::string::npos, "D reads back 78");
+        CHECK(dump.find("E=9A") != std::string::npos, "E reads back 9A");
+        CHECK(dump.find("F=BC") != std::string::npos, "F reads back BC");
+        CHECK(dump.find("H=DE") != std::string::npos, "H reads back DE");
+        CHECK(dump.find("L=F0") != std::string::npos, "L reads back F0");
+        CHECK(dump.find("M=DEF0") != std::string::npos, "M (HL) reads back DEF0");
+    }
+
     // ---- Interrupts: header W4 (§3.3). No software enable -- the strap IS the enable. ----
 
     SECTION("IO-4 -- interrupts: W4 unstrapped (the default) raises nothing");
