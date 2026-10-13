@@ -12,6 +12,17 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**A hex number that starts with `0B` is now read as hex. Binary is written `%1010`.** The number
+parser took `0b` as the binary marker before it looked at the base of the field. In a hex field
+`B` is a digit, so two commands were wrong. `DE 0B10 AA` wrote `AA` to address `0002`, binary
+`10`, and printed no message. `DE 100 0B` was refused with `number has no digits`, although `0B`
+is the opcode of `DCX B` and is printed that way in every listing. Where the number is hex, an
+address, a port, a data byte or a hex setting, `0B10` is now the hex number 0B10. A new marker,
+`%`, gives a binary number in every field: `DE 100 %1010`. `0b1010` is still binary where the
+number is decimal, such as `STEP 0b1010`. **A machine file that sets the sense switches with
+`0b` must change**: `sense = 0b10001110` is now refused as out of range. Write
+`sense = %10001110`.
+
 **A crystal with no terminal: `SHOW CLOCK` and the speaker now agree with the run.** When the
 program is started from a script, with no terminal, a run is at full speed although `clock_hz`
 is set. That is deliberate. But `SHOW CLOCK` read only the crystal and printed `pacing  paced`,

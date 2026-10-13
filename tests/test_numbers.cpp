@@ -46,7 +46,21 @@ void test_numbers() {
     CHECK(P("$20", 10) == 32, "$ forces hex");
     CHECK(P("20h", 10) == 32, "a trailing h forces hex");
     CHECK(P("0b1010", 10) == 10, "0b is binary");
+    CHECK(P("%1010", 10) == 10, "% forces binary");
+    CHECK(P("%1010", 16) == 10, "% forces binary even where hex is the default");
+    CHECK(P("%1010", 8) == 10, "and where octal is");
+    CHECK(P("0b1010", 8) == 10, "0b is binary under an octal default too");
     CHECK(P("1_000", 10) == 1000, "underscores are just spacing");
+
+    // ---- B IS A HEX DIGIT, so under a hex default `0B...` is a hex number ----
+    // Read as the binary marker, `DE 0B10 AA` wrote to 0002 and said nothing, and
+    // `0B` -- the opcode of DCX B, as every listing prints it -- had no digits
+    // (issue #730). `0b` stays binary only where it cannot be anything else.
+    CHECK(P("0B", 16) == 0x0B, "0B is the byte 0B, not a marker with no digits");
+    CHECK(P("0B10", 16) == 0x0B10, "0B10 is the address 0B10, not binary 10");
+    CHECK(P("0b10", 16) == 0x0B10, "lower case is the same number");
+    CHECK(P("0B3F", 16) == 0x0B3F, "0B3F is hex");
+    CHECK(P("-0B10", 16) == -0x0B10, "behind a sign too");
 
     // ---- octal, for the operator who reads MITS documentation ----
     // The wire class can be spelled hex OR octal (SET CONSOLE base=octal makes it
@@ -81,10 +95,14 @@ void test_numbers() {
     CHECK(P("0x10K", 10) == -1, "0x10K is a contradiction and is refused");
     CHECK(P("$10K", 10) == -1, "so is $10K");
     CHECK(P("10hK", 10) == -1, "and so is 10hK");
+    CHECK(P("%10K", 10) == -1, "and %10K");
+    CHECK(P("0B10K", 16) == -1, "0B10K: the suffix makes it decimal, so 0B is a marker -- refused");
 
     // ---- garbage stays garbage ----
     CHECK(P("", 16) == -1, "nothing is not a number");
     CHECK(P("0x", 16) == -1, "a marker with no digits is not a number");
+    CHECK(P("%", 16) == -1, "% alone is not a number either");
+    CHECK(P("%102", 16) == -1, "2 is not a binary digit -- refused, not truncated");
     CHECK(P("FF", 10) == -1, "FF is NOT a decimal number -- it is an error, not 0");
     CHECK(P("12ZZ", 10) == -1, "trailing garbage is refused, not ignored");
 

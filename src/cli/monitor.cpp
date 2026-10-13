@@ -303,8 +303,9 @@ static bool applyDebugSink(const std::string& v, const std::string& file, std::s
 // class, spelled two ways.
 //
 // `0x`, `$` and a trailing `h` force hex; `0o` and a trailing `q` force octal;
-// `#` forces decimal. Everywhere, both directions, whatever the default, so
-// nothing here is a trap you cannot type your way out of.
+// `%` forces binary; `#` forces decimal. Everywhere, both directions, whatever
+// the default, so nothing here is a trap you cannot type your way out of. (`0b`
+// is binary too, except under a hex default, where `0B10` is a hex number.)
 //
 // A `K` or `M` SUFFIX IS ALWAYS BEHIND A DECIMAL NUMBER (Patrick, 2026-07-11).
 // `10K` is 10,240 bytes, never 16K -- which is exactly why nobody has ever had to

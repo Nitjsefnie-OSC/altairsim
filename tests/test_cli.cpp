@@ -605,6 +605,44 @@ void test_cli() {
         CHECK(runOct("EX 40").compare(0, 6, "0040  ") == 0, "base=hex restores four-hex-digit addresses");
     }
 
+    SECTION("a hex operand that starts with 0B is hex; % is the binary marker (#730)");
+    {
+        Machine mh;
+        Monitor monh(mh);
+        std::ostringstream sh;
+        monh.exec("BOARDS ADD 8080 cpu0", sh);
+        monh.exec("BOARDS ADD memory mem0", sh);
+        monh.exec("SET mem0 fill=zero", sh);
+        monh.exec("REGION ADD mem0 type=ram at=0 size=4K", sh);
+        monh.exec("BOARDS ADD fp fp0", sh);
+
+        auto runHex = [&](const char* line) {
+            std::ostringstream o;
+            monh.exec(line, o);
+            return o.str();
+        };
+
+        // The address 0B10 used to be read as binary 10, so the byte went to 0002
+        // and the command said nothing.
+        runHex("DEPOSIT 0B10 AA");
+        CHECK(mh.bus.peek(0x0B10) == 0xAA, "DEPOSIT 0B10 AA writes at 0B10");
+        CHECK(mh.bus.peek(0x0002) == 0x00, "and leaves 0002 alone");
+
+        // The byte 0B, as a listing prints it, used to have no digits.
+        std::string d = runHex("DEPOSIT 100 0B %1010");
+        CHECK(d.find("no digits") == std::string::npos, "DEPOSIT 100 0B is accepted");
+        CHECK(mh.bus.peek(0x0100) == 0x0B, "and deposits 0B");
+        CHECK(mh.bus.peek(0x0101) == 0x0A, "%1010 is binary in a hex field");
+
+        // The sense switches are a hex setting: one binary digit a switch is `%`.
+        runHex("SET fp0 sense=%10001110");
+        CHECK(runHex("SHOW fp0").find("0x8E") != std::string::npos, "sense=%10001110 is 8E");
+        std::string r = runHex("SET fp0 sense=0b10001110");
+        CHECK(r.find("sense must be") != std::string::npos,
+              "sense=0b10001110 is the hex number B10001110, and is refused as out of range");
+        CHECK(runHex("SHOW fp0").find("0x8E") != std::string::npos, "and the switches did not move");
+    }
+
     Machine m2;
     Monitor mon2(m2);
     std::ostringstream s2;

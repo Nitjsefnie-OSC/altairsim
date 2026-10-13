@@ -455,7 +455,8 @@ put the 2SIO at 10. To make the base clear in your own files, use a marker:
 
 - `0x10`, `$10` or `10h` for hex
 - `0o20` or `20q` for octal
-- `0b10000` for binary
+- `%10000` for binary. `0b10000` is binary only in a decimal setting; in a hex setting, `B` is
+  a digit
 - `"#16"` for decimal. The quotes are necessary, because `#` starts a TOML comment
 - a `K` or `M` suffix, which is always a decimal count
 

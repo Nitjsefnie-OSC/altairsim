@@ -94,10 +94,18 @@ bool parseNumber(const std::string& in, long long& out, std::string& err, int ba
         base = 8;
         forcedExplicit = true;
         i += 2;
-    } else if (t.compare(i, 2, "0b") == 0 || t.compare(i, 2, "0B") == 0) {
+    } else if (base != 16 && (t.compare(i, 2, "0b") == 0 || t.compare(i, 2, "0B") == 0)) {
+        // `0b` IS BINARY ONLY WHERE IT CANNOT BE HEX. B is a hex digit, so under a
+        // hex default `0B10` is the address 0B10 and `0B` is the opcode of DCX B --
+        // read as a marker, the first went quietly to 0002 and the second had no
+        // digits (issue #730). `%` below is the binary marker that works everywhere.
         base = 2;
         forcedExplicit = true;
         i += 2;
+    } else if (t[i] == '%') {
+        base = 2;
+        forcedExplicit = true;
+        i += 1;
     } else if (t[i] == '$') {
         base = 16;
         forcedExplicit = true;
