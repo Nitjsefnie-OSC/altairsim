@@ -43,7 +43,6 @@ public:
 
     void power() override;
     void pump() override;
-    bool keepsRealTime() const override;
 
     // SNAPSHOT/RESTORE (DESIGN.md 13): the latch. The port strap is config, and the sound
     // not yet played is the host's.

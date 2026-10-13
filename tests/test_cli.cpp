@@ -2184,113 +2184,53 @@ void test_idle_judgement() {
 }
 
 // ---------------------------------------------------------------------------
-// THE THROTTLE DECISION (cli/monitor.h, shouldPace).
+// THE THROTTLE DECISION: A CRYSTAL IS ALWAYS KEPT (#731).
 //
-// Whether the run loop sleeps to hold the machine to the CPU card's crystal. Extracted
-// pure for the same reason as guestIsWaiting: it was an inline `anyConsole && tty` that
-// nothing could test, and it was WRONG -- a machine whose only line was a socket or a real
-// serial port has no console by that test, so it paced against nothing and ran flat out no
-// matter what clock_hz you set (bug #6, the 13,086%-of-asked measurement).
+// Whether the run loop sleeps to hold the machine to the CPU card's crystal. The answer
+// is the crystal, alone. It used to be a list of observers -- a console on a terminal, a
+// socket or serial line (#6), a speaker that played (#726) -- and a script with a crystal
+// and none of them ran flat out. A test has no terminal, so every RUN here is that script.
 // ---------------------------------------------------------------------------
 void test_should_pace() {
-    SECTION("shouldPace: pace for anything real-time, but never for a script or a free crystal");
+    SECTION("SHOW CLOCK's pacing row has two answers, and the crystal picks one");
 
-    // free() wins over everything: flat out is the default and no line changes that.
-    CHECK(!shouldPace(true,  true,  true,  true,  /*free=*/true), "free-running never throttles, console or not");
-    CHECK(!shouldPace(false, false, false, false, /*free=*/true), "...and a bare machine certainly does not");
+    CHECK(pacingRow(/*free=*/true).rfind("free --", 0) == 0, "no crystal reads free");
+    CHECK(pacingRow(/*free=*/false).rfind("paced --", 0) == 0, "a crystal reads paced");
 
-    // The interactive console: a human at the host keyboard. Needs BOTH the console line
-    // and a host tty.
-    CHECK(shouldPace(true, true, false, false, /*free=*/false), "interactive console + crystal -> pace");
-
-    // A PIPED console -- console line, no tty -- is a script. It has no wall clock to keep
-    // step with, and pacing it would only make `-c` runs and CPU tests slow.
-    CHECK(!shouldPace(true, false, false, false, /*free=*/false),
-          "a piped console is a script, not a clock to match -- stays flat out");
-
-    // THE BUG. A socket someone dialed into, or a real serial port: real-time, but NO
-    // console and NO host tty. This is the case that used to pace against nothing.
-    CHECK(shouldPace(false, false, true, false, /*free=*/false),
-          "a socket/serial line IS real-time -> pace, even with no console and no tty");
-    CHECK(shouldPace(false, true, true, false, /*free=*/false), "...tty or not, a remote line paces");
-
-    // No line of any kind, crystal asked for: a headless CPU-ish run. Nothing to pace for.
-    CHECK(!shouldPace(false, true, false, false, /*free=*/false),
-          "a tty but no line at all -- nothing real-time to keep step with");
-
-    // A SPEAKER THAT PLAYS (#726). Sound is real-time whatever the console is, so a board
-    // that says it is being heard paces a script too -- and still never without a crystal.
-    CHECK(shouldPace(true, false, false, /*realTimeBoard=*/true, /*free=*/false),
-          "a piped console and a speaker that plays -> pace");
-    CHECK(shouldPace(false, false, false, /*realTimeBoard=*/true, /*free=*/false),
-          "no line at all and a speaker that plays -> pace");
-    CHECK(!shouldPace(true, false, false, /*realTimeBoard=*/true, /*free=*/true),
-          "no crystal: nothing to pace to, speaker or not");
-
-    SECTION("SHOW CLOCK's pacing row says what RUN will do, not only whether there is a crystal");
-
-    CHECK(pacingRow(true, true, false, /*free=*/true).rfind("free --", 0) == 0,
-          "no crystal reads free");
-    CHECK(pacingRow(true, true, false, /*free=*/false).rfind("paced --", 0) == 0,
-          "a crystal and a console on a terminal reads paced");
-    CHECK(pacingRow(false, false, true, /*free=*/false).rfind("paced --", 0) == 0,
-          "a crystal and a remote line reads paced");
-    // THE BUG: this said `paced` on a run that took no real time at all.
-    const std::string piped = pacingRow(true, false, false, /*free=*/false);
-    CHECK(piped.rfind("full speed --", 0) == 0 && piped.find("not a terminal") != std::string::npos,
-          "a crystal and a piped console reads full speed, with the reason");
-    CHECK(piped.find("speaker") != std::string::npos, "and names the one thing that paces it");
-
-    SECTION("RUN with no terminal: full speed, but held to the crystal while a speaker plays");
+    SECTION("RUN with no terminal keeps the crystal, and is flat out without one");
     {
-        // An Audio with a device behind it that takes the samples and keeps none.
-        struct HeardAudio : public Audio {
-            int    rate() const override { return 44100; }
-            bool   available() const override { return true; }
-            void   push(Owner, std::span<const int16_t>) override {}
-            size_t queued(Owner) const override { return 1000; }
-        } heard;
-        Audio* const was = Speaker::audio();
-        Speaker::setAudio(&heard);
-
         // 0000: a loop of 73 x 256 passes at 32 T-states, 0.299 s at 2 MHz, then HLT.
-        //       `out` is the two bytes in the middle: OUT 24 writes the Model 6 latch,
-        //       two NOPs write nothing.
-        // 0100: about 4.7 emulated seconds of nothing, then JMP 0000.
-        auto seconds = [&](const char* out, const char* from) {
+        auto run = [&](const char* clockHz, std::string& clockRow) {
             Machine m;
             Monitor mon(m);
             std::ostringstream sink;
             mon.exec("BOARDS ADD 8080 cpu0", sink);
             mon.exec("BOARDS ADD memory mem0", sink);
             mon.exec("REGION ADD mem0 type=ram at=0 size=1K", sink);
-            mon.exec("BOARDS ADD music6 music0", sink);
-            mon.exec("SET cpu0 clock_hz=2000000", sink);
-            mon.exec(std::string("DEPOSIT 0 06 49 3E FC ") + out +
-                         " EE FC 0D C2 04 00 05 C2 04 00 76", sink);
-            mon.exec("DEPOSIT 100 06 06 11 00 00 1B 7A B3 C2 05 01 05 C2 02 01 C3 00 00", sink);
+            mon.exec(std::string("SET cpu0 clock_hz=") + clockHz, sink);
+            mon.exec("DEPOSIT 0 06 49 3E FC 00 00 EE FC 0D C2 04 00 05 C2 04 00 76", sink);
             const auto t0 = std::chrono::steady_clock::now();
-            mon.exec(std::string("RUN ") + from, sink);
+            mon.exec("RUN 0", sink);
             const double s =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             CHECK(m.cpu()->pc() == 0x0011, "precondition: the program ran to its HLT");
+            std::ostringstream show;
+            mon.exec("SHOW CLOCK", show);
+            clockRow = show.str();
             return s;
         };
 
-        const double silent = seconds("00 00", "0");
-        CHECK(silent < 0.15, "a script that plays nothing is not paced, crystal or not");
-
         // A lower bound only: a sleep is never short.
-        const double tone = seconds("D3 24", "0");
-        CHECK(tone >= 0.25, "0.3 s of sound takes 0.3 s: the speaker holds the run to the crystal");
+        std::string row;
+        const double kept = run("2000000", row);
+        CHECK(kept >= 0.25, "0.3 emulated seconds take 0.3 s: a script keeps the crystal");
+        CHECK(row.find("pacing     paced --") != std::string::npos, "and SHOW CLOCK reads paced");
+        CHECK(row.find("full speed") == std::string::npos,
+              "there is no third answer for a run with no terminal");
 
-        // THE RE-BASE. The 4.7 silent seconds went by at full speed and are not owed: the
-        // throttle counts from the first note. Without that this run takes over 5 seconds.
-        const double late = seconds("D3 24", "100");
-        CHECK(late >= 0.25, "the sound at the end is still paced");
-        CHECK(late < 3.0, "and the time before it is not slept off");
-
-        Speaker::setAudio(was);
+        const double flat = run("0", row);
+        CHECK(flat < 0.15, "with no crystal the same run is flat out");
+        CHECK(row.find("pacing     free --") != std::string::npos, "and SHOW CLOCK reads free");
     }
 }
 

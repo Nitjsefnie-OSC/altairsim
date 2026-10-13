@@ -19,11 +19,8 @@
 // SOUND NEEDS A CRYSTAL. The samples are made at one second of sound per EMULATED second.
 // A machine running flat out (Clock::free()) has no fixed relation to real time, so
 // nothing is played then, and status() says why.
-//
-// AND A SPEAKER THAT PLAYS HOLDS THE RUN TO THE CRYSTAL. A crystal alone does not pace a
-// run that has no terminal (shouldPace, cli/monitor.h), and sound at any other speed is
-// not the sound. So playing() is what a board reports from Board::keepsRealTime(), and
-// the run loop paces for as long as it is true (#726).
+// With a crystal every run keeps real time, script or terminal (#731), so the sound
+// is the sound wherever the machine is started from.
 
 #include "host/level_pcm.h"
 
@@ -61,7 +58,7 @@ public:
 
     // Would a slice of time go to the sound device now? A sound service with a device
     // that has not failed, the speaker `wired`, a crystal, and the guest driving it.
-    // This is pump()'s own test, and it is what makes the run loop keep real time.
+    // This is pump()'s own test.
     bool playing(const Clock& clock, bool wired) const;
 
     // Start again from `level` at T-state `now`, with nothing waiting to be rendered:

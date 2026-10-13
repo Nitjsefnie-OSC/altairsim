@@ -78,10 +78,6 @@ public:
     // socket. Once per time slice, never inside a bus cycle (DESIGN.md 7.7).
     void pump();
 
-    // Does any board have something the host observes in real time -- a speaker that
-    // plays (Board::keepsRealTime)?
-    bool keepsRealTime() const;
-
     // Tell every board the operator started (true) or stopped (false) the machine,
     // so a board with a run/stop control lamp -- the front panel's WAIT indicator --
     // can track it. Set by the monitor around a RUN session. NOT the `running` field

@@ -44,8 +44,6 @@ void NewtechMusicBoard::power() {
     spk_.resync(0, level());
 }
 
-bool NewtechMusicBoard::keepsRealTime() const { return clock_ && spk_.playing(*clock_, true); }
-
 void NewtechMusicBoard::pump() {
     if (clock_) spk_.pump(*clock_, true);
 }

@@ -23,15 +23,19 @@ number is decimal, such as `STEP 0b1010`. **A machine file that sets the sense s
 `0b` must change**: `sense = 0b10001110` is now refused as out of range. Write
 `sense = %10001110`.
 
-**A crystal with no terminal: `SHOW CLOCK` and the speaker now agree with the run.** When the
-program is started from a script, with no terminal, a run is at full speed although `clock_hz`
-is set. That is deliberate. But `SHOW CLOCK` read only the crystal and printed `pacing  paced`,
-and a `d7a` or `music6` speaker played on the crystal alone. A machine that played a 60-second
-song from its `startup` list reached its `HLT` in about one second, and all of the song went to
-the sound device in that second. A speaker that plays now holds the run to the crystal, so the
-song takes 60 seconds, and the run is at full speed before the first note and after the last
-one. `SHOW CLOCK` prints `full speed`, with the cause, when a crystal is set and the run will
-not keep it. `HELP RUN` gives the rule.
+**A crystal is now kept on every run, also from a script.** When the program was started from
+a script or a pipe, with no terminal, `RUN` ignored `clock_hz` and ran at full speed. A crystal
+was kept only with a console on a terminal, or a serial line on a socket or a serial port. Thus
+the same machine file kept time when you typed `RUN` and did not when a script did. `SHOW CLOCK`
+read only the crystal and printed `pacing  paced` for a run that took no real time. A machine
+with a `d7a` or `music6` board that played a 60-second song from its `startup` list reached its
+`HLT` in about one second, and all of the song went to the sound device in that second. `RUN`
+now keeps the crystal each time `clock_hz` is not 0: at the prompt, with `-x`, with `-s`, from a
+pipe, and under `--mcp`. The song takes 60 seconds, and `SHOW CLOCK` prints `paced` or `free`.
+**A script that must be fast must change if its machine sets a crystal.** The `sbc200`,
+`sbc200v` and `dazzler` machines set 4 MHz. Start such a script with `SET cpu0 clock_hz=0`, or
+give `-x "SET cpu0 clock_hz=0"` on the command line. A machine with no `clock_hz`, the default,
+is at full speed as before.
 
 **`W` uses text mode for a text file without the `T`.** `W` copies a file from CP/M to the host.
 With no mode, it used binary mode for every file, and wrote every byte of every 128-byte

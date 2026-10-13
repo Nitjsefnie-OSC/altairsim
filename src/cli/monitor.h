@@ -342,25 +342,13 @@ struct SliceWork {
 // from a prompt, and it is the only thing that does.
 bool guestIsWaiting(const SliceWork& w, uint64_t ratio = 32);
 
-// SHOULD THE RUN LOOP THROTTLE to the CPU card's crystal this run?
-//
-// Only if one was asked for (`!free`) AND there is something real-time to keep in step with.
-// An INTERACTIVE console is one such thing -- a human at the host keyboard, which needs both
-// a console line and a host tty. So is a REMOTE line: a socket someone dialed into, or a real
-// serial port, neither of which is the host terminal (`anyRemoteLine`). A PIPED console --
-// a console line but no tty -- is NOT paced: a script has no wall clock to match, and pacing
-// it would only make a `-c` run and the CPU tests slow for nobody's benefit. Gating on the
-// console alone left a socket-or-serial-only machine pacing against nothing (#6).
-//
-// A BOARD CAN BE THE REAL-TIME THING (`realTimeBoard`, Machine::keepsRealTime): a speaker
-// that plays. Sound has no meaning at any speed but real time, so a piped run is paced for
-// as long as a speaker plays and is flat out before and after (#726).
-bool shouldPace(bool anyConsole, bool tty, bool anyRemoteLine, bool realTimeBoard, bool free);
-
-// SHOW CLOCK's `pacing` row: what RUN will do with this machine, from the same inputs.
-// A crystal with no terminal and no remote line is NOT paced, and the row says so; it
-// used to read free() alone and say `paced` on a run that took no real time (#726).
-std::string pacingRow(bool anyConsole, bool tty, bool anyRemoteLine, bool free);
+// SHOW CLOCK's `pacing` row. A CRYSTAL IS ALWAYS KEPT (#731): a run is paced when the CPU
+// card has one (`!free`) and flat out when it has not, from a terminal, a pipe, `-x`, `-s`
+// and `--mcp` alike. So there are two rows and the crystal alone picks one. The run loop
+// used to keep a crystal only for an observer (a terminal, a remote line, a speaker that
+// played), and the row had a third answer for the script that had none; runMachine has
+// the history.
+std::string pacingRow(bool free);
 
 // MAY THE RUN LOOP NAP at an idle prompt this run?
 //
