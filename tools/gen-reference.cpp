@@ -578,6 +578,7 @@ void cheatsheet(const std::string& dir) {
          "                     it are relative to the script's folder.\n"
          "  -x, --exec <cmd>   run one monitor command (repeatable), then exit.\n"
          "  -i, --interactive  after --script/--exec, stay in the monitor.\n"
+         "                     -s, -x and -i cannot be used with --mcp.\n"
          "      --mcp          MCP server on stdio.\n"
          "      --mirror <sink>  with --mcp: mirror the console so a person can watch and\n"
          "                     take over. socket:PORT (telnet in), or on macOS and Linux\n"

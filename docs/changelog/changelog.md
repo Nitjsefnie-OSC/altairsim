@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`--mcp` now refuses `-x`, `-s` and `-i`.** With `--mcp` the program started the MCP server
+before it looked at these options, so it accepted them and did nothing with them. `altairsim
+mine.toml --mcp -x "SET cpu0 clock_hz=2000000"` left `clock_hz` as the machine file had it. A
+`-s` script that did not exist gave no `cannot open` message. The exit status was 0 in each
+case. The program now prints `-x cannot be used with --mcp` and stops with exit status 2. An
+MCP client sends the same commands with the `monitor` tool.
+
 **A hex number that starts with `0B` is now read as hex. Binary is written `%1010`.** The number
 parser took `0b` as the binary marker before it looked at the base of the field. In a hex field
 `B` is a digit, so two commands were wrong. `DE 0B10 AA` wrote `AA` to address `0002`, binary

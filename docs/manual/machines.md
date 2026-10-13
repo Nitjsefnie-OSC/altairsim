@@ -27,7 +27,7 @@ options before the machine: `altairsim mine.toml -s check.cmd` and
 | `-s, --script <file>` | run a command script, then exit with its status. Paths in it are relative to the script's folder |
 | `-x, --exec <cmd>` | run one monitor command, then exit. You can give it more than one time |
 | `-i, --interactive` | after `--script` or `--exec`, stay in the monitor |
-| `--mcp` | run as an MCP server on stdio |
+| `--mcp` | run as an MCP server on stdio. You cannot give `-s`, `-x` or `-i` with it |
 | `--mirror <sock>` | with `--mcp`, copy the console to a socket so that a person can watch |
 | `-v, --version` | print the version and exit |
 | `-h, --help` | print this help and exit |

@@ -1215,6 +1215,15 @@ add_test(NAME acceptance-mcp-log
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/mcp-log.cmake)
 set_tests_properties(acceptance-mcp-log PROPERTIES LABELS acceptance TIMEOUT 120)
 
+# `--mcp` refuses -x, -s and -i (#737): it handed the machine to the server before the code
+# that uses them, so they were accepted and dropped with exit status 0.
+add_test(NAME acceptance-mcp-refuses-exec
+         COMMAND ${CMAKE_COMMAND}
+                 -DSIM=$<TARGET_FILE:altairsim>
+                 -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/mcp-refuses-exec.cmake)
+set_tests_properties(acceptance-mcp-refuses-exec PROPERTIES LABELS acceptance TIMEOUT 60)
+
 # `--mirror pty` under --mcp mirrors the console to a pseudo-terminal (#683): the session
 # says where the link is and removes it at exit; on Windows it is refused at startup.
 add_test(NAME acceptance-mcp-mirror-pty
