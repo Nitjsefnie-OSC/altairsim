@@ -258,7 +258,7 @@ value    0x80  0x40  0x20  0x10  0x08  0x04  0x02  0x01
 ```
 
 This makes a period boot procedure easy to follow. "Raise A15 and A11" is `0x80` plus `0x08`, or
-`0b10001000` when you write it to look like the panel.
+`%10001000` when you write it to look like the panel.
 
 **The switches are important.** Period bootstraps read the sense switches to decide **what to
 boot from**: which device, at which port, and at which speed. For this reason, every tape
@@ -266,12 +266,13 @@ machine in this package sets them:
 
 ```
 sense = 0x80        # basic4k: load from the cassette
-sense = 0b10000000  #          the same eight switches, drawn
+sense = %10000000   #          the same eight switches, drawn
 sense = 0x8E        # ps2:     the 2SIO, and interrupts off
-sense = 0b10001110  #          again, one digit per switch
+sense = %10001110   #          again, one digit per switch
 ```
 
-`0b` is not special to this board. It works for any number, at the prompt and in a machine file.
+`%` is not special to this board. It works for any number, at the prompt and in a machine file.
+Do not write `0b` here: the switches are a hex setting, and in a hex number `B` is a digit.
 *The Monitor* gives the full list of prefixes. Binary is easier to read for eight switches.
 However you write the value, `SHOW fp0` shows it in hex.
 

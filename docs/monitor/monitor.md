@@ -174,7 +174,8 @@ A prefix or a suffix sets the base of one number:
 |---|---|
 | `0x`, `$`, or a trailing `h` | hex |
 | `0o`, or a trailing `q` | octal |
-| `0b` | binary. Use it for the front panel's sense switches: one digit for each switch. |
+| `%` | binary. Use it for the front panel's sense switches: one digit for each switch. |
+| `0b` | binary, but only where the number is decimal or octal. Where the number is hex, `B` is a digit: `0B10` is the address 0B10. |
 | a leading `#` | decimal |
 | a `K` or `M` suffix | **always** decimal. `48K` is 49,152. |
 

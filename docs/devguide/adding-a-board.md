@@ -188,7 +188,7 @@ Two details worth stealing:
   on the wire → decimal. Get this wrong and `port = 10` in a machine file quietly means ten
   instead of sixteen. **It declares the class, not a display preference** — the one `radix`
   both reads bare digits and prints them, an operator can force any base of their own
-  (`0x`, `0o`, `0b`, `#`) whatever you chose, and `SET CONSOLE base=octal` does not reach it:
+  (`0x`, `0o`, `%`, `#`) whatever you chose, and `SET CONSOLE base=octal` does not reach it:
   that switches how the *monitor* prints addresses and bytes, while `SHOW` prints every
   property in its own radix. So pick it by which side of the wire the number lives on, and
   never because one base reads better.

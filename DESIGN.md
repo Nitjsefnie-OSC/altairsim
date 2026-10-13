@@ -1457,7 +1457,9 @@ The first two built-ins were honest about having **no CPU card**, because there 
 
 **A single global base was never actually on the table.** `baud=9600` cannot mean 38400, so the rule was always going to bend somewhere — and given that, it bends where it *means* something instead of where it happened to fall. This is also why the alternative ("everything in a command is hex") was rejected: it buys one sentence of simplicity and pays for it with `STEP 20` stepping 32 times, silently, forever.
 
-**Overrides work everywhere, in both directions**, because a rule you cannot type your way out of is a trap: `0x20` / `$20` / `20h` force hex, `#32` forces decimal, `0b1010` is binary, `1_000` is spacing.
+**Overrides work everywhere, in both directions**, because a rule you cannot type your way out of is a trap: `0x20` / `$20` / `20h` force hex, `#32` forces decimal, `%1010` forces binary, `1_000` is spacing.
+
+**`0b` is binary only where it cannot be hex** (issue #730). `B` is a hex digit, so under a hex default `0B10` is the address `0B10` and `0B` is the opcode of `DCX B`, as every listing prints it. The parser used to take the marker first, whatever the default: `DE 0B10 AA` wrote to `0002` and said nothing, and `DE 100 0B` had no digits. The first is exactly the silent failure this section exists to prevent. So a hex default reads `0B…` as hex, `0b1010` keeps its meaning under a decimal or an octal default, where nothing else can claim it, and `%` is the binary marker that works everywhere, as `$` does for hex. The cost is accepted: `0b1` in a hex field is now `B1`, and a sense-switch value is written `%10001110`.
 
 **A `K`/`M` suffix is always behind a decimal number** (Patrick) — `10K` is 10,240, never 16K, which is why in fifty years nobody has had to ask. The suffix therefore carries its own base and overrides the caller's default. `0x10K` demands hex *and* a suffix that is decimal by definition; there is no right answer, so **it is rejected rather than guessed at**.
 
