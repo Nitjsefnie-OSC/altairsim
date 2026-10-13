@@ -158,7 +158,21 @@ cmd("R HELLO.TXT")                      # text, host -> CP/M
 cmd("R BIN.DAT")                        # ...and the binary. 256 bytes = 2 whole records
 cmd("R SRC/DEEP.TXT")                   # out of a subdirectory: the CP/M name drops SRC/
 cmd("W BIN.DAT BACKBIN.DAT")            # THE ROUND TRIP. B (the default) = every byte
-cmd("W HELLO.TXT TRIM.TXT T")           # T = stop at the first ^Z, so no padding comes back
+cmd("W HELLO.TXT TRIM.TXT T")           # T = stop at the first ^Z: the tail of the record stays
+
+# NO SWITCH: THE EXTENSION DECIDES (issue #725). .TXT is on W's list of text extensions, so
+# this comes back trimmed with nothing typed after the name. Then the two cases where a
+# switch is given, and it wins over the extension in both directions.
+cmd("W HELLO.TXT AUTO.TXT")             # text, by extension
+cmd("W HELLO.TXT PAD.TXT B")            # B on a text extension: the whole record comes back
+cmd("W BIN.DAT CUT.DAT T")              # T on a binary extension: cut at the 1AH
+
+# A WILDCARD CHOOSES FOR EACH FILE. Three CP/M files that exist only under these names, so
+# the host has no MIX.* until W writes them: two with text extensions and one without.
+cmd("R HELLO.TXT MIX.Z80")
+cmd("R HELLO.TXT MIX.SYM")
+cmd("R BIN.DAT MIX.DAT")
+cmd("W MIX.*")
 cmd("R ../SECRET.TXT")                  # THE SANDBOX, through the whole stack
 cmd("R SP*.TXT")                        # a wildcard: the ONLY way a space reaches R
 cmd("W SPACED1.TXT SPBACK.TXT T")       # ...and the CCP can name what R stored
@@ -174,11 +188,11 @@ endforeach()
 
 if(MODE STREQUAL build)
   # ...and in build mode, the OTHER two artifacts as well, so all nine are pinned. These
-  # are text, so T trims the ^Z padding CP/M records carry -- a .PRN full of ^Z would be a
-  # poor thing to keep in a diff.
+  # are text, and W knows .HEX and .PRN are: with no switch it stops at the ^Z that ends
+  # each. The compare against the committed files below fails on a single byte past it.
   foreach(u R W HDIR)
-    cmd("W ${u}.HEX ${u}.HEX T")
-    cmd("W ${u}.PRN ${u}.PRN T")
+    cmd("W ${u}.HEX")
+    cmd("W ${u}.PRN")
   endforeach()
 endif()
 
@@ -374,15 +388,80 @@ if(NOT orig STREQUAL back)
     "  sent: ${orig}\n  got : ${back}")
 endif()
 
-# T MODE, and what it is for. HELLO.TXT is 33 bytes; CP/M stored it in one 128-byte record
-# padded with ^Z, because CP/M keeps no byte count anywhere. B brings all 128 back. T stops
-# at the first ^Z, so the file comes back the length it started.
+# T MODE, and what it is for. HELLO.TXT is 33 bytes; it is on the disk as one 128-byte record,
+# because CP/M keeps no byte count anywhere, and R filled the rest of that record with ^Z.
+# B brings all 128 back. T stops at the first ^Z, so the file comes back the length it started.
 file(SIZE "${work}/host/TRIM.TXT" trimsz)
 file(SIZE "${work}/host/HELLO.TXT" origsz)
 if(NOT trimsz EQUAL origsz)
   message(FATAL_ERROR
-    "hostbridge(${MODE}): `W ... T` did not trim the ^Z padding. HELLO.TXT is ${origsz} "
+    "hostbridge(${MODE}): `W ... T` did not stop at the first ^Z. HELLO.TXT is ${origsz} "
     "bytes and came back as ${trimsz}.")
+endif()
+
+# NO SWITCH, AND THE EXTENSION DECIDED (issue #725). The sizes are the proof; the message is
+# what makes the choice visible to the person at the terminal, so both are checked.
+file(SIZE "${work}/host/AUTO.TXT" autosz)
+if(NOT autosz EQUAL origsz)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W HELLO.TXT AUTO.TXT` did not use text mode for a .TXT file. "
+    "HELLO.TXT is ${origsz} bytes and came back as ${autosz}.")
+endif()
+want_ran("W: HELLO.TXT -> AUTO.TXT (text, by extension)"
+         "W did not say that the extension chose text mode")
+
+# ...and it says so ONLY then. A file that is not on the list, and a file the user gave a
+# switch for, print the line they always printed.
+foreach(quiet "W: BIN.DAT -> BACKBIN.DAT" "W: HELLO.TXT -> TRIM.TXT" "W: HELLO.TXT -> PAD.TXT"
+              "W: BIN.DAT -> CUT.DAT")
+  want_ran("${quiet}" "W did not copy this file at all")
+  string(FIND "${ran}" "${quiet} (text, by extension)" hit)
+  if(NOT hit LESS 0)
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `${quiet}` claims the extension chose text mode, and it did "
+      "not: the extension is not on the list, or a switch was given.\n--- what ran ---\n${ran}")
+  endif()
+endforeach()
+
+# A SWITCH WINS OVER THE EXTENSION, BOTH WAYS. B on a .TXT keeps the whole record. T on a
+# .DAT stops at the 1AH, which in this fixture is byte 26 because the bytes count up from 00.
+file(SIZE "${work}/host/PAD.TXT" padsz)
+if(NOT padsz EQUAL 128)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W HELLO.TXT PAD.TXT B` did not copy the whole record. The switch "
+    "must win over the extension; ${padsz} bytes came back and one record is 128.")
+endif()
+file(SIZE "${work}/host/CUT.DAT" cutsz)
+if(NOT cutsz EQUAL 26)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W BIN.DAT CUT.DAT T` did not stop at the 1AH. The switch must "
+    "win over the extension; ${cutsz} bytes came back and the 1AH is byte 26.")
+endif()
+
+# A WILDCARD CHOSE FOR EACH FILE. One `W MIX.*`, two text files and a binary: the text ones
+# are trimmed, and the binary -- 1AH and all -- is whole.
+foreach(ext Z80 SYM)
+  if(NOT EXISTS "${work}/host/MIX.${ext}")
+    message(FATAL_ERROR "hostbridge(${MODE}): `W MIX.*` did not copy MIX.${ext} out.\n${ran}")
+  endif()
+  file(SIZE "${work}/host/MIX.${ext}" mixsz)
+  if(NOT mixsz EQUAL origsz)
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `W MIX.*` did not use text mode for MIX.${ext}. It holds "
+      "HELLO.TXT, ${origsz} bytes, and came back as ${mixsz}.")
+  endif()
+  want_ran("W: MIX.${ext} -> MIX.${ext} (text, by extension)"
+           "W did not say that the extension chose text mode for a wildcard match")
+endforeach()
+if(NOT EXISTS "${work}/host/MIX.DAT")
+  message(FATAL_ERROR "hostbridge(${MODE}): `W MIX.*` did not copy MIX.DAT out.\n${ran}")
+endif()
+file(READ "${work}/host/MIX.DAT" mixbin HEX)
+if(NOT mixbin STREQUAL orig)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W MIX.*` DAMAGED THE BINARY FILE IN THE SET.\n"
+    "  MIX.DAT is not a text extension and must come back byte for byte.\n"
+    "  sent: ${orig}\n  got : ${mixbin}")
 endif()
 
 # ---------------------------------------------------------------------------

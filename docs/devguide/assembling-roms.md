@@ -64,8 +64,8 @@ For one module at origin `F000`:
 R MON.ASM MON.ASM T           ; host -> CP/M  (T = text: CRLF, trims trailing ^Z)
 M80 MON,MON=MON.ASM           ; -> MON.REL + MON.PRN   (objfile,lstfile=srcfile)
 L80 /P:F000,MON,MON/N/X/E     ; -> MON.HEX
-W MON.HEX MON.HEX T           ; CP/M -> host
-W MON.PRN MON.PRN T
+W MON.HEX                     ; CP/M -> host  (.HEX and .PRN are text by extension)
+W MON.PRN
 ```
 
 The L80 switches, in the order they must appear:

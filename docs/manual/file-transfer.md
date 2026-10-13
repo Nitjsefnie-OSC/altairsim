@@ -72,31 +72,59 @@ instead of the automatic name.
 ```
 A>W GAME.COM
 A>W GAME.COM game.com
-A>W NOTES.TXT notes.txt T
+A>W NOTES.TXT
+A>W *.*
 ```
 
-## `W` uses **B** by default
+Wildcards work. A second argument gives the name of the file on the host side.
 
-**Binary is the default.** `W` writes **every byte of every record**. It examines nothing,
-removes nothing and guesses nothing. A `.COM` file arrives unchanged, and it runs.
+## `W` and text files: **B** and **T**
 
-There is a cost, and you can see it. **A text file arrives with up to 127 extra `Ctrl-Z` bytes**
-at its end. CP/M stores files in 128-byte records and fills the last record. In binary mode, `W`
-does not know which of those bytes you wanted, so it writes them all. Your editor shows them.
-Remove them, or use `T`.
+CP/M stores a file in 128-byte records and does not keep its length in bytes. A text file ends
+at the first `Ctrl-Z` (byte `1Ah`). CP/M does not fill the remainder of the last record. The
+program that wrote the file decides what is there: some programs fill it with `Ctrl-Z`, and
+some leave the bytes that were in their buffer. Thus `W` has two modes:
 
-**`T` (text) stops at the first `Ctrl-Z`.** You get clean text, at the correct length.
-
-This is why `T` is not the default: **a binary file that contains the byte `1Ah` comes back
-TRUNCATED.** Byte `1Ah` is `Ctrl-Z`. It is an ordinary byte in a `.COM` file (the `LDAX D`
-instruction). In text mode, the transfer stops at the first one, without a message, and you get
-a file with the correct name and the wrong length. A text file with some extra bytes is better
-than half a program that looks complete.
-
-| Mode | What it does | Costs you |
+| Mode | What it does | Use it for |
 |---|---|---|
-| **`B`** (default) | Every byte. | Up to 127 `Ctrl-Z` bytes on a text file. |
-| `T` | Stops at the first `Ctrl-Z`. | **Truncates any binary containing `1Ah`.** |
+| `B` (binary) | Writes every byte of every record. | A program or data. A `.COM` file arrives unchanged, and it runs. |
+| `T` (text) | Stops at the first `Ctrl-Z`. | Text. The file arrives at its correct length. |
+
+**When you give no mode, `W` chooses from the extension of the CP/M file.** These extensions
+are text:
+
+`ASM` `MAC` `Z80` `HEX` `PRN` `LST` `SYM` `INC` `SUB` `TXT`
+
+Each other extension is binary, and `.COM` is one of them. When `W` chooses text mode, it tells
+you:
+
+```
+A>W MON.HEX
+W: MON.HEX -> MON.HEX (text, by extension)
+3 records, 345 bytes
+```
+
+In a wildcard copy, `W` chooses for each file. `W *.*` brings back the source files as clean
+text and the programs complete, in one command.
+
+**A mode that you type is always used.** Put `B` or `T` after the names:
+
+```
+A>W NOTES.DOC notes.doc T
+A>W LISTING.PRN B
+```
+
+`.BAS` and `.DOC` are not in the list, because these files are not always text. MBASIC saves a
+program as tokens unless you tell it to save ASCII, and a word processor file can contain the
+byte `1Ah`. If you know that such a file is text, type `T`.
+
+Each mode has a cost when it is used on the wrong file:
+
+- **`B` on a text file** gives you the remainder of the last record at the end: the `Ctrl-Z`,
+  and up to 126 bytes after it that can be `Ctrl-Z` or old data. Your editor shows them.
+- **`T` on a binary file that contains the byte `1Ah` TRUNCATES it.** Byte `1Ah` is an ordinary
+  byte in a `.COM` file (the `LDAX D` instruction). The transfer stops at the first one, and you
+  get a file with the correct name and the wrong length.
 
 ## The sandbox
 

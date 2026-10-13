@@ -20,10 +20,13 @@ byte. For this reason, the file must be correct for CP/M before you send it.
 3. **Give the file an 8.3 name in upper case.** CP/M has eight characters for the name and
    three for the extension. `R` changes a longer host name: `my-notes(2).txt` becomes
    `MY-NOTES.TXT`. Give the name that you want as the second argument: `R my-notes(2).txt NOTES.TXT`.
-4. **Expect Ctrl-Z at the end of a file that comes back.** CP/M stores files in 128-byte
-   records and fills the last record with Ctrl-Z (`1A`). `W NAME.TXT NAME.TXT T` stops at the
-   first Ctrl-Z, and the host file is clean text. Without the `T`, the host file has up to
-   127 `1A` bytes at its end.
+4. **Know which files come back with extra bytes at the end.** CP/M stores files in 128-byte
+   records. A text file ends at the first Ctrl-Z (`1A`). CP/M does not fill the remainder of
+   the last record: the bytes after that Ctrl-Z can be more `1A` or old data. For the
+   extensions `ASM` `MAC` `Z80` `HEX` `PRN` `LST` `SYM` `INC` `SUB` `TXT`, `W NAME.TXT` stops
+   at the first Ctrl-Z, and the host file is clean text. For a text file with another
+   extension, such as `.BAS`, add the `T`: `W PROG.BAS PROG.BAS T`. Without it, the host file
+   has up to 127 extra bytes at its end.
 
 ## Check and correct the line ends on the host
 

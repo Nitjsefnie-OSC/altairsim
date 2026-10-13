@@ -12,6 +12,18 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`W` uses text mode for a text file without the `T`.** `W` copies a file from CP/M to the host.
+With no mode, it used binary mode for every file, and wrote every byte of every 128-byte
+record. A text file ends at a `Ctrl-Z`, and the remainder of its last record holds more
+`Ctrl-Z` bytes or old data. Thus `W MON.HEX` put up to 127 bytes that are not part of the hex
+file after its last line on the host, unless you typed `T`. `W` now
+chooses the mode from the extension of the CP/M file when you give none. `ASM` `MAC` `Z80` `HEX`
+`PRN` `LST` `SYM` `INC` `SUB` and `TXT` are text, and each other extension, `COM` included, is
+binary. When `W` chooses text, it prints `(text, by extension)` after the file names. A wildcard
+chooses for each file, so `W *.*` copies source files and programs correctly in one command. A
+`B` or `T` that you type is always used. The utility is on the CP/M disks in `examples/`, and
+its usage text shows version 1.2.
+
 **The manual shows how to run the SSM PB1 routines from the SSM 8080 monitor.** SSM's EPROM
 programmer routines end with a jump to that monitor at `F021`, and the check routines print
 `P` or `F` through it. The `pb1` section of the boards chapter used a breakpoint at `F021`

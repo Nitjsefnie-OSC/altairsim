@@ -2,7 +2,7 @@
 ; W.COM -- copy a file from CP/M out to the HOST.
 ;
 ;       W <cpmfile> [hostfile] [B|T]
-;       W <pattern>                     e.g.  W *.ASM     W B:*.*
+;       W <pattern> [B|T]               e.g.  W *.ASM     W B:*.*
 ;
 ; Part of the altairsim Host Bridge (src/boards/hostbridge.h,
 ; docs/boards/hostbridge.md). Assemble it INSIDE the machine:
@@ -24,26 +24,42 @@
 ;
 ; AND BDOS CLOBBERS EVERY REGISTER (A,B,C,D,E,H,L -- only SP survives).
 ;-----------------------------------------------------------------------
-; B OR T, AND B IS THE DEFAULT. THAT IS DELIBERATE.
+; B OR T -- AND WITH NEITHER, THE EXTENSION DECIDES.
 ;
 ; CP/M stores whole 128-byte records and keeps NO BYTE COUNT anywhere, so a
-; file's true length is simply not recorded: the last record is padded, by
-; convention with ^Z. Coming back out to the host, those pad bytes are
-; indistinguishable from real data -- ONLY THE HUMAN KNOWS whether the file
-; was text.
+; file's true length is simply not recorded. A text file marks its own end
+; with a ^Z, by convention, and CP/M ITSELF PADS NOTHING: what follows that
+; ^Z in the last record is whatever the program that wrote the file left in
+; its buffer. Some fill the record with ^Z (our own R does). Some write one
+; ^Z and leave the rest as it was. Coming back out to the host, none of it
+; can be told from real data.
 ;
-;   B (default)  every byte of every record, exactly. A .COM comes out
-;                byte-for-byte identical, and a text file comes out with up
-;                to 127 trailing ^Z bytes -- which every editor tolerates.
+;   B            every byte of every record, exactly. A .COM comes out
+;                byte-for-byte identical, and a text file comes out with
+;                the rest of its last record on the end: the ^Z, and up to
+;                126 bytes of whatever followed it.
 ;
 ;   T            stop at the first ^Z. A text file comes out clean, and a
 ;                binary file that happens to contain a 1AH byte comes out
-;                TRUNCATED, which is why this is not the default.
+;                TRUNCATED.
 ;
-; WE DO NOT GUESS FROM THE EXTENSION. Keeping a list of names that "are
-; really binary" (.COM, .REL, .DAT...) only moves the damage to the file
-; that is not on it: one 1AH and it is silently truncated. Defaulting to
-; EXACT costs a few pad bytes. Defaulting to text costs your data.
+; WITH NO SWITCH, W LOOKS AT THE EXTENSION OF THE CP/M NAME (see PICKMD):
+;
+;   ASM MAC Z80 HEX PRN LST SYM INC SUB TXT     -> T, and W says so
+;   anything else                               -> B
+;
+; THE LIST NAMES TEXT, NOT BINARY, AND THAT IS THE WHOLE POINT. A list of
+; names that "are really binary" (.COM, .REL, .DAT...) truncates the file
+; that is not on it: one 1AH and it is cut short. This list is the other way
+; round. A file that is not on it is copied exactly, so the worst a missing
+; name costs is the tail of one record. Each name on it is a source, listing
+; or hex file, which a ^Z ends by definition.
+;
+; .BAS AND .DOC ARE LEFT OFF ON PURPOSE. MBASIC saves tokens unless it is
+; told otherwise, and a word processor's file can hold a 1AH.
+;
+; A SWITCH ALWAYS WINS, and W prints "(text, by extension)" on each file
+; where the extension made the choice -- so it is never a silent one.
 ;-----------------------------------------------------------------------
 
         ORG     100H
@@ -196,7 +212,9 @@ EXIT:   JMP     0               ; warm boot
 ; The FCB is already built -- by INIFCB from the command line, or by SETFCB
 ; from a directory entry. HNAME is the host name, or empty to derive one.
 ;=======================================================================
-ONEF:   LXI     H,0
+ONEF:   CALL    PICKMD          ; B or T for THIS file -- a wildcard asks again
+                                ; for each match
+        LXI     H,0
         SHLD    RECS
 
 ; A FRESH FCB FOR EVERY OPEN. Extent, the two system bytes, the record
@@ -298,7 +316,7 @@ CP0:    LXI     D,FCB
 
 CP1:    MOV     A,M
         MOV     C,A             ; stash the byte -- LDA is about to eat A
-        LDA     MODE
+        LDA     XMODE
         CPI     'T'
         MOV     A,C             ; ...and give it back
         JNZ     CP2             ; binary: send everything, always
@@ -326,6 +344,55 @@ CPEND:  XRA     A               ; ...which also CLEARS CARRY: success
 
 CPERR:  CALL    REPERR
         STC
+        RET
+
+;-----------------------------------------------------------------------
+; PICKMD -- set XMODE, the mode for the file the FCB names.
+;
+; A switch on the command line settles it. With no switch, the extension in
+; the FCB is looked up in EXTTAB: on the list is T, and AUTO is set so
+; SAYXFR can say so; off the list is B.
+;
+; THE ATTRIBUTE BITS ARE MASKED OFF. CP/M keeps R/O, SYSTEM and ARCHIVE in
+; the high bit of the three extension characters, so a read-only FOO.ASM
+; has an 0C1H where its 'A' should be. STASH strips them for a wildcard;
+; the FCB the CCP built for a single file never had them. The mask costs
+; one instruction and means this routine does not care which it was given.
+;-----------------------------------------------------------------------
+PICKMD: XRA     A
+        STA     AUTO
+        LDA     MODSET
+        ORA     A
+        LDA     MODE            ; (LDA leaves the flags alone)
+        JNZ     PM9             ; the user said: that is the end of it
+
+        LXI     D,EXTTAB
+PM1:    LDAX    D
+        ORA     A
+        MVI     A,'B'           ; (so does MVI)
+        JZ      PM9             ; off the end of the table: every byte
+
+        LXI     H,FCB+9         ; the three extension characters
+        MVI     B,3
+        MVI     C,0             ; C collects every bit that differs
+PM2:    LDAX    D
+        XRA     M
+        ANI     7FH
+        ORA     C
+        MOV     C,A
+        INX     H
+        INX     D
+        DCR     B
+        JNZ     PM2             ; all three, always: DE must end on the next
+                                ; entry whether this one matched or not
+        MOV     A,C
+        ORA     A
+        JNZ     PM1
+
+        MVI     A,1
+        STA     AUTO
+        MVI     A,'T'
+PM9:    STA     XMODE
         RET
 
 ;=======================================================================
@@ -606,6 +673,7 @@ RPE2:   LXI     D,MCRLF
 ;
 ;       W FOO.TXT                 CNAME=FOO.TXT
 ;       W FOO.TXT T               CNAME=FOO.TXT              MODE=T
+;       W *.* B                   a wildcard takes the switch too
 ;       W FOO.TXT BAR.TXT         CNAME=FOO.TXT HNAME=BAR.TXT
 ;       W FOO.TXT SRC/BAR.TXT T   ...and a subdirectory of hostdir
 ;
@@ -681,7 +749,9 @@ SETMOD: MOV     A,M
         CPI     'T'
         JNZ     EBADSW
 SM1:    STA     MODE
-        RET
+        MVI     A,1
+        STA     MODSET          ; a switch was given: PICKMD does not look
+        RET                     ; at the extension
 
 CPYHN:  LXI     D,HNAME
 CH1:    MOV     A,M
@@ -739,7 +809,13 @@ SAYXFR: LXI     D,MPFX
         CALL    BDOS
         LXI     H,HNAME
         CALL    PSTR
-        LXI     D,MCRLF
+        LDA     AUTO
+        ORA     A
+        JZ      SX1
+        LXI     D,MBYEXT        ; " (text, by extension)"
+        MVI     C,PRSTR
+        CALL    BDOS
+SX1:    LXI     D,MCRLF
         MVI     C,PRSTR
         JMP     BDOS
 
@@ -965,33 +1041,48 @@ ENOCPM: LXI     D,MENOCPM
 ;=======================================================================
 IDWANT: DB      'ALTAIRSIM HOSTBRIDGE',0
 
-MODE:   DB      'B'             ; B = every byte, exactly. See the top.
+MODE:   DB      'B'             ; the switch, when one was given
+MODSET: DB      0               ; 1 = a switch was given. A DB, not a DS: it
+                                ; must be 0 when we start, and a DS is not
+                                ; in the .COM file at all
+
+; The extensions that mean TEXT when no switch is given. Three characters
+; each, and a 0 ends the table. See the top for why it lists text and not
+; binary, and why .BAS and .DOC are not here.
+EXTTAB: DB      'ASM','MAC','Z80','HEX','PRN'
+        DB      'LST','SYM','INC','SUB','TXT'
+        DB      0
 DRIVE:  DB      0
 
 MNOHB:  DB      CR,LF,'W: no host bridge at B0H.',CR,LF
         DB      'This machine has no `hostbridge` card in it, or it is at'
         DB      ' another port.',CR,LF,'$'
 
-MUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.1)',CR,LF,CR,LF
+MUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.2)',CR,LF,CR,LF
         DB      '   W <cpmfile> [hostfile] [B|T]',CR,LF
-        DB      '   W <pattern>',CR,LF,CR,LF
+        DB      '   W <pattern> [B|T]',CR,LF,CR,LF
         DB      'Examples',CR,LF
         DB      '   W FOO.ASM            CP/M FOO.ASM -> host FOO.ASM',CR,LF
         DB      '   W FOO.ASM SRC/F.ASM  ...into a subdirectory of hostdir',CR,LF
-        DB      '   W FOO.ASM T          stop at the first ^Z -- for TEXT',CR,LF
-        DB      '   W *.ASM              every match, each under its own name'
+        DB      '   W FOO.DAT T          stop at the first ^Z',CR,LF
+        DB      '   W *.*                every match, each under its own name'
         DB      CR,LF,CR,LF
-        DB      'B (the default) copies every byte of every record, so a .COM'
-        DB      ' survives',CR,LF
-        DB      'the trip and a text file arrives padded with ^Z. T stops at'
-        DB      ' the first',CR,LF
-        DB      '^Z, which cleans up text and TRUNCATES anything binary.'
+        DB      'B copies every byte of every record, so a text file arrives'
+        DB      ' with',CR,LF
+        DB      'the rest of its last record: a ^Z and whatever follows it.'
+        DB      CR,LF
+        DB      'T stops at the first ^Z, which TRUNCATES anything binary.'
+        DB      CR,LF
+        DB      'With neither, the extension decides. These are text:',CR,LF
+        DB      '   ASM MAC Z80 HEX PRN LST SYM INC SUB TXT',CR,LF
+        DB      'Every other file, a .COM included, is copied byte for byte.'
         DB      CR,LF
         DB      'HDIR lists what is on the host. R copies the other way.'
         DB      CR,LF,'$'
 
 MPFX:   DB      'W: $'
 MARROW: DB      ' -> $'
+MBYEXT: DB      ' (text, by extension)$'
 MRECS:  DB      ' records, $'
 MBYTES: DB      ' bytes',CR,LF,'$'
 MERR:   DB      'W: $'
@@ -1000,8 +1091,8 @@ MCRLF:  DB      CR,LF,'$'
 MEWILD: DB      'W: a wildcard copies each file under its own name -- so a'
         DB      ' second name',CR,LF,'   cannot mean anything. Drop it.'
         DB      CR,LF,'$'
-MEBADSW:DB      'W: the switch is B (every byte, the default) or T (stop at'
-        DB      ' the first ^Z).',CR,LF,'$'
+MEBADSW:DB      'W: the switch is B (every byte) or T (stop at the first ^Z).'
+        DB      CR,LF,'$'
 MENOMAT:DB      'W: no CP/M file matches.',CR,LF,'$'
 METOOM: DB      'W: more than 64 files match. Narrow the pattern.',CR,LF
         DB      '   Nothing was copied -- half a backup is worse than none.'
@@ -1014,6 +1105,8 @@ MENOCPM:DB      'W: no such CP/M file.',CR,LF,'$'
 ; time. BDOS SEARCH also uses it, for the directory sector it found.
 BUF:    DS      RECLEN
 
+XMODE:  DS      1               ; B or T for the file in flight -- see PICKMD
+AUTO:   DS      1               ; 1 = the extension chose T, so SAYXFR says so
 RECS:   DS      2               ; records read from CP/M
 BYTES:  DS      3               ; and the true byte count, 24 bits: even the card's
                                 ; 8 MB ceiling needs more than RECS's 16

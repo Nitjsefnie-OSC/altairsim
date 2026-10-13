@@ -28,7 +28,7 @@ run {input: "ASM FOO\r", until: "\nA>", timeout_ms: 120000} # makes FOO.HEX and 
 run {input: "LOAD FOO\r", until: "\nA>"}                    # makes FOO.COM
 run {input: "FOO\r", until: "\nA>"}                         # run it
 run {input: "W FOO.COM\r", until: "\nA>"}                   # CP/M -> host, binary
-run {input: "W FOO.PRN FOO.PRN T\r", until: "\nA>"}         # the listing, as text
+run {input: "W FOO.PRN\r", until: "\nA>"}                   # the listing, as text
 ```
 
 A correct assembly prints the next free address, a `USE FACTOR` line and `END OF ASSEMBLY`,
