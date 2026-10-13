@@ -986,7 +986,7 @@ X7:     CALL    BLK
         XCHG
         MOV     B,M
         INX     H
-        LDAX    B
+        LDAX    D
         CALL    LBYTE
         DCR     B
         JZ      X7

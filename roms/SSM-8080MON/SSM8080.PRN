@@ -1043,7 +1043,7 @@
   05B9'   EB                            XCHG
   05BA'   46                            MOV     B,M
   05BB'   23                            INX     H
-  05BC'   0A                            LDAX    B
+  05BC'   1A                            LDAX    D
   05BD'   CD 0195'                      CALL    LBYTE
   05C0'   05                            DCR     B
   05C1'   CA 05A2'                      JZ      X7

@@ -27,7 +27,7 @@ addresses):
 | VB1 video driver | `SSMVID.ASM` | `F700h` | Console-output and graphics driver for the SSM **VB1** video board. |
 
 Programmed bytes span `F000`–`F7FF` with two small gaps (`F5EE`–`F5FF` and
-`F6EA`–`F6FF`) that read back `FF`. CRC32 of the `FF`-filled 2K image = **`DEB0D584`**
+`F6EA`–`F6FF`) that read back `FF`. CRC32 of the `FF`-filled 2K image = **`27636BB0`**
 (recorded in [`../../docs/roms.md`](../../docs/roms.md) and checked by
 `tests/test_roms.cpp`).
 
@@ -73,6 +73,10 @@ it EQU'd `ADSCS/ADSCR/ADIOB/ADUST` at `F600h` **and** defined them as local labe
 a multiple-definition every assembler rejects. That was the tell that it is really
 **three separate assemblies** — the monitor references the configuration package by
 `EQU`, while the package *defines* those same labels locally. Split into the three
-modules above (and with two OCR typos corrected — `IOTAS`→`IOTAB` and a missing
-colon on `LOAD:`), each assembles clean, and the combined image boots to
-`MONITOR V1.0` with a working command prompt.
+modules above (and with three OCR errors corrected — `IOTAS`→`IOTAB`, a missing
+colon on `LOAD:`, and `LDAX B` for `LDAX D` at `F5BC`), each assembles clean, and the
+combined image boots to `MONITOR V1.0` with a working command prompt.
+
+The third was found by the plain `X` command printing the same value for every register
+(issue #727). The manual's own printed listing, which carries the object bytes, has `1A`
+(`LDAX D`) at `F5BC`; see `reference/SSM 8080 Monitor.md`.

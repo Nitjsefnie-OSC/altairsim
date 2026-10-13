@@ -56,6 +56,14 @@ only. It now also gives a machine file that has the built-in ROM `ssm-8080mon` a
 `io4` console. On that machine you start a routine with the monitor's `G` command, and the
 routine returns to the monitor.
 
+
+**The `X` command of the built-in SSM 8080 monitor (`ssm-8080mon`) now shows the registers.**
+The plain `X` command printed the same value for every register: `A=27 B=27 C=27 … M=8700 P=8700
+S=8700`, after a cold start and after a program had run. The ROM image had `LDAX B` (`0A`)
+at `F5BC` where the monitor's printed listing has `LDAX D` (`1A`). The register dump read the
+byte at the address in BC, which holds the register size and letter, not the address of the saved
+register in DE. The image had been built from an OCR'd copy of the listing. `X` now prints each
+register as the monitor saved it, the same value that `X<reg>` shows. Only that byte changed. The CRC32 of the image is now `27636BB0`.
 ## 1.3.3
 
 **1.3.3 adds the Cromemco Dazzler II, a mirror on a real serial port and a start-up file in your
