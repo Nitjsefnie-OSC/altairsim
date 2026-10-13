@@ -3,9 +3,9 @@
 Source: `SSM8080.ASM` (OCR'd by B. Beech, Apr 2014, from the SSM CB1/CB1A monitor listing).
 Programmer credited in the source: **C.E. Ohme**. Boot banner: `MONITOR V1.0`.
 
-Everything below is traced directly from the command dispatch table and handler code, not
-from an external manual (none of the surviving scans are transcribed online) — treat labels
-for undocumented internal hooks as inferred, not authoritative.
+Everything below is traced from the command dispatch table and handler code. The operator's
+manual (`reference/SSM 8080 Monitor.md` in the source tree) agrees with it on the commands and
+their parameters; treat labels for undocumented internal hooks as inferred, not authoritative.
 
 ---
 
