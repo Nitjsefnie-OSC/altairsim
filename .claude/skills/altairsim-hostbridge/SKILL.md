@@ -21,16 +21,20 @@ W <cpmfile> [hostfile] [B|T]     CP/M -> host
 ```
 run {input: "HDIR *.ASM\r", until: "\nA>"}
 run {input: "R HELLO.ASM\r", until: "\nA>"}          # prints: R: HELLO.ASM -> HELLO.ASM
-run {input: "W HELLO.COM\r", until: "\nA>"}          # binary, the default
-run {input: "W HELLO.PRN HELLO.PRN T\r", until: "\nA>"}   # text
+run {input: "W HELLO.COM\r", until: "\nA>"}          # binary, from the extension
+run {input: "W HELLO.PRN\r", until: "\nA>"}          # text, from the extension
+run {input: "W NOTES.DOC NOTES.DOC T\r", until: "\nA>"}   # text, because you said so
 ```
 
 ## The rules
 
-1. **Use `T` for a text file that comes out, and never for a binary file.** `B` is the
-   default, and it writes every byte of every 128-byte record. A `.COM` file needs `B`. A
-   text file in `B` mode gets up to 127 Ctrl-Z (`1A`) bytes at its end. `T` stops at the
-   first `1A`, which cuts a binary file short with no message.
+1. **`W` chooses text or binary from the extension. Type `B` or `T` only to change that.**
+   `B` writes every byte of every 128-byte record. `T` stops at the first Ctrl-Z (`1A`).
+   With no mode, these extensions are text: `ASM` `MAC` `Z80` `HEX` `PRN` `LST` `SYM` `INC`
+   `SUB` `TXT`. `W` then prints `(text, by extension)` on the transfer line. Each other
+   extension is binary, `.COM`, `.BAS` and `.DOC` included. For a text file with another
+   extension, type `T`, or it gets the remainder of its last record at its end. Never type `T` for a
+   binary file: `T` cuts it short at its first `1A`.
 2. **The guest sees one host folder.** That folder is the sandbox. `R` and `W` take a name
    in that folder or in a folder below it (`R SUB/DEEP.TXT`). The board refuses `..`, an
    absolute path and a drive letter.

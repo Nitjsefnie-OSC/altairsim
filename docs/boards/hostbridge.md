@@ -141,7 +141,7 @@ So the two answer different questions. `configDir_` answers *where does this pat
 
 ```
 R  <hostfile> [cpmfile]         host -> CP/M      R *.ASM     R SRC/FOO.ASM
-W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.TXT T
+W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.DAT T
 HDIR [pattern]                  what is on the host
 ```
 
@@ -153,14 +153,18 @@ No BIOS entry points. No `IN`/`OUT` to a disk controller. No assumption about a 
 
 That is what makes the same `R.COM` work on an 88-DCDD 8″ floppy, an 8 MB image, an 88-MDS minidisk, and any BIOS anybody writes later — and the acceptance test **proves** it rather than asserting it: it builds `R.COM` and `W.COM` on an 8 MB 88-DCDD image, then `LOAD`s the *same hex* on a 5.25″ minidisk behind a **different controller** and round-trips the same bytes.
 
-### `W` defaults to binary
+### `W`: `B`, `T`, and the extension when neither is given
 
-CP/M stores whole 128-byte records and **keeps no byte count anywhere**, so a file's true length is simply not recorded — the last record is padded, by convention with `^Z`. Coming back out, those pad bytes are indistinguishable from data. Only the human knows whether the file was text.
+CP/M stores whole 128-byte records and **keeps no byte count anywhere**, so a file's true length is simply not recorded. A text file marks its own end with a `^Z`, by convention, and **CP/M itself pads nothing**: what follows that `^Z` in the last record is whatever the program that wrote the file left in its buffer. Some fill the record with `^Z` — our own `R` does — and some write one `^Z` and leave the rest as it was. Coming back out, none of it can be told from data.
 
-- **`B` (default)** — every byte of every record, exactly. A `.COM` survives the trip; a text file arrives with up to 127 trailing `^Z`.
-- **`T`** — stop at the first `^Z`. A text file comes back clean; **a binary file containing a `1AH` comes back truncated**, which is why it is not the default.
+- **`B`** — every byte of every record, exactly. A `.COM` survives the trip; a text file arrives with the rest of its last record on the end — the `^Z`, and up to 126 bytes of whatever followed it.
+- **`T`** — stop at the first `^Z`. A text file comes back clean; **a binary file containing a `1AH` comes back truncated**.
 
-`B` is the default because defaulting to exact costs a few pad bytes and defaulting to text costs your data — and because guessing from the extension is the same mistake either way: a `1AH` in a file the guess called text is gone. (Same instinct as the `strip7out` scar.)
+**With no switch, `W` reads the extension of the CP/M name.** `ASM` `MAC` `Z80` `HEX` `PRN` `LST` `SYM` `INC` `SUB` `TXT` are text; everything else, `.COM` included, is binary. A switch always wins. A wildcard chooses for each match, so `W *.*` is correct for a mixed set — which no single switch ever was.
+
+**The list names text, not binary, and that is what makes it safe.** `W` used to refuse to look at the extension at all, and the objection was sound for the list it had in mind: a list of names that "are really binary" truncates the first binary file that is not on it. This list is the other way round. A file that is not on it is copied exactly, so a missing name costs the tail of one record and never data. Every name on it is a source, listing or hex file, which a `^Z` ends by definition. `.BAS` and `.DOC` are left off on purpose: MBASIC saves tokens unless told otherwise, and a word processor's file can hold a `1AH`.
+
+**The choice is never silent.** When the extension picked text, the transfer line says so — `W: FOO.HEX -> FOO.HEX (text, by extension)`. With a switch, or for a binary file, the line is what it always was.
 
 ### 8.3 mapping
 
@@ -177,4 +181,4 @@ The CP/M name defaults to the host name uppercased, with characters CP/M cannot 
 
 - `tests/test_hostdir.cpp` — the sandbox, against a **real** filesystem: `../SECRET.TXT`, `../../etc/passwd`, `/etc/passwd`, `\etc\passwd`, `C:\windows`, and a **symlink pointing out** (both a file and a directory) must each fail `0x03` and touch nothing.
 - `tests/test_hostbridge.cpp` — the protocol, against a `MemHostDir` with `bus.setVerify(true)`: `IDENT`; the stream rule; the enumerator surviving a transfer; an unclosed write discarded; both resets; `readonly`; every error code; and `!decodes(0x30)`, *because that is a floppy controller*.
-- `tests/acceptance/hostbridge.cmake` — the whole chain, on a scratch copy of the image, in two modes. `acceptance-hostbridge` `PIP`s the committed `.HEX` in through the console, `LOAD`s each, and round-trips **256 bytes containing every value from `00` to `FF`** — including `00`, `1A` and `FF`, the three a careless transfer mangles. It runs on the **tracked** floppy, so it needs no download. `acceptance-hostbridge-build` (`slow`) instead `PIP`s the three `.ASM` in and assembles them, proving the sources still build the committed artifacts; 78 KB of source needs the 8 MB image, which is not in git, so that one skips without it. Either way the verdict is read off the host's disk, not the terminal: *"2 records"* means the guest counted to two, not that the bytes are right.
+- `tests/acceptance/hostbridge.cmake` — the whole chain, on a scratch copy of the image, in two modes. `acceptance-hostbridge` `PIP`s the committed `.HEX` in through the console, `LOAD`s each, and round-trips **256 bytes containing every value from `00` to `FF`** — including `00`, `1A` and `FF`, the three a careless transfer mangles. It runs on the **tracked** floppy, so it needs no download. `acceptance-hostbridge-build` (`slow`) instead `PIP`s the three `.ASM` in and assembles them, proving the sources still build the committed artifacts; 78 KB of source needs the 8 MB image, which is not in git, so that one skips without it. Both modes also pin `W`'s choice of mode: a `.TXT` with no switch comes back trimmed, a switch wins over the extension in both directions, and one `W MIX.*` brings back two text files trimmed and a binary whole. Either way the verdict is read off the host's disk, not the terminal: *"2 records"* means the guest counted to two, not that the bytes are right.

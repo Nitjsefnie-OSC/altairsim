@@ -370,7 +370,7 @@ Then, at the CP/M prompt (`cpm/hostbridge/*.ASM`, assembled in the machine with
 ```
 HDIR              what is on the host
 R  FOO.ASM        host -> CP/M          R *.ASM      R SRC/FOO.ASM
-W  FOO.ASM        CP/M -> host          W *.HEX      W FOO.TXT T   (T = trim ^Z)
+W  FOO.ASM        CP/M -> host          W *.HEX      W FOO.DAT T   (T = stop at ^Z)
 ```
 
 ## The reference moved — and this file did not

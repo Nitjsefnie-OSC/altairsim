@@ -5,7 +5,7 @@
 ```
 HDIR [pattern]                  what is on the host, ls -l style: size, date, name
 R  <hostfile> [cpmfile]         host -> CP/M      R *.ASM     R SRC/FOO.ASM
-W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.TXT T
+W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.DAT T
 ```
 
 They talk to the `hostbridge` card (`docs/boards/hostbridge.md`), which is in the default
@@ -42,9 +42,9 @@ A> PIP R.ASM=CON:
    ^Z
 A> ASM R                 -> R.HEX and R.PRN
 A> LOAD R                -> R.COM
-A> W R.COM               -> back out to the host, byte for byte (B is the default)
-A> W R.HEX  R.HEX  T     -> text: T trims the ^Z padding CP/M added
-A> W R.PRN  R.PRN  T
+A> W R.COM               -> back out to the host, byte for byte
+A> W R.HEX               -> text, by extension: it stops at the ^Z
+A> W R.PRN
 ```
 
 ...with `hostdir` pointed at this directory. After the first one is built, `R.COM` itself is
