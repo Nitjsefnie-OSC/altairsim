@@ -325,17 +325,41 @@ void test_disk1a() {
         std::string err;
         setProperty(*k.fdc, "routine", "3", err);
         CHECK(k.m.bus.memRead(0x0001) == 0x31, "routine 3 is the EPROM's fourth 512-byte page");
+        CHECK(k.m.bus.peek(0x0001) == 0x31 && k.m.bus.peek(0x01FF) == 0x3F,
+              "DISASM and EXAMINE see the ROM (peek), without a bus cycle");
         k.out(MOTOR, 0xFF);
         CHECK(k.fdc->romEnabled(), "OUT C3,FF (ROM1.ASM's INIT) leaves the ROM on");
         k.out(MOTOR, 0xFE);
         CHECK(!k.fdc->romEnabled(), "OUT C3,FE switches it off");
         CHECK(k.m.bus.memRead(0x005D) == 0xAA, "...and the write made under it is in the RAM");
+        CHECK(k.m.bus.peek(0x005D) == 0xAA, "...and peek sees the RAM too");
         k.out(MOTOR, 0x01);
         CHECK(!k.fdc->romEnabled(), "D0 = 1 does not turn it back on");
         k.m.reset(Reset::Bus);
         CHECK(k.fdc->romEnabled() && k.m.bus.memRead(0x0001) == 0x31, "RESET turns it back on");
         setProperty(*k.fdc, "boot", "off", err);
         CHECK(k.m.bus.memRead(0x0001) == 0x00, "boot = off: no ROM, RAM answers");
+    }
+
+    SECTION("disk1a: the built-in EPROM");
+    // ---- builtin:DISK1A, the default: routine 0 is the 8080/Z80 loader, 4 the 8086's ----
+    {
+        Machine     m;
+        std::string err;
+        auto* fdc = dynamic_cast<CompuProDisk1aBoard*>(m.add("disk1a", "fd0", err));
+        fdc->power();
+        const uint8_t z80[] = {0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x80, 0x3E, 0xFF, 0xD3, 0xC3};
+        bool ok = true;
+        for (uint16_t a = 0; a < sizeof z80; ++a) {
+            uint8_t v = 0;
+            if (!fdc->peek(a, v) || v != z80[a]) ok = false;
+        }
+        CHECK(ok, "routine 0: NOP x4, LXI SP,8000, MVI A,FF, OUT C3 (motors on)");
+        setProperty(*fdc, "routine", "4", err);
+        uint8_t b0 = 0, b1 = 0;
+        fdc->peek(0, b0);
+        fdc->peek(1, b1);
+        CHECK(b0 == 0xDB && b1 == 0xFD, "routine 4 is the 8086 set: IN FD");
     }
 
     SECTION("disk1a: the motors");

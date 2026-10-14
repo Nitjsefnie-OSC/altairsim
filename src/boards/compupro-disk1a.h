@@ -62,6 +62,7 @@ public:
     uint8_t read(const BusCycle& c) override;
     void    write(const BusCycle& c) override;
     bool    assertsPhantom(const BusCycle& c) const override;
+    bool    peek(uint16_t addr, uint8_t& out) const override;
 
     bool    assertsInt() const override;
     uint8_t assertsVi() const override;

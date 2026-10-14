@@ -1085,6 +1085,16 @@ add_test(NAME acceptance-pb1
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/pb1.cmake)
 set_tests_properties(acceptance-pb1 PROPERTIES LABELS acceptance TIMEOUT 120)
 
+# The CompuPro Disk 1A: boot CompuPro CP/M 2.2LD off a real 8" disk through the board's own
+# boot EPROM, then read and write files on it. If it fails, the board is wrong, not the disk.
+add_test(NAME acceptance-disk1a
+         COMMAND ${CMAKE_COMMAND}
+                 -DSIM=$<TARGET_FILE:altairsim>
+                 -DSRC=${CMAKE_CURRENT_SOURCE_DIR}
+                 -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/disk1a.cmake)
+set_tests_properties(acceptance-disk1a PROPERTIES LABELS acceptance TIMEOUT 200)
+
 # ---------------------------------------------------------------------------
 # THE SSM IO-4: the shipped example machine boots the SSM 8080 monitor on a real IO-4
 # serial console, in the layout a user gets (no repository beside it).

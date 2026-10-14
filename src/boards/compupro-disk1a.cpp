@@ -194,6 +194,14 @@ bool CompuProDisk1aBoard::assertsPhantom(const BusCycle& c) const {
     return c.addr < kRomWindow;
 }
 
+// DISASM and EXAMINE see the ROM while it is on. The ports are never peeked: an IN from the
+// data register takes a result byte.
+bool CompuProDisk1aBoard::peek(uint16_t addr, uint8_t& out) const {
+    if (!enabled_ || !romOn_ || !boot_ || addr >= kRomWindow) return false;
+    out = rom_[(size_t)routine_ * kRomWindow + addr];
+    return true;
+}
+
 uint8_t CompuProDisk1aBoard::read(const BusCycle& c) {
     if (c.type == Cycle::MemRead)
         return rom_[(size_t)routine_ * kRomWindow + (c.addr & (kRomWindow - 1))];

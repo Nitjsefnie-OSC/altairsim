@@ -158,6 +158,9 @@ void test_roms() {
         // boots halfway.
         {"nsboot-sd", 0xE900, 0xE9FF, 256, 0x754E53E5u, true},
         {"nsboot-dd", 0xE800, 0xE8FF, 256, 0x7AAFA134u, true},
+        // The CompuPro Disk 1A's 2764: sixteen 512-byte boot routines in one full 8 KB part.
+        // The board shows one routine at 0000 (`routine`), so the image starts at 0 too.
+        {"disk1a", 0x0000, 0x1FFF, 8192, 0x93DBAEF4u, true},
     };
     for (const auto& c : cases) {
         std::string tag = std::string("builtin:") + c.name;
