@@ -28,8 +28,8 @@ data-separator / write-precompensation timing are omitted except where they set 
 software-visible value. **The FDC chip internals are not re-derived here** — command encoding,
 result phases, status-register semantics, the specify/seek/read/write/format command set are
 the standard µPD765A/8272 model (the Disk 1 manual reprints Intel's *Single/Double Density
-Floppy Disk Controller* data sheet, © Intel 1980, as pages 31–46; there is no separate
-`8272.md` in this tree yet). What this file adds is the **board** wrapper: the port map, the
+Floppy Disk Controller* data sheet, © Intel 1980, as pages 31–46; the chip is distilled in
+[NEC µPD765A FDC](NEC%20uPD765A%20FDC.md)). What this file adds is the **board** wrapper: the port map, the
 board registers, the DMA/boot/`PHANTOM*` mechanism, the switch/jumper configuration, and — the
 point of grouping them — exactly what differs between Disk 1 and Disk 1A.
 
@@ -323,7 +323,7 @@ For a `disk1` / `disk1a` board over a shared 8272/765A FDC core:
 5. **Disk 1A Drive Select Register (port 0 OUT)** and **Motor Control Register (port 3 OUT):** unit/data-rate/F2S/head-load, and 5 motor bits with a ~15 s auto-off timer (reset on any access, defeated by removing J11). Boot-disable = write D0=0 to the motor register.
 6. **Boot EPROM via `PHANTOM*`** at the reset address (256 B page Disk 1, 512 B Disk 1A); needs cooperating RAM that yields to `PHANTOM*`. Disabled by the D0=0 write, re-enabled by reset. The specific boot image is the thing that actually varies; the search/console-select behavior is in §3.
 7. **Config knobs that change guest-visible behavior:** base address, boot-routine number (console selection), DMA priority, wait-state count, and the VI-line the FDC interrupt drives (default VI4*). Everything else (data separator, precompensation) is timing the guest cannot read back — do not model it as hardware the guest can observe.
-8. **FDC internals defer to the µPD765A/8272 data sheet** (reprinted in the Disk 1 manual). If/when an `8272.md` is added, this file points at it exactly as the Cromemco FDC family points at the FD1771 datasheet.
+8. **FDC internals defer to the µPD765A/8272 data sheet**: [NEC µPD765A FDC](NEC%20uPD765A%20FDC.md) (the Disk 1 manual also reprints Intel's 8272 sheet).
 
 ---
 
