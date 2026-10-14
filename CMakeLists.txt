@@ -500,6 +500,9 @@ add_library(altair_core STATIC
   # The CompuPro System Support 1 -- a multifunction card. Being brought up in phases
   # (issue #392); today the OKI MSM5832 real-time clock. See src/boards/compupro-ss1.h.
   src/boards/compupro-ss1.cpp
+  # The CompuPro Disk 1A -- a uPD765A floppy controller with its own DMA and a boot EPROM over
+  # PHANTOM*. See src/boards/compupro-disk1a.h.
+  src/boards/compupro-disk1a.cpp
   # The iCOM FD3712/FD3812 8" floppy -- like the 88-HDSK, a "controller does the work" card
   # (Board directly): two programmed-I/O ports (C0/C1) shift whole sectors, and a boot PROM
   # plus 6810 scratch RAM live in high memory. One superset engine serves both densities.
@@ -848,6 +851,7 @@ add_executable(altair_tests
   tests/test_cadzilla.cpp
   tests/test_versafloppy.cpp
   tests/test_tarbell.cpp
+  tests/test_disk1a.cpp
   tests/test_cromemco-fdc.cpp
   tests/test_spindle.cpp
   tests/test_dcdd.cpp

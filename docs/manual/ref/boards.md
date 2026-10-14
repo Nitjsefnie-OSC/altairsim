@@ -39,6 +39,7 @@ and within a group the boards are in **alphabetical order**.
 | [`16fdc`](#16fdc) | Cromemco 16FDC: floppy controller + console UART, RDOS 2.52 |
 | [`64fdc`](#64fdc) | Cromemco 64FDC: floppy controller + console UART, RDOS 3.12 |
 | [`dcdd`](#dcdd) | MITS 88-DCDD: 8" hard-sector floppy controller |
+| [`disk1a`](#disk1a) | CompuPro Disk 1A: uPD765A floppy controller with DMA |
 | [`dualide`](#dualide) | S100Computers IDE-AB: two CompactFlash sockets for CP/M 3 |
 | [`dualsd`](#dualsd) | S100Computers Dual SD: two microSD sockets for CP/M 3 |
 | [`fdcplus`](#fdcplus) | FarmTek FDC+: serial drive (drive types 6, 7) |
@@ -314,6 +315,33 @@ MITS 88-DCDD: 8" hard-sector floppy, up to 16 drives. Three ports at BASE+0..2. 
 | `port` | int | `0x8` | `0x0` .. `0xFD` | Base address. The board decodes three ports: BASE+0 .. BASE+2 |
 | `drives` | int | `4` | `1` .. `16` | Drives on the daisy chain |
 | `interrupt` | enum | `none` | `none` \| `int` \| `vi0` \| `vi1` \| `vi2` \| `vi3` \| `vi4` \| `vi5` \| `vi6` \| `vi7` | Where the card's interrupt is soldered *(interrupt strap)* |
+
+
+### `disk1a`
+
+CompuPro Disk 1A: an NEC uPD765A floppy controller for 8" and 5.25" drives, single and double density, up to 4 drives. Four ports at BASE+0..3 (default C0): 765 status / drive select, 765 data, board status / DMA address, motor control. All data moves by DMA. Carries a boot EPROM whose selected 512-byte routine answers at 0000 over PHANTOM* until the guest switches it off; any reset turns it back on
+
+**Units:** `drive0` (disk, MOUNT), `drive1` (disk, MOUNT), `drive2` (disk, MOUNT), `drive3` (disk, MOUNT)
+
+#### `[[board.drive]]` — a list you may add
+
+| Key | Kind | Legal | Meaning |
+|---|---|---|---|
+| `unit` | int | `0` .. `3` | Which drive (0..3) |
+| `mount` | string | text | The disk image to put in it. Relative to THIS FILE. |
+| `readonly` | bool | `on` \| `off` | Write-protect the disk. The drive senses it, so the guest is never told *(also `writeprotect`)* |
+
+#### Board properties
+
+| Key | Kind | Default | Legal | Meaning |
+|---|---|---|---|---|
+| `port` | int | `0xC0` | `0x0` .. `0xFC` | Base address (S3-2..7). The board decodes four ports: BASE+0 .. BASE+3 (default C0) |
+| `rom` | string | `builtin:DISK1A` | text | The boot EPROM: builtin:DISK1A (default), or a 2764 image file (Intel HEX, S-records or binary) |
+| `routine` | int | `0` | `0` .. `15` | Boot routine (S1-2..5): the 512-byte page of the EPROM at 0000. 0-3 are 8080/Z80 code |
+| `boot` | bool | `true` | `on` \| `off` | Boot EPROM enable (S3-8). On (default): the ROM answers reads at 0000-01FF over PHANTOM* after a reset. Off: a plain disk controller |
+| `sense_switch` | bool | `true` | `on` \| `off` | S3-1, read in status bit 2. On (default, reads 0): the CompuPro ROM tells the OS to use a System Support 1 console. Off: an Interfacer 3/4 |
+| `motor_timeout` | bool | `true` | `on` \| `off` | On (default): the drive motors stop about 15 seconds after the last access to the board. Off: the motors run all the time |
+| `interrupt` | enum | `vi4` | `none` \| `int` \| `vi0` \| `vi1` \| `vi2` \| `vi3` \| `vi4` \| `vi5` \| `vi6` \| `vi7` | Where the 765's INT goes (J10; CompuPro used vi4) *(interrupt strap)* |
 
 
 ### `dualide`

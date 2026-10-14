@@ -141,6 +141,7 @@ Type the part before the bracket.
 | `16fdc` | Cromemco 16FDC: floppy controller + console UART, RDOS 2.52 |
 | `64fdc` | Cromemco 64FDC: floppy controller + console UART, RDOS 3.12 |
 | `dcdd` | MITS 88-DCDD: 8" hard-sector floppy controller |
+| `disk1a` | CompuPro Disk 1A: uPD765A floppy controller with DMA |
 | `dualide` | S100Computers IDE-AB: two CompactFlash sockets for CP/M 3 |
 | `dualsd` | S100Computers Dual SD: two microSD sockets for CP/M 3 |
 | `fdcplus` | FarmTek FDC+: serial drive (drive types 6, 7) |

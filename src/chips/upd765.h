@@ -128,6 +128,10 @@ public:
     int  pcn(int us) const { return pcn_[(size_t)(us & 3)]; }
     bool nonDma() const { return nd_; }
 
+    // US1/US0 as the last command left them. A board that reads its drive's own lines
+    // (the Disk 1A's ready and index bits) needs to know which drive is on the cable.
+    int  unitSelect() const { return us_; }
+
     void serialize(StateWriter& w) const;
     void deserialize(StateReader& r);
 

@@ -1,5 +1,6 @@
 #include "boards/registry.h"
 
+#include "boards/compupro-disk1a.h"
 #include "boards/compupro-ss1.h"
 #include "boards/scitronics-rtc100.h"
 #include "boards/cromemco-16fdc.h"
@@ -83,6 +84,7 @@ std::vector<BoardType> boardTypes() {
         {"versafloppy", "SD Systems VersaFloppy I/II: WD177x floppy controller", "SD Systems VersaFloppy I/II: WD FD177x soft-sector floppy, up to 4 drives. Eight ports at BASE+0..7 (default 60). variant=vfi (FD1771, single density) | vfii (FD1791, single+double). Boots SDOS with the SBC-200 + DDBIOS"},
         {"tarbell", "Tarbell #1011: single-density floppy controller", "Tarbell #1011: single-density WD FD1771 floppy, up to 4 drives. Eight ports at BASE+0..7 (default F8). Carries a 32-byte boot PROM that shadows 0000 over PHANTOM* -- boots CP/M automatically at reset (bootstrap=on)"},
         {"tarbelldd", "Tarbell #2022: double-density floppy controller", "Tarbell #2022: double-density WD FD1791 floppy (mixed-density media, SD track 0), up to 4 drives. The single-density card's twin with a bitmap OUT-FC latch and a port-FD DMA/ext-addr register. Same 32-byte boot PROM"},
+        {"disk1a", "CompuPro Disk 1A: uPD765A floppy controller with DMA", "CompuPro Disk 1A: an NEC uPD765A floppy controller for 8\" and 5.25\" drives, single and double density, up to 4 drives. Four ports at BASE+0..3 (default C0): 765 status / drive select, 765 data, board status / DMA address, motor control. All data moves by DMA. Carries a boot EPROM whose selected 512-byte routine answers at 0000 over PHANTOM* until the guest switches it off; any reset turns it back on"},
         {"16fdc", "Cromemco 16FDC: floppy controller + console UART, RDOS 2.52", "Cromemco 16FDC: WD FD1793 soft-sector floppy (single + double density), up to 4 drives. Disk registers at 30-34, a TMS 5501 console UART at 00-09 (unit 'tty'), and a 4K RDOS 2.52 boot PROM at C000 (OUT 40H banks it out, RESET restores it). Boots CDOS"},
         {"64fdc", "Cromemco 64FDC: floppy controller + console UART, RDOS 3.12", "Cromemco 64FDC: the 16FDC's 1983 successor -- same FD1793 + TMS 5501, carrying an 8K RDOS 3.12 boot PROM at C000-DFFF (OUT 40H banks it out, RESET restores it). Boots CDOS"},
         {"acr", "MITS 88-ACR: audio cassette interface", "MITS 88-ACR: cassette. An 88-SIO B + an FSK modem, unit 'tape'. Brings the WIND/REWIND/EXTRACT verbs and a tape counter"},
@@ -161,6 +163,7 @@ std::unique_ptr<Board> makeBoard(const std::string& type) {
     if (type == "turnkey") return std::make_unique<TurnkeyBoard>();
     if (type == "virtc") return std::make_unique<VirtcBoard>();
     if (type == "ss1") return std::make_unique<Ss1Board>();
+    if (type == "disk1a") return std::make_unique<CompuProDisk1aBoard>();
     if (type == "rtc100") return std::make_unique<Rtc100Board>();
     if (type == "hostbridge") return std::make_unique<HostBridgeBoard>();
     if (type == "pb1") return std::make_unique<Pb1Board>();
