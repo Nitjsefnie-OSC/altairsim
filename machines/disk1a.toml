@@ -1,0 +1,66 @@
+# CompuPro Disk 1A floppy: the controller at C0, its boot EPROM and a System Support 1 console. You supply the disk.
+#
+#     altairsim disk1a
+#     MOUNT fd0:drive0 "CCPM22.DSK"
+#     RUN 0
+#     -> 64K CP/M 2.2LD
+#        A>
+#
+# THE DISK 1A at the CompuPro standard ports C0-C3. Its boot EPROM answers memory reads at
+# 0000-01FF over PHANTOM* until the loader switches it off (OUT C3 with D0 = 0), so the
+# machine boots from 0000. Routine 0 is the 8080/Z80 loader: it reads all 26 sectors of
+# track 0 on drive 0 into 0100 by DMA and jumps there with C = 2 + the S3-1 switch.
+#
+# THE CONSOLE is the System Support 1's 2651 serial channel at 5C-5F. Switch S3-1 on the
+# Disk 1A (`sense_switch`, on by default) is how the boot EPROM tells the CompuPro BIOS that
+# the console is on the System Support 1.
+#
+# THE TERMINAL ignores bit 7. CompuPro's FORMAT.COM sets bit 7 of the last character of each
+# message, as MITS BASIC does, and the terminals of the time printed the character without
+# it. The serial line stays 8-bit clean; `strip7out` is the console doing what the terminal
+# did.
+#
+# THE BACKSPACE KEY of a modern terminal sends DEL (7F). The CP/M 2.2 CCP takes DEL as a
+# rubout and echoes the character it deleted (`formattamrof`), and takes BS (08) as a real
+# backspace. `bsdel = "bs"` folds DEL to BS, as the other built-in CP/M machines do.
+
+[machine]
+name    = "disk1a"
+startup = ["RUN 0"]
+
+[[board]]
+type     = "z80"
+id       = "cpu0"
+clock_hz = 0
+
+# The System Support 1 at its standard base of 50H; its serial channel is the console.
+[[board]]
+type = "ss1"
+id   = "ss1"
+base = 50
+
+  [board.unit.serial]
+  connect = "console"
+
+[console]
+strip7out = true
+bsdel     = "bs"
+
+# The Disk 1A at its standard base of C0H, with boot routine 0.
+[[board]]
+type = "disk1a"
+id   = "fd0"
+port = C0
+
+# 64K of RAM. The boot EPROM shadows 0000-01FF on reads only (honors_phantom = read): the
+# loader writes under it while it is on, and reads the bytes back once it is off.
+[[board]]
+type           = "memory"
+id             = "mem0"
+fill           = "random"
+honors_phantom = "read"
+
+  [[board.region]]
+  type = "ram"
+  at   = 0000
+  size = "64K"

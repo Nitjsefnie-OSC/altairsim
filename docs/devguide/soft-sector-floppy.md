@@ -19,7 +19,7 @@ The three layers, top to bottom:
 |---|---|---|
 | The **card** | a `Board` (`src/core/board.h`, e.g. `boards/tarbell.h`) | port decode, register bits, the drive-select latch, the **density strap** (`DDEN`), the boot PROM, interrupt straps |
 | The **chip** | `Wd17xx` (`src/chips/wd17xx.h`) | the register file and the Type I/II/III command FSM; `doubleDensity` **is** the `DDEN` pin, `dataRateBits` the media bit rate |
-| The **drive** | `DiskImageDrive` (`src/boards/floppy-drive.h`) over a `DiskImage` (`src/host/disk.h`) | CHS ↔ file offsets, synthesized ID fields, the **format parse** |
+| The **drive** | `DiskImageDrive` (`src/boards/floppy-drive.h`), a `FloppyDrive` (`src/chips/floppy.h`) over a `DiskImage` (`src/host/disk.h`) | CHS ↔ file offsets, synthesized ID fields, the **format parse** |
 
 A card reaches down to the chip (`Wd17xx::attach`, the straps). It never reaches into the
 `DiskImage`; the drive is the only thing that touches it.
@@ -27,7 +27,7 @@ A card reaches down to the chip (`Wd17xx::attach`, the straps). It never reaches
 ## The chip: `Wd17xx` and the parts
 
 `src/chips/wd17xx.h` is the FD177x family. Read its header — every comment is load-bearing, and
-the chip/drive split is spelled out there at length. The essentials for a board author:
+the chip/drive split is spelled out there and in `src/chips/floppy.h` at length. The essentials for a board author:
 
 - **The class is the part, the file is the family.** `Wd1771` is single density (FM); `Wd1791`
   is single *and* double density (FM/MFM), with a side-select pin and a one-bit record type.
@@ -234,6 +234,33 @@ streams-until-INTRQ the same way for each DD track (~10114 structured bytes, com
 10416). Because the rate is the chip's, the DD card gets 5208 for SD track 0 and 10416 for the DD
 tracks from one mechanism, and the VersaFloppy's 5.25″ formats get 6250/12500 from the same one.
 Validate this number against the format program's gap tables, not by "it booted."
+
+## The other chip: the µPD765A
+
+The CompuPro Disk 1A (`src/boards/compupro-disk1a.cpp`) does not use a WD part. Its chip is an
+NEC µPD765A, `Upd765` in `src/chips/upd765.{h,cpp}`, modeled from the data sheet in
+`reference/NEC uPD765A FDC.md`. The chip uses the same drive layer: `FloppyDrive` and
+`SectorId` are in `src/chips/floppy.h`, and the board puts a `DiskImageDrive` in each slot. The
+three layers of this chapter hold, but four things differ from the WD chip:
+
+- **The chip selects the drive.** The 765 drives the US0/US1/HD pins itself, so it reaches
+  its drives through `Upd765::Wiring`, a set of callbacks, and not through `attach()`. The board
+  decides what the pins reach. The Disk 1A uses the callbacks to put its Drive Select Register
+  between the chip and the cable.
+- **The density check is in the chip.** The MF bit of each command is checked against the
+  recorded density of the track. A read at the wrong density finds no ID field and ends with
+  Missing Address Mark (ST1 MA). No board strap turns the check on.
+- **Data moves by DRQ and DACK.** The board answers DRQ with `dackRead()` or `dackWrite()`, one
+  byte for each DMA grant. Non-DMA mode (ND = 1) is also built. The 765 has no wait-synced
+  mode and does not model byte timing, so it never reports an overrun.
+- **The clock input scales the timing.** `fdcClockHz` is 8 MHz for an 8″ drive and 4 MHz for
+  a 5.25″ drive, and every Specify interval doubles at 4 MHz. The Disk 1A sets it from bit 5 of
+  its Drive Select Register.
+
+Format a Track takes C, H, R and N for each sector through the data path. The chip gives
+them to `FloppyDrive::formatTrack()`, a separate entry point from the `writeTrackImage()` of
+the WD chip. A Disk 1 board, or any other
+board with a 765 or an 8272, can use `Upd765` as it is.
 
 ## The flat-`.DSK` limitation
 

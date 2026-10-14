@@ -202,4 +202,49 @@ bool DiskImageDrive::writeTrackImage(const std::vector<uint8_t>& in, bool double
     return true;
 }
 
+// TS: an image with two heads is a two-sided diskette.
+bool DiskImageDrive::twoSided() const { return img_ != nullptr && img_->heads() > 1; }
+
+// The µPD765A's Format a Track: the chip hands over each sector's ID field in the order it
+// goes round the track, and one fill byte for every data field. A raw image records
+// payloads only, so what it can keep is a TrackFormat: one size, one density, and sector
+// numbers that run startSector..startSector+n-1. The ID fields may come in any order (an
+// interleaved format is the common case), so the start is the lowest R. A track whose IDs
+// do not fit that shape -- mixed sizes, a gap in the numbers, a number twice -- has no
+// image form, and the chip is told so (false: it reports a fault) instead of having the
+// image quietly record something else. The C and H the processor wrote are not kept:
+// sectorIdAt synthesizes them from the head position and the side, as it always has.
+bool DiskImageDrive::formatTrack(const std::vector<SectorId>& ids, uint8_t fill) {
+    if (!img_ || !canFormat_ || ids.empty()) return false;
+
+    const int  size = ids[0].size;
+    const bool dd   = ids[0].doubleDensity;
+    int        lo   = ids[0].sector;
+    for (const SectorId& id : ids) {
+        if (id.size != size || id.doubleDensity != dd) return false;
+        if (id.sector < lo) lo = id.sector;
+    }
+    std::vector<bool> seen(ids.size(), false);
+    for (const SectorId& id : ids) {
+        const int k = id.sector - lo;
+        if (k >= (int)ids.size() || seen[(size_t)k]) return false;
+        seen[(size_t)k] = true;
+    }
+
+    TrackFormat tf;
+    tf.density     = dd ? Density::DD : Density::SD;
+    tf.sectors     = (int)ids.size();
+    tf.sectorSize  = size;
+    tf.startSector = lo;
+    img_->setTrackFormat(head_, side_, tf);
+
+    // In ascending order, so a blank image grows in order (the invariant in host/disk.h).
+    const std::vector<uint8_t> data((size_t)size, fill);
+    for (int s = 0; s < tf.sectors; ++s) {
+        size_t len = data.size();
+        if (!img_->writeSector(head_, side_, lo + s, data.data(), &len)) return false;
+    }
+    return true;
+}
+
 } // namespace altair

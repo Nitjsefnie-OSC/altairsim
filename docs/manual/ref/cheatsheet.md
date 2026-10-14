@@ -141,6 +141,7 @@ Type the part before the bracket.
 | `16fdc` | Cromemco 16FDC: floppy controller + console UART, RDOS 2.52 |
 | `64fdc` | Cromemco 64FDC: floppy controller + console UART, RDOS 3.12 |
 | `dcdd` | MITS 88-DCDD: 8" hard-sector floppy controller |
+| `disk1a` | CompuPro Disk 1A: uPD765A floppy controller with DMA |
 | `dualide` | S100Computers IDE-AB: two CompactFlash sockets for CP/M 3 |
 | `dualsd` | S100Computers Dual SD: two microSD sockets for CP/M 3 |
 | `fdcplus` | FarmTek FDC+: serial drive (drive types 6, 7) |
@@ -233,6 +234,7 @@ Type the part before the bracket.
 | `cuter` | CUTER 1.3 driving a Processor Technology VDM-1 -- the real Sol/CUTS monitor. |
 | `dazzler` | A Cromemco Dazzler in an Altair -- the bench for the S-100's first color graphics card. |
 | `default` | The machine you get when you name none: 56K, and the DBL boot PROM at FF00. |
+| `disk1a` | CompuPro Disk 1A floppy: the controller at C0, its boot EPROM and a System Support 1 console. You supply the disk. |
 | `dualide` | S100Computers "IDE-AB CF" machine -- a V2 Z80 CPU board booting CP/M 3 off a CompactFlash card. |
 | `dualidesd` | S100Computers "IDE-AB CF+ESP32" machine -- both boards, CP/M 3 on CF drives A:/B: and SD drives C:/D:. |
 | `dualsd` | S100Computers "Dual SD" machine -- a V2 Z80 CPU board booting CP/M 3 off a microSD card. |

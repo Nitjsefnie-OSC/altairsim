@@ -1,6 +1,6 @@
 #pragma once
 //
-// DiskImageDrive -- a FloppyDrive (chips/wd17xx.h) backed by a DiskImage (host/disk.h).
+// DiskImageDrive -- a FloppyDrive (chips/floppy.h) backed by a DiskImage (host/disk.h).
 //
 // THE MISSING HALF OF THE WD-CHIP SEAM. The FD177x is a chip with pins -- STEP, TR00,
 // READY, and a data path that moves whole sectors -- and `FloppyDrive` is the abstract
@@ -10,7 +10,7 @@
 // pins and a DiskImage, and nothing about which card is holding either. The VersaFloppy is
 // the first to use it; a Tarbell SD/DD card would use the very same adapter.
 //
-// WHERE THE CHIP/DRIVE SPLIT LANDS (see wd17xx.h at length):
+// WHERE THE CHIP/DRIVE SPLIT LANDS (see chips/floppy.h and wd17xx.h at length):
 //
 //   - NO DRIVE SELECT. The chip talks to ONE drive; the CARD's select latch decides which,
 //     by pointing the chip at one of these with Wd17xx::attach(). So there is one adapter
@@ -28,7 +28,7 @@
 // track calls stay false -- a format has nowhere to put gaps that were never in the file,
 // and the chip already says so out loud (WRITE FAULT) rather than inventing them.
 
-#include "chips/wd17xx.h"
+#include "chips/floppy.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -102,6 +102,12 @@ public:
     // as it fills it, recording the density the chip was set to. floppy-drive.cpp.
     int  trackImageBytes(long long rate) const override;
     bool writeTrackImage(const std::vector<uint8_t>& in, bool doubleDensity) override;
+
+    // ---- the µPD765A's two: the Two Side line, and Format a Track from an ID list ----
+    // twoSided() is the image's head count. formatTrack() needs setFormatting(true), as
+    // Write Track does; floppy-drive.cpp says what it can and cannot record.
+    bool twoSided() const override;
+    bool formatTrack(const std::vector<SectorId>& ids, uint8_t fill) override;
 
 private:
     // The chip searches ID fields by (track, sector). We hand it the current track's

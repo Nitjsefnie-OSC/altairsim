@@ -30,6 +30,7 @@ what is actually in one.
 | `cuter` | CUTER 1.3 driving a Processor Technology VDM-1 -- the real Sol/CUTS monitor. |
 | `dazzler` | A Cromemco Dazzler in an Altair -- the bench for the S-100's first color graphics card. |
 | `default` | The machine you get when you name none: 56K, and the DBL boot PROM at FF00. |
+| `disk1a` | CompuPro Disk 1A floppy: the controller at C0, its boot EPROM and a System Support 1 console. You supply the disk. |
 | `dualide` | S100Computers "IDE-AB CF" machine -- a V2 Z80 CPU board booting CP/M 3 off a CompactFlash card. |
 | `dualidesd` | S100Computers "IDE-AB CF+ESP32" machine -- both boards, CP/M 3 on CF drives A:/B: and SD drives C:/D:. |
 | `dualsd` | S100Computers "Dual SD" machine -- a V2 Z80 CPU board booting CP/M 3 off a microSD card. |
