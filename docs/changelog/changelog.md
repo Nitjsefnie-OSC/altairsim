@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
+The `ss1` board could not take the line that `--mcp` builds for the console, so the program
+connected a plain line to it. That line skipped `strip7out` and the other console settings.
+CompuPro's `FORMAT.COM` sets bit 7 of the last character of each message, and an MCP client
+got `formatted®` for `formatted.`. The board now takes the console line, as the `2sio` does.
+
 **On a Mac with a Retina screen, the text in a video window no longer changes between normal
 and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
 to fit. That scaling made all of the text change between a normal look and a bold look. The

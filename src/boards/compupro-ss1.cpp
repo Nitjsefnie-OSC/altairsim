@@ -463,6 +463,20 @@ bool Ss1Board::connect(const std::string& unit, const std::string& ep, std::stri
     return true;
 }
 
+// Install an ALREADY-BUILT stream (the MCP console's filtered scripted line), bypassing the
+// resolver -- the caller resolved and wrapped it. Otherwise as connect(). Without it, the
+// MCP binding falls back to the bare line and the console's transforms (strip7out) are lost.
+bool Ss1Board::connectStream(const std::string& unit, std::unique_ptr<ByteStream> s,
+                             std::string& err) {
+    if (unit != "serial") {
+        err = "ss1 has no unit '" + unit + "' -- its serial channel is called 'serial'";
+        return false;
+    }
+    uart_.connect(std::move(s));
+    refresh();
+    return true;
+}
+
 bool Ss1Board::disconnect(const std::string& unit, std::string& err) {
     if (unit != "serial") {
         err = "ss1 has no unit '" + unit + "' -- its serial channel is called 'serial'";

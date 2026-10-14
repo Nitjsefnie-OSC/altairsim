@@ -64,6 +64,7 @@
 #include "core/clock.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -115,6 +116,8 @@ public:
 
     bool connect(const std::string& unit, const std::string& endpoint,
                  std::string& err) override;
+    bool connectStream(const std::string& unit, std::unique_ptr<ByteStream> s,
+                       std::string& err) override;
     bool disconnect(const std::string& unit, std::string& err) override;
     ByteStream* unitStream(const std::string& unit) override {
         return unit == "serial" ? &uart_.stream() : nullptr;

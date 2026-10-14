@@ -922,6 +922,31 @@ void test_ss1() {
         CHECK(m.bus.intAck() == 0x22, "INTA 3: address high");
     }
 
+    SECTION("SS-1 board -- connectStream installs a pre-built line on the serial unit");
+    {
+        // The --mcp console binding hands the board a scripted line wrapped in the console's
+        // transforms. Without this seam it fell back to a bare line, and strip7out was lost.
+        Machine m;
+        auto* ss1 = buildIntMachine(m);
+        auto            s   = std::make_unique<ScriptedStream>();
+        ScriptedStream* raw = s.get();
+        std::string     err;
+        CHECK(ss1->connectStream("serial", std::move(s), err), "connectStream binds the serial unit");
+        CHECK(ss1->unitStream("serial") == raw, "and its line is the stream we handed in");
+
+        m.bus.ioWrite(0x5E, 0x4E);  // UART MR1: 8N1
+        m.bus.ioWrite(0x5E, 0x7E);  // MR2: 9600
+        m.bus.ioWrite(0x5F, 0x27);  // command: TxEN|RxEN|DTR|RTS
+        raw->feed("W");
+        ss1->pump();
+        m.clock.advance(kChar + kBit);
+        CHECK((m.bus.ioRead(0x5D) & kRxRDY) != 0, "RxRDY: the byte arrived");
+        CHECK(m.bus.ioRead(0x5C) == 'W', "a byte on the pre-built line reaches the guest");
+
+        CHECK(!ss1->connectStream("tty", std::make_unique<NullStream>(), err),
+              "connectStream to a missing unit fails");
+    }
+
     SECTION("SS-1 board -- the master prioritizes the S-100 VI lines");
     {
         Machine m;
