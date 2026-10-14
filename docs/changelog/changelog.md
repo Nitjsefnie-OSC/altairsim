@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**On a Mac with a Retina screen, the text in a video window no longer changes between normal
+and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
+to fit. That scaling made all of the text change between a normal look and a bold look. The
+change came at random, when the mouse moved over the window, or when the window got or lost
+focus. The Sol-20 ATC game showed it at its keyboard prompt. The window is now drawn at the
+full resolution of the screen, so macOS does not scale it. The window size and the border
+around the picture do not change.
+
 **`HELP SET TERMINAL` and `HELP SET CONSOLE` now show the example for that word.** `HELP`
 with a command and a word shows the example lines of the command that contain the word. The
 `SET` help had no line for `TERMINAL` and no line for `CONSOLE`, so `HELP` printed all of the

@@ -31,13 +31,14 @@ constexpr int kDefaultWidthPercent = 50;
 constexpr int kChromeH = 40;
 
 // A small inset around the picture so macOS's rounded window corners do not clip the
-// bottom-left glyphs. This is the bezel we AIM FOR, in device pixels, at the opening size;
+// bottom-left glyphs. This is the bezel we AIM FOR, in window points, at the opening size;
 // ensureWindow() turns it into a margin in LOGICAL pixels (border_) that it folds into the
 // logical presentation on every side, so the letterbox band is even on all four sides and
-// STAYS even as the aspect-locked window is dragged (a fixed device-pixel bezel could not,
+// STAYS even as the aspect-locked window is dragged (a fixed window-point bezel could not,
 // since the window's aspect changes with size). Applied on every platform -- a thin bezel
-// looks intentional, not clipped.
-constexpr int kBorder = 8;  // device pixels per side, at the opening size
+// looks intentional, not clipped. Points, not drawable pixels: a high-density window has
+// two pixels to the point on a 2x screen, and the bezel must not halve there.
+constexpr int kBorder = 8;  // window points per side, at the opening size
 
 // The tube face a CRT-look window is stretched to fill: a classic 4:3 monitor. The period
 // video boards scan a short, wide raster (VDM-1 512x208, a VDB 640x240) onto a 4:3 tube, so
@@ -183,12 +184,12 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
     //
     // We ADD a small bezel on every side deliberately (macOS rounds the window's corners and
     // would otherwise clip the bottom-left glyphs) -- but it is folded into the LOGICAL size,
-    // not the device size. Below we pick a margin `m` in logical pixels worth about kBorder
-    // device pixels at the opening scale, present a logical frame of (w+2m)x(h+2m), and draw
+    // not the window size. Below we pick a margin `m` in logical pixels worth about kBorder
+    // window points at the opening scale, present a logical frame of (w+2m)x(h+2m), and draw
     // the picture into the centered [m,m,w,h] sub-rect (present()). Because the window is
     // locked to the (w+2m):(h+2m) aspect and LETTERBOX preserves exactly that ratio, the
     // picture fills the window with an even m-scaled band on ALL FOUR sides, and the band
-    // stays even at every drag size. A fixed device-pixel bezel could not: the window's aspect
+    // stays even at every drag size. A fixed window-point bezel could not: the window's aspect
     // would change with size, so a single aspect lock would eat the border on the long axis.
     //
     // Ask the display how much room there is, and never ask for more than that. Usable
@@ -227,7 +228,7 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
         scale = kMaxScale;  // no bounds, no request: the plain fallback multiple
     }
 
-    // The bezel as a whole number of LOGICAL pixels, worth about kBorder DEVICE pixels at this
+    // The bezel as a whole number of LOGICAL pixels, worth about kBorder WINDOW POINTS at this
     // opening scale (border * scale). Equal on both axes, so the displayed band is equal on
     // all four sides; folded into the logical size below and drawn as an inset in present().
     // At least 1 so there is always a hairline, even at large scales.
@@ -235,7 +236,7 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
     const int logW = w + 2 * win.border, logH = hDisp + 2 * win.border;
 
     // A requested width (width= on the terminal, a board's width property) opens the window at
-    // EXACTLY that many device pixels -- a non-integer multiple of the frame is fine BECAUSE the
+    // EXACTLY that many window points -- a non-integer multiple of the frame is fine BECAUSE the
     // crt look filters the picture linear (drawLastFrame), so the stretch stays smooth. Gated on
     // crt(): the crisp default keeps the whole-number multiple that makes nearest-neighbor pixels
     // square (the point of the integer scaling below), and only the soft tube look opens exact.
@@ -256,8 +257,17 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
     // Named after the machine AND this board, and stamped with run/stop state, from the shared
     // parts the run loop set long before this window existed plus win.label acquire() just set.
     win.title = composedTitle(win);
+    // HIGH PIXEL DENSITY, on every platform (issue #743). Without it, a 2x Retina Mac gets a 1x
+    // Metal drawable that macOS scales up to the screen, and that scaling made the text change
+    // between a normal and a bold look -- on mouse-over, on a focus change, or by itself. Window
+    // captures stayed identical while it happened; a 1x display, the OpenGL renderer and a 2x
+    // drawable were all clean. The window size is still asked for in POINTS, so every size
+    // above is unchanged; only the drawable behind it has more pixels. Where the platform has no
+    // high-density back buffer, SDL ignores the flag.
     if (!SDL_CreateWindowAndRenderer(win.title.c_str(), createW, createH,
-                                     SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN, &win.window,
+                                     SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN |
+                                         SDL_WINDOW_HIGH_PIXEL_DENSITY,
+                                     &win.window,
                                      &win.renderer)) {
         std::fprintf(stderr, "SDL: window/renderer failed: %s\n", SDL_GetError());
         return false;
@@ -358,18 +368,25 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
 void SdlDisplay::applyPresentation(Window& win, int w, int h) {
     if (!win.renderer || !win.window || w <= 0 || h <= 0) return;
 
-    // The bezel is worth about kBorder DEVICE pixels at the picture's current on-screen scale,
+    // The bezel is worth about kBorder WINDOW POINTS at the picture's current on-screen scale,
     // so it stays a thin hairline whatever resolution the board is in. Derive that scale from
-    // how many whole picture-pixels fit the window's render output (falls back to 1 if the
-    // output size is not readable yet, giving the kBorder default).
+    // how many whole picture-pixels fit the window's size in points (falls back to 1 if the
+    // size is not readable yet, giving the kBorder default).
+    //
+    // Points, NOT the render output's pixels. The window is high-density (ensureWindow), so on
+    // a 2x screen the output has twice the pixels: measured there, the bezel halved, the logical
+    // frame and its aspect lock moved off what ensureWindow() opened, macOS resized the window
+    // by two points to match, and the letterbox came out at a blurring ~1.99x (issue #743).
+    // Points give the same bezel as ensureWindow() on any screen, and through a drag between a
+    // 2x and a 1x display.
     // The painted height -- taller than the raster when crt is on (the 4:3 tube stretch). The
     // logical frame and the aspect lock are built from it, so LETTERBOX presents non-square
     // pixels; win.picW/picH still track the NATIVE w,h for change detection in acquire().
     const int hDisp = crtDisplayHeight(w, h);
 
-    int ow = 0, oh = 0;
-    SDL_GetCurrentRenderOutputSize(win.renderer, &ow, &oh);
-    const int scale = std::max(1, std::min(ow / w, oh / hDisp));
+    int ww = 0, wh = 0;
+    SDL_GetWindowSize(win.window, &ww, &wh);
+    const int scale = std::max(1, std::min(ww / w, wh / hDisp));
     win.border = std::max(1, (int)std::lround((double)kBorder / scale));
 
     const int logW = w + 2 * win.border, logH = hDisp + 2 * win.border;
