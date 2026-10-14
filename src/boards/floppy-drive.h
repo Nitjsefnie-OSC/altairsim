@@ -1,6 +1,6 @@
 #pragma once
 //
-// DiskImageDrive -- a FloppyDrive (chips/wd17xx.h) backed by a DiskImage (host/disk.h).
+// DiskImageDrive -- a FloppyDrive (chips/floppy.h) backed by a DiskImage (host/disk.h).
 //
 // THE MISSING HALF OF THE WD-CHIP SEAM. The FD177x is a chip with pins -- STEP, TR00,
 // READY, and a data path that moves whole sectors -- and `FloppyDrive` is the abstract
@@ -10,7 +10,7 @@
 // pins and a DiskImage, and nothing about which card is holding either. The VersaFloppy is
 // the first to use it; a Tarbell SD/DD card would use the very same adapter.
 //
-// WHERE THE CHIP/DRIVE SPLIT LANDS (see wd17xx.h at length):
+// WHERE THE CHIP/DRIVE SPLIT LANDS (see chips/floppy.h and wd17xx.h at length):
 //
 //   - NO DRIVE SELECT. The chip talks to ONE drive; the CARD's select latch decides which,
 //     by pointing the chip at one of these with Wd17xx::attach(). So there is one adapter
@@ -28,7 +28,7 @@
 // track calls stay false -- a format has nowhere to put gaps that were never in the file,
 // and the chip already says so out loud (WRITE FAULT) rather than inventing them.
 
-#include "chips/wd17xx.h"
+#include "chips/floppy.h"
 
 #include <cstddef>
 #include <cstdint>

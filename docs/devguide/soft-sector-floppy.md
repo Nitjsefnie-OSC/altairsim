@@ -19,7 +19,7 @@ The three layers, top to bottom:
 |---|---|---|
 | The **card** | a `Board` (`src/core/board.h`, e.g. `boards/tarbell.h`) | port decode, register bits, the drive-select latch, the **density strap** (`DDEN`), the boot PROM, interrupt straps |
 | The **chip** | `Wd17xx` (`src/chips/wd17xx.h`) | the register file and the Type I/II/III command FSM; `doubleDensity` **is** the `DDEN` pin, `dataRateBits` the media bit rate |
-| The **drive** | `DiskImageDrive` (`src/boards/floppy-drive.h`) over a `DiskImage` (`src/host/disk.h`) | CHS ↔ file offsets, synthesized ID fields, the **format parse** |
+| The **drive** | `DiskImageDrive` (`src/boards/floppy-drive.h`), a `FloppyDrive` (`src/chips/floppy.h`) over a `DiskImage` (`src/host/disk.h`) | CHS ↔ file offsets, synthesized ID fields, the **format parse** |
 
 A card reaches down to the chip (`Wd17xx::attach`, the straps). It never reaches into the
 `DiskImage`; the drive is the only thing that touches it.
@@ -27,7 +27,7 @@ A card reaches down to the chip (`Wd17xx::attach`, the straps). It never reaches
 ## The chip: `Wd17xx` and the parts
 
 `src/chips/wd17xx.h` is the FD177x family. Read its header — every comment is load-bearing, and
-the chip/drive split is spelled out there at length. The essentials for a board author:
+the chip/drive split is spelled out there and in `src/chips/floppy.h` at length. The essentials for a board author:
 
 - **The class is the part, the file is the family.** `Wd1771` is single density (FM); `Wd1791`
   is single *and* double density (FM/MFM), with a side-select pin and a one-bit record type.
