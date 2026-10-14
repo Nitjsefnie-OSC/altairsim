@@ -21,8 +21,8 @@ An MCP client needs two things: a command to run, and the fact that the server u
 command is `altairsim <machine> --mcp`. `<machine>` is a built-in name or a machine file, as on
 the command line.
 
-**Do not add `-x`, `-s` or `-i` to that command.** The program refuses them with `--mcp` and
-stops. The assistant sends monitor commands with the `monitor` tool.
+**Do not add `-x`, `-s`, `-i` or `--set` to that command.** The program refuses them with
+`--mcp` and stops. The assistant sends monitor commands with the `monitor` tool.
 
 **Claude Code** (the command line) takes it as one command. Everything after `--` is what it
 runs. Run it from the folder that you want the machine's files to resolve against:

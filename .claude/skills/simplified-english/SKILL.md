@@ -19,8 +19,8 @@ tool, gets the same meaning as everyone else, the first time.
 | **Strict** | Procedures, numbered steps, tables, warnings and cautions, HELP text. Every rule in §2. |
 | **Light** | Explanatory prose in the docs, and every GitHub comment (issue, PR, Discussion). |
 
-**Light** means: no idioms (W8), short sentences (W1), one name for each thing (§4), and
-steps for the reader as a numbered list of commands (W3). Apply the other rules where they
+**Light** means: no idioms (W8), no made-up situation (W15), short sentences (W1), one name
+for each thing (§4), and steps for the reader as a numbered list of commands (W3). Apply the other rules where they
 make the text clearer. Do not make a friendly comment stiff to pass a word count.
 
 ## 2. The writing rules
@@ -43,6 +43,8 @@ Each rule has an ID. A review report cites it.
 | **W12** | Use each word with one meaning and as one part of speech. Do not use "close" for both "shut" and "near". |
 | **W13** | Use the words in §3 and the terms in §4. |
 | **W14** | Do not start a sentence with "So", "Then", "And", "But" or "Or". Each sentence must make sense without the one before it. For a result, name the cause ("Because…") or give an example ("For example…"). For a time order in a procedure, use numbered steps (W3). |
+| **W15** | Say what the feature does. Do not start with a made-up situation or a made-up reader ("Sometimes you want…", "Imagine…", "today… and tomorrow…"). State the fact, then give an example that has a real file and a real command. |
+| **W16** | Make a count agree with the feature. Do not write "one setting" or "a setting or two" for an option that the reader can give any number of times. |
 
 ## 3. Word list
 
@@ -73,6 +75,7 @@ misread or need to look up, add a row.
 | indicate | show |
 | intercept | get first |
 | is able to | can |
+| imagine, suppose, say you | (drop it; state the fact, W15) |
 | it is necessary to | (a command: "Do X.") |
 | negotiable | (drop it; say what can and cannot change) |
 | ought to | must, should |
@@ -80,6 +83,7 @@ misread or need to look up, add a row.
 | prior to | before |
 | require | need |
 | simply, just | (drop it) |
+| sometimes you want | (drop it; say what the feature does, W15) |
 | subsequently | then, after |
 | sufficient | enough |
 | terminate | stop, end |
@@ -136,7 +140,9 @@ tree.
   search for dashes (W9) and for the left column of §3. Also search for the short forms of
   the §4 terms and of the document names ("the manual", "this manual", "this document"), and
   check that each one points at one thing (W11). Search for sentences that start with "So",
-  "Then", "And", "But" or "Or" (W14).
+  "Then", "And", "But" or "Or" (W14). Read the first sentence of each new section: it must say
+  what the thing does (W15). Check each count word, such as "one" and "two", against the
+  feature (W16).
 - Keep the meaning. If a rule forces a choice between clear and correct, choose correct and
   report it.
 

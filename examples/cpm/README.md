@@ -29,6 +29,28 @@ Altair that was EXAMINE `FF00` and RUN.
 `^E` (STOP) takes the keyboard back to the monitor at any point; `RUN` resumes. `^C` belongs to
 CP/M (it is warm boot) and CP/M gets it.
 
+## Settings changed for one run
+
+The machine file runs CP/M at full speed, on the terminal where you started the program. To run
+the machine with a different setting, give the setting on the command line with `--set`. The
+machine file does not change. The text after `--set` is what you type after `SET` at the
+`altairsim>` prompt.
+
+This command runs the machine at 2 MHz, the speed of a real Altair:
+
+```
+$ altairsim cpm22-buffered.toml --set "cpu0 clock_hz=2000000"
+```
+
+This command puts the console in a terminal window of its own:
+
+```
+$ altairsim cpm22-buffered.toml --set "sio0:a connect=terminal" --set "TERMINAL bsdel=bs"
+```
+
+You can give the three settings in one command. The chapter *Machines* of the User Manual
+describes `--set`.
+
 ## The files
 
 | File | What it is |

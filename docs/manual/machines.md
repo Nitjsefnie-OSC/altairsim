@@ -27,7 +27,8 @@ options before the machine: `altairsim mine.toml -s check.cmd` and
 | `-s, --script <file>` | run a command script, then exit with its status. Paths in it are relative to the script's folder |
 | `-x, --exec <cmd>` | run one monitor command, then exit. You can give it more than one time |
 | `-i, --interactive` | after `--script` or `--exec`, stay in the monitor |
-| `--mcp` | run as an MCP server on stdio. You cannot give `-s`, `-x` or `-i` with it |
+| `--set <setting>` | change a setting for this run, before the machine's startup commands. You can give it more than one time |
+| `--mcp` | run as an MCP server on stdio. You cannot give `-s`, `-x`, `-i` or `--set` with it |
 | `--mirror <sock>` | with `--mcp`, copy the console to a socket so that a person can watch |
 | `-v, --version` | print the version and exit |
 | `-h, --help` | print this help and exit |
@@ -345,6 +346,80 @@ The only limit is the **`hostdir`** of the Host Bridge. It limits the files that
 different purpose. The chapter *Moving files in and out* describes it. Nothing in a machine
 file's paths changes it.
 
+## Changing settings for one run: `--set`
+
+A machine file gives each setting one value. To run the machine with a different value, give
+the setting on the command line with `--set`. The machine file does not change, and you do not
+need a second machine file.
+
+For example, `cpm22-buffered.toml` runs CP/M at full speed. This command runs the same machine
+at 2 MHz:
+
+```
+$ cd examples/cpm
+$ altairsim cpm22-buffered.toml --set "cpu0 clock_hz=2000000"
+AltairSim X.Y.Z -- 8080, full speed.
+machine: cpm22-buffered.  HELP for commands.
+set> SET cpu0 clock_hz=2000000
+cpu0: clock_hz=2000000
+startup> RUN FF00
+[console -- ^E returns to the monitor]
+
+56K CP/M 2.2b v2.3
+For Altair 8" Floppy
+
+A>
+```
+
+The first two lines show the machine that the file made, which runs at full speed. The `set>`
+line shows the change. Without `--set`, the machine runs at full speed again:
+
+```
+$ altairsim cpm22-buffered.toml
+```
+
+**The text after `--set` is what you type after `SET` at the monitor.** `SET cpu0
+clock_hz=2000000` at the monitor becomes `--set "cpu0 clock_hz=2000000"` on the command line.
+The text has a space in it, so put it in quotation marks. The keys are the keys of the machine
+file. `SHOW cpu0` lists the keys of a board, and the boards chapter describes them.
+
+**The program applies each setting before the machine's startup commands.** The order is:
+
+1. The program loads the machine file, and shows what it loaded.
+2. It runs `~/altairsim.ini`, if you have one. A later section describes this file.
+3. It applies each `--set`, in the order that you gave them, and shows each one behind `set>`.
+4. It runs the `startup` commands of the machine file.
+
+A `--set` comes after your `~/altairsim.ini`. If the two set the same key, the `--set` is the
+value that the machine has.
+
+This order is why `--set` works for a machine that starts by itself. `cpm22-buffered.toml` has
+`startup = ["RUN FF00"]`, so CP/M starts as soon as the file is loaded. A `-x "SET ..."` runs
+after the startup commands, when CP/M has started. `--set` runs before them.
+
+**You can give `--set` more than one time.** This command puts the CP/M console in a terminal
+window of its own:
+
+```
+$ altairsim cpm22-buffered.toml --set "sio0:a connect=terminal" --set "TERMINAL bsdel=bs"
+```
+
+`sio0:a` is unit `a` of the serial board, which is the console of this machine. `connect` is
+the device on that line, and `terminal` is a VT100 in a window. `TERMINAL bsdel=bs` makes the
+Backspace key in the window send the byte that CP/M expects. CP/M starts in the window, and the
+monitor stays in the terminal where you started the program. The serial chapter describes
+`terminal` and its options.
+
+To run that machine at 2 MHz also, add `--set "cpu0 clock_hz=2000000"` to the same command.
+
+- **The machine file does not change.** `--set` is for this run only.
+- **A setting that fails stops the program.** If the board, the key or the value is wrong, the
+  program shows the error from `SET`, then `--set failed; the machine was not started.` The
+  exit status is 2. The startup commands do not run.
+- **You can use `--set` with `-x`, `-s` and `-i`.** The program applies the settings before it
+  runs the commands.
+- **You cannot use `--set` with `--mcp`.** An MCP client sends `SET` with the `monitor` tool.
+
 ## Running a command and leaving: `-x` and `-s`
 
 You can use `altairsim` without typing at the prompt.
@@ -410,7 +485,8 @@ SET CONSOLE DEBUG=altairsim-debug.log
 ```
 
 The file runs after the machine is loaded and before the machine's own `startup` commands, so a
-machine that starts running at once still gets your settings. The program shows each line
+machine that starts running at once still gets your settings. A `--set` on the command line is
+applied after the file runs, and before the `startup` commands. The program shows each line
 behind `ini>` as it runs it.
 
 - **No file is not an error.** Without the file, nothing happens.

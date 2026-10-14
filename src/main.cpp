@@ -120,7 +120,10 @@ static void usage(std::ostream& o) {
          "                     it are relative to the script's folder.\n"
          "  -x, --exec <cmd>   run one monitor command (repeatable), then exit.\n"
          "  -i, --interactive  after --script/--exec, stay in the monitor.\n"
-         "                     -s, -x and -i cannot be used with --mcp.\n"
+         "      --set <text>   change a setting for this run, before the machine's startup\n"
+         "                     commands (repeatable). The text is what follows SET at the\n"
+         "                     prompt: --set \"cpu0 clock_hz=2000000\".\n"
+         "                     -s, -x, -i and --set cannot be used with --mcp.\n"
          "\n"
          "  An interactive launch first runs ~/altairsim.ini if it exists -- monitor commands,\n"
          "  one per line, for settings such as SET CONSOLE DEBUG. --mcp, -s and -x skip it.\n"
@@ -158,6 +161,7 @@ int main(int argc, char** argv) {
     std::string mirror;  // --mirror socket:PORT[?ro]: a live console mirror (issue #381)
     std::string log;     // --log FILE: a text transcript of the console under --mcp (#666)
     std::vector<std::string> exec;
+    std::vector<std::string> sets;  // --set "<id> <key>=<value>": a SET before `startup` (#736)
 
     // Three ways in, and only one of them guesses. `positional` is the friendly
     // form, resolved by looksLikeFile(); -m and -f are the escape hatches and
@@ -214,6 +218,9 @@ int main(int argc, char** argv) {
         } else if (s == "-x" || s == "--exec") {
             if (!need(i, "a command")) return 2;
             exec.push_back(a[i]);
+        } else if (s == "--set") {
+            if (!need(i, "a setting (--set \"cpu0 clock_hz=2000000\")")) return 2;
+            sets.push_back(a[i]);
         } else if (s.size() > 1 && s[0] == '-') {
             std::cerr << "unknown option " << s << "\nTry: altairsim --help\n";
             return 2;
@@ -271,12 +278,12 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // -x, -s AND -i ARE THE MONITOR'S, AND --mcp NEVER REACHES THE MONITOR: main() hands the
-    // machine to the server and returns from there. They were accepted and dropped -- a
+    // -x, -s, -i AND --set ARE THE MONITOR'S, AND --mcp NEVER REACHES THE MONITOR: main() hands
+    // the machine to the server and returns from there. They were accepted and dropped -- a
     // `-x "SET cpu0 clock_hz=2000000"` changed nothing, a script that did not exist was not
     // reported, and the exit status was 0 (issue #737). An option that does nothing is
     // refused, and before the --log file below is emptied for a session that will not start.
-    if (mcp && (!exec.empty() || !script.empty() || interactive)) {
+    if (mcp && (!exec.empty() || !script.empty() || interactive || !sets.empty())) {
         std::string given;
         auto add = [&](bool on, const char* opt) {
             if (!on) return;
@@ -286,6 +293,7 @@ int main(int argc, char** argv) {
         add(!exec.empty(), "-x");
         add(!script.empty(), "-s");
         add(interactive, "-i");
+        add(!sets.empty(), "--set");
         std::cerr << given << " cannot be used with --mcp (stdout is the JSON-RPC transport).\n"
                               "An MCP client sends monitor commands with the `monitor` tool.\n";
         return 2;
@@ -574,6 +582,30 @@ int main(int argc, char** argv) {
     if (exec.empty() && script.empty()) {
         const std::string home = platform::homeDir();
         if (!home.empty()) mon.runUserInit(home + "/altairsim.ini", std::cout);
+    }
+
+    // --set IS A `SET`, RUN BEFORE `startup`. A machine file that says `startup = ["RUN FF00"]`
+    // has booted its guest by the time a -x command runs, so `-x "SET cpu0 clock_hz=2000000"`
+    // is too late for it (issue #736). These are applied here, in the order given.
+    //
+    // AFTER THE BANNER AND AFTER ~/altairsim.ini, on purpose. The plain-launch banner reports
+    // the machine as the file (or the built-in) made it; the operator's ini file and then the
+    // command line change that, each shown on its own line, and the command line is last so
+    // that it wins.
+    //
+    // A setting that fails stops the program. A wrong key must not boot the machine with the
+    // setting the operator meant to change, so nothing after it runs -- no `startup`, no -x.
+    // The text is a typed command, as -x is: a path in it starts at the machine's folder.
+    for (const auto& s : sets) {
+        const std::string cmd = "SET " + s;
+        std::stringstream said;
+        mon.exec(cmd, said);
+        if (mon.failed()) {
+            std::cerr << "set> " << cmd << "\n"
+                      << said.str() << "--set failed; the machine was not started.\n";
+            return 2;
+        }
+        std::cout << "set> " << cmd << "\n" << said.str();
     }
 
     mon.runStartup(std::cout);

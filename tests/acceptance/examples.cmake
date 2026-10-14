@@ -104,6 +104,39 @@ execute_process(
 )
 expect_cpm("${out}" "`altairsim -s examples/cpm/cpm22-buffered.ini` from the dist root did not boot CP/M")
 
+# The README's `--set` command (#736): the same machine at 2 MHz, with the file as it is. The
+# setting is applied before `startup> RUN FF00`, CP/M boots and lists the disk, and SHOW CLOCK
+# afterwards reports the pacing that the boot had. Without --set the file gives full speed --
+# that is the control, and it is what makes `paced` a claim about the option.
+execute_process(
+  COMMAND           "${SIM}" cpm22-buffered.toml --set "cpu0 clock_hz=2000000" -x "SHOW CLOCK"
+  WORKING_DIRECTORY "${cpm}"
+  INPUT_FILE        "${SRC}/tests/acceptance/cpm-dir.keys"
+  OUTPUT_VARIABLE   out
+  ERROR_VARIABLE    out
+  TIMEOUT           60
+)
+expect_cpm("${out}" "`altairsim cpm22-buffered.toml --set \"cpu0 clock_hz=2000000\"` did not boot CP/M")
+string(FIND "${out}" "set> SET cpu0 clock_hz=2000000" at_set)
+string(FIND "${out}" "startup> RUN FF00" at_startup)
+if(at_set LESS 0 OR at_startup LESS 0 OR NOT at_set LESS at_startup)
+  message(FATAL_ERROR "examples: --set was not applied before `startup> RUN FF00`\n--- output ---\n${out}")
+endif()
+if(NOT out MATCHES "pacing +paced")
+  message(FATAL_ERROR "examples: with --set \"cpu0 clock_hz=2000000\", SHOW CLOCK does not say `paced`\n--- output ---\n${out}")
+endif()
+execute_process(
+  COMMAND           "${SIM}" cpm22-buffered.toml -x "SHOW CLOCK"
+  WORKING_DIRECTORY "${cpm}"
+  INPUT_FILE        "${SRC}/tests/acceptance/cpm-dir.keys"
+  OUTPUT_VARIABLE   out
+  ERROR_VARIABLE    out
+  TIMEOUT           60
+)
+if(NOT out MATCHES "pacing +free")
+  message(FATAL_ERROR "examples: without --set, SHOW CLOCK does not say `free` (the --set check proves nothing)\n--- output ---\n${out}")
+endif()
+
 # cpm22-terminal.toml puts the console in the built-in windowed VT100. A build with SDL loads it
 # -- under SDL's dummy video driver, so no window opens on a test machine -- and the console
 # line must hold the terminal. A headless build (no SDL) must REFUSE it, with the one message

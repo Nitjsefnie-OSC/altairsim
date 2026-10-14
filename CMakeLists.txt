@@ -1224,6 +1224,15 @@ add_test(NAME acceptance-mcp-refuses-exec
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/mcp-refuses-exec.cmake)
 set_tests_properties(acceptance-mcp-refuses-exec PROPERTIES LABELS acceptance TIMEOUT 60)
 
+# `--set "cpu0 clock_hz=2000000"` is a SET run before the machine file's `startup` (#736):
+# a -x "SET ..." runs after it, when a machine that starts itself has already booted.
+add_test(NAME acceptance-set-option
+         COMMAND ${CMAKE_COMMAND}
+                 -DSIM=$<TARGET_FILE:altairsim>
+                 -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/set-option.cmake)
+set_tests_properties(acceptance-set-option PROPERTIES LABELS acceptance TIMEOUT 60)
+
 # `--mirror pty` under --mcp mirrors the console to a pseudo-terminal (#683): the session
 # says where the link is and removes it at exit; on Windows it is refused at startup.
 add_test(NAME acceptance-mcp-mirror-pty
