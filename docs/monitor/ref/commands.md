@@ -1077,11 +1077,16 @@ and BUS is the backplane's own diagnostics rather than anything plugged into it.
 MACHINE is the machine itself: its name is what SHOW MACHINE prints, the video
 window's title, and what CONFIG SAVE saves.
 
+TERMINAL is the built-in terminal window, the one that connect=terminal opens.
+SHOW CONSOLE, SHOW DISPLAY and SHOW TERMINAL each list the keys and their values.
+
 ```
 SET mem0 fill=zero
 SET mem0 phantom=read
 SET acr0:tape mode=record  ; the tape in the recorder, not the recorder
 SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)
+SET CONSOLE upper=on       ; change the letters you type to uppercase. SHOW CONSOLE lists the keys.
+SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.
 SET DISPLAY focus=on       ; the video window takes the keyboard, not the terminal
 SET DISPLAY crt=on         ; paint the window like the period tube: soft phosphor and 4:3
 SET MACHINE name=mybox     ; what CONFIG SAVE calls the machine
@@ -1094,7 +1099,7 @@ SET BUS UNCLAIMED=WARN     ; warn on a cycle no board answered
 ### SHOW — `SH[OW]`
 
 ```
-SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|SYMBOLS|CLOCK|VERSION
+SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|DEBUG|SYMBOLS|CLOCK|VERSION
 ```
 
 ```
@@ -1114,6 +1119,7 @@ SHOW CONSOLE        ; which unit holds the keyboard, and its transforms
 SHOW DISPLAY        ; the host video window: keyboard focus, and the CRT look
 SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)
 SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)
+SHOW DEBUG          ; the diagnostic channels and their flags, and where they print
 SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS
 SHOW CLOCK          ; emulated time: T-states since POWER, and what they are in seconds
 SHOW ROMS           ; the ROM images built into this binary, and where each came from

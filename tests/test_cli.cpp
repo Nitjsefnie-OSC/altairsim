@@ -1329,6 +1329,26 @@ void test_cli() {
         monH.exec("HELP SHOW nonsense", no);
         CHECK(no.str().find("SHOW MOUNTS") != std::string::npos,
               "an unmatched sub-topic falls back to the whole of SHOW");
+
+        // Every keyword on SET's usage line has an example line of its own, so HELP SET
+        // <keyword> narrows to it. With no such line HELP falls back to the whole of SET,
+        // which said nothing about TERMINAL or CONSOLE (issue #740).
+        for (const char* kw : {"CONSOLE", "DISPLAY", "TERMINAL", "MACHINE", "REG", "BUS"}) {
+            std::ostringstream h;
+            monH.exec(std::string("HELP SET ") + kw, h);
+            CHECK(h.str().find(std::string("SET ") + kw + " ") != std::string::npos,
+                  (std::string("HELP SET ") + kw + " keeps the " + kw + " line").c_str());
+            CHECK(h.str().find("SET mem0") == std::string::npos,
+                  (std::string("HELP SET ") + kw + " drops the board siblings").c_str());
+        }
+
+        // The same for SHOW DEBUG, which SHOW accepted and its help did not list.
+        std::ostringstream dbg;
+        monH.exec("HELP SHOW DEBUG", dbg);
+        CHECK(dbg.str().find("SHOW DEBUG") != std::string::npos,
+              "HELP SHOW DEBUG keeps the DEBUG line");
+        CHECK(dbg.str().find("SHOW MOUNTS") == std::string::npos,
+              "HELP SHOW DEBUG drops the MOUNTS sibling");
     }
 
     // -----------------------------------------------------------------------

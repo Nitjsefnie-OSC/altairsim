@@ -347,10 +347,15 @@ static const std::vector<CommandDef> kCommands = {
      "MACHINE is the machine itself: its name is what SHOW MACHINE prints, the video\n"
      "window's title, and what CONFIG SAVE saves.\n"
      "\n"
+     "TERMINAL is the built-in terminal window, the one that connect=terminal opens.\n"
+     "SHOW CONSOLE, SHOW DISPLAY and SHOW TERMINAL each list the keys and their values.\n"
+     "\n"
      "  SET mem0 fill=zero\n"
      "  SET mem0 phantom=read\n"
      "  SET acr0:tape mode=record  ; the tape in the recorder, not the recorder\n"
      "  SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)\n"
+     "  SET CONSOLE upper=on       ; change the letters you type to uppercase. SHOW CONSOLE lists the keys.\n"
+     "  SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.\n"
      "  SET DISPLAY focus=on       ; the video window takes the keyboard, not the terminal\n"
      "  SET DISPLAY crt=on         ; paint the window like the period tube: soft phosphor and 4:3\n"
      "  SET MACHINE name=mybox     ; what CONFIG SAVE calls the machine\n"
@@ -359,7 +364,7 @@ static const std::vector<CommandDef> kCommands = {
      "                             ; (also CONTENTION=WARN|ERROR|SILENT, UNCLAIMED=WARN|HALT|SILENT)"},
     {"SHOW", true, nullptr,
      "SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|"
-     "ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|SYMBOLS|CLOCK|VERSION",
+     "ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|DEBUG|SYMBOLS|CLOCK|VERSION",
      "  SHOW mem0           ; regions and properties\n"
      "  SHOW BOARDS         ; the board types you can add\n"
      "  SHOW BOARD sol      ; one type's description and properties (add UNITS for just those)\n"
@@ -376,6 +381,7 @@ static const std::vector<CommandDef> kCommands = {
      "  SHOW DISPLAY        ; the host video window: keyboard focus, and the CRT look\n"
      "  SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)\n"
      "  SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)\n"
+     "  SHOW DEBUG          ; the diagnostic channels and their flags, and where they print\n"
      "  SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS\n"
      "  SHOW CLOCK          ; emulated time: T-states since POWER, and what they are in seconds\n"
      "  SHOW ROMS           ; the ROM images built into this binary, and where each came from\n"
