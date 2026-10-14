@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`--set` changes settings for one run.** `altairsim cpm22-buffered.toml --set "cpu0
+clock_hz=2000000"` boots the CP/M example at 2 MHz and leaves the machine file as it is. The
+text is what you type after `SET` at the prompt, and you can give `--set` more than one time:
+`--set "sio0:a connect=terminal"` puts the console in a terminal window. The settings are
+applied before the machine's `startup` commands. A `-x "SET ..."` runs after them, which is too
+late for a machine that starts by itself. A setting that fails stops the program with exit
+status 2, and the machine does not start.
+
 **`--mcp` now refuses `-x`, `-s` and `-i`.** With `--mcp` the program started the MCP server
 before it looked at these options, so it accepted them and did nothing with them. `altairsim
 mine.toml --mcp -x "SET cpu0 clock_hz=2000000"` left `clock_hz` as the machine file had it. A

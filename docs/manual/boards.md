@@ -447,6 +447,10 @@ To run at the speed of a real 2 MHz Altair, type:
 SET cpu0 clock_hz=2000000
 ```
 
+To use that speed for one run of a machine file, and leave the file as it is, give the setting
+on the command line: `altairsim mine.toml --set "cpu0 clock_hz=2000000"`. The machines chapter
+describes `--set`.
+
 **The guest sees the same result at either speed.** Each instruction takes the same number of
 T-states. The crystal changes how the machine feels to you, not what it does. A cassette has its
 own speed setting, `rate`, which the tapes chapter describes.

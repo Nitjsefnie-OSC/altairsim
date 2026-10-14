@@ -114,6 +114,13 @@ The docs are part of the change under review, not a follow-up. Update whichever 
 
 Never commit a locally built PDF; CI builds them.
 
+**Load `simplified-english` before you write the first sentence.** It is the standard for
+every text that a person reads: the manual, a README, the changelog, HELP text, and a paragraph
+in `DESIGN.md` or the Developer Guide. Write to its rules while you draft (its §6). Do not
+write first and fix later. Before the review report, run its §6 checks on the text that you
+added or changed, and only on that text. A sample's output is copied from a real run, or it is
+left out.
+
 **Scope the doc checks to the change.** Edit the docs your diff affects, and replay samples
 (`check-doc-samples`) only for a doc whose transcripts the diff could change. Do not run a
 sense pass, a whole-file `simplified-english` review or an audit of every TOML example unless
@@ -134,7 +141,7 @@ Report, then wait:
 - `git status --short` and `git diff --stat`
 - what changed and why, file by file
 - the tests run, with their pass lines
-- the docs touched
+- the docs touched, and that the `simplified-english` §6 checks were run on the new text
 - the issues filed, by number
 - anything not verified, and why
 - **last**, one line saying what is ready and where: *"Ready for your review on branch
