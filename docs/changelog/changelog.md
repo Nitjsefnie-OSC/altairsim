@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`HELP SET TERMINAL` and `HELP SET CONSOLE` now show the example for that word.** `HELP`
+with a command and a word shows the example lines of the command that contain the word. The
+`SET` help had no line for `TERMINAL` and no line for `CONSOLE`, so `HELP` printed all of the
+`SET` text. That text did not say what `TERMINAL` is. The `SET` help now has a line for
+each one and says that `TERMINAL` is the built-in terminal window. The `SHOW` help now lists
+`TERMINAL`, `JOYSTICKS` and `DEBUG` on its first line and has a `SHOW DEBUG` example.
+
 **`--set` changes settings for one run.** `altairsim cpm22-buffered.toml --set "cpu0
 clock_hz=2000000"` boots the CP/M example at 2 MHz and leaves the machine file as it is. The
 text is what you type after `SET` at the prompt, and you can give `--set` more than one time:
