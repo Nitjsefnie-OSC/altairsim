@@ -77,6 +77,7 @@ void test_lines();
 void test_modemline();
 void test_telnet();
 void test_wd17xx();
+void test_upd765();
 void test_i8257();
 void test_bt453();
 void test_hd63484();

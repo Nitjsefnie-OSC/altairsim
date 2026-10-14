@@ -109,6 +109,7 @@ const struct {
     {"modemline", test_modemline},
     {"telnet", test_telnet},
     {"wd17xx", test_wd17xx},
+    {"upd765", test_upd765},
     {"i8257", test_i8257},
     {"bt453", test_bt453},
     {"hd63484", test_hd63484},

@@ -103,6 +103,12 @@ public:
     int  trackImageBytes(long long rate) const override;
     bool writeTrackImage(const std::vector<uint8_t>& in, bool doubleDensity) override;
 
+    // ---- the µPD765A's two: the Two Side line, and Format a Track from an ID list ----
+    // twoSided() is the image's head count. formatTrack() needs setFormatting(true), as
+    // Write Track does; floppy-drive.cpp says what it can and cannot record.
+    bool twoSided() const override;
+    bool formatTrack(const std::vector<SectorId>& ids, uint8_t fill) override;
+
 private:
     // The chip searches ID fields by (track, sector). We hand it the current track's
     // geometry off the DiskImage; `trackFmt` fetches it, false if this drive has no such

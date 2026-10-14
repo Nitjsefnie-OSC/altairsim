@@ -164,6 +164,28 @@ public:
     virtual bool writeTrackImage(const std::vector<uint8_t>& in, bool doubleDensity) {
         (void)in; (void)doubleDensity; return false;
     }
+
+    // ---- TWO SIDE (the µPD765A's TS input, pin 34 in seek mode) ----
+    //
+    // The 8" drive drives this line when a two-sided diskette is in it. The FD177x has
+    // no such input, so only a chip that reads ST3 asks. False by default: a drive that
+    // says nothing about its sides is single sided, and the 765 answers a read or write
+    // to its side 1 with NOT READY, as the data sheet says it does.
+    virtual bool twoSided() const { return false; }
+
+    // ---- FORMAT FROM AN ID LIST (the µPD765A's Format a Track) ----
+    //
+    // The 765 does not take a raw track the way the FD177x's Write Track does. It writes
+    // the gaps and the address marks itself, and takes only C/H/R/N for each sector from
+    // the processor, plus one fill byte D for every data field. So the drive gets what the
+    // chip got: the ID fields in the order they go round the track (`size` and
+    // `doubleDensity` filled in by the chip from N and MF), and the fill byte.
+    //
+    // False by default, for the same reason as the whole-track calls above: a drive that
+    // cannot record a format must say so, and the chip reports a fault.
+    virtual bool formatTrack(const std::vector<SectorId>& ids, uint8_t fill) {
+        (void)ids; (void)fill; return false;
+    }
 };
 
 } // namespace altair

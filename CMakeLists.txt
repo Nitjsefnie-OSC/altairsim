@@ -436,6 +436,8 @@ add_library(altair_core STATIC
   # next 8251 card to turn up gets it for free (src/chips/intel8251.h).
   src/chips/intel8251.cpp
   src/chips/wd17xx.cpp
+  # The NEC uPD765A (Intel 8272) -- the CompuPro Disk 1A's FDC (src/chips/upd765.h).
+  src/chips/upd765.cpp
   src/chips/i8257.cpp
   # The OKI MSM5832 -- a BCD real-time clock/calendar reading the host's wall clock.
   # The CompuPro System Support 1 carries one (src/chips/msm5832.h).
@@ -839,6 +841,7 @@ add_executable(altair_tests
   tests/test_modemline.cpp
   tests/test_telnet.cpp
   tests/test_wd17xx.cpp
+  tests/test_upd765.cpp
   tests/test_i8257.cpp
   tests/test_bt453.cpp
   tests/test_hd63484.cpp
