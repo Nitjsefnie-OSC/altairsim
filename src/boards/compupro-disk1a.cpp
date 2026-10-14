@@ -482,8 +482,8 @@ std::vector<Property> CompuProDisk1aBoard::properties() {
     {
         Property x;
         x.name = "motor_timeout";
-        x.help = "On (default): the drive motors stop about 15 seconds after the last access to "
-                 "the board. Off: the motors run all the time";
+        x.help = "J11. On (default, J11 installed): the drive motors stop about 15 seconds after "
+                 "the last access to the board. Off: the motors run all the time";
         x.kind = Kind::Bool;
         x.get  = [this] { return Value::ofBool(timeout_); };
         x.set  = [this](const Value& v, std::string&) {

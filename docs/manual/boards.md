@@ -195,6 +195,7 @@ The boards are in groups, in the same order as the sections below.
 | `tarbell` | Tarbell #1011: a single-density floppy controller with its own boot PROM. Boots CP/M by itself |
 | `tarbelldd` | Tarbell #2022: the double-density version, for mixed-density disks |
 | `icom` | iCOM FD3712/FD3812: an 8″ floppy controller with its own boot PROM. Boots CP/M and FDOS |
+| `disk1a` | CompuPro Disk 1A: an 8″ floppy controller with DMA and its own boot EPROM. Boots CompuPro CP/M |
 | `mdsa` | North Star MDS-A: a single-density 5¼″ floppy controller in memory, with its own boot PROM. Boots CP/M and North Star DOS |
 | `mdsad` | North Star MDS-A-D: the double-density version, for one-sided and two-sided disks |
 | `16fdc` | Cromemco 16FDC: a floppy controller with a console UART and the RDOS 2.52 boot PROM. Boots CDOS |
@@ -1287,6 +1288,43 @@ The `rom` property selects the PROM, and the PROM selects the system that boots:
 
 The `icom` machine boots CP/M 2.2 as soon as you mount a disk. Reads and writes of a formatted
 disk work. Like the other controllers here, it cannot format a **blank** disk from nothing.
+
+### `disk1a`: CompuPro Disk 1A
+
+The **CompuPro Disk 1A** (1984) is a floppy controller with an **NEC µPD765A** chip, a **DMA**
+engine and a **boot EPROM**. It has four ports at `C0`–`C3`, and up to four drives. The board
+moves each byte between the disk and memory itself, without the processor.
+
+The boot EPROM holds sixteen 512-byte routines. The `routine` switch picks one, and RESET puts
+it at address `0000`. Routine 0, the default, reads track 0 of drive 0 into memory at `0100`.
+It then switches the EPROM off and starts the loader that it read. The `boot` switch turns the
+EPROM off, for a machine that boots in a different way.
+
+The `disk1a` machine has this board, a Z80 processor, 64K of RAM and a **System Support 1**.
+The console is the serial port of the System Support 1. The machine starts the EPROM at once.
+With no disk in drive 0, routine 0 tries again and again. To boot a CompuPro CP/M disk:
+
+1. Press `Ctrl-E` to get the monitor.
+2. Mount the disk in drive 0.
+3. Run from `0000`.
+
+```
+altairsim> MOUNT fd0:drive0 "CCPM22.DSK"
+altairsim> RUN 0
+```
+
+The board recognizes a disk by the size of its image. An 8″ CompuPro disk has a single-density
+track 0, which the EPROM reads, and its other tracks can be double density. A disk can have one
+side or two. A smaller image that has no known size mounts as a blank disk. CompuPro's
+`FORMAT.COM` formats it.
+
+These things are not part of the board:
+
+- **5.25″ disks are not supported yet.** No 5.25″ CompuPro disk image was available to test
+  them.
+- **Only routines 0–3 run.** The other routines are for the 8086, 68000 and 32016 processors.
+- **CompuPro CP/M 2.2Q does not run.** Its BIOS needs the 8088 of the CompuPro CPU 8085/88
+  board.
 
 ### `mdsa` and `mdsad`: North Star MDS-A and MDS-A-D
 

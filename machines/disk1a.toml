@@ -14,6 +14,15 @@
 # THE CONSOLE is the System Support 1's 2651 serial channel at 5C-5F. Switch S3-1 on the
 # Disk 1A (`sense_switch`, on by default) is how the boot EPROM tells the CompuPro BIOS that
 # the console is on the System Support 1.
+#
+# THE TERMINAL ignores bit 7. CompuPro's FORMAT.COM sets bit 7 of the last character of each
+# message, as MITS BASIC does, and the terminals of the time printed the character without
+# it. The serial line stays 8-bit clean; `strip7out` is the console doing what the terminal
+# did.
+#
+# THE BACKSPACE KEY of a modern terminal sends DEL (7F). The CP/M 2.2 CCP takes DEL as a
+# rubout and echoes the character it deleted (`formattamrof`), and takes BS (08) as a real
+# backspace. `bsdel = "bs"` folds DEL to BS, as the other built-in CP/M machines do.
 
 [machine]
 name    = "disk1a"
@@ -32,6 +41,10 @@ base = 50
 
   [board.unit.serial]
   connect = "console"
+
+[console]
+strip7out = true
+bsdel     = "bs"
 
 # The Disk 1A at its standard base of C0H, with boot routine 0.
 [[board]]

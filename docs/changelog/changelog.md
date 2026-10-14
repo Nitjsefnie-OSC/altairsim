@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The CompuPro Disk 1A floppy controller is a new board, `disk1a`.** The board has an NEC
+µPD765A floppy chip, a DMA engine and a boot EPROM with all sixteen routines. The new `disk1a`
+machine adds it to a Z80, 64K of RAM and a CompuPro System Support 1 for the console. Mount a
+CompuPro CP/M 2.2 disk in drive 0 and run from `0000`. Routine 0 of the EPROM then boots the disk
+to `A>`. The board reads 8″ disks with one side or two, in single and double density.
+CompuPro's `FORMAT.COM` formats a blank disk. 5.25″ disks are not supported yet, because no
+5.25″ CompuPro disk image was available to test them.
+
 **Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
 The `ss1` board could not take the line that `--mcp` builds for the console, so the program
 connected a plain line to it. That line skipped `strip7out` and the other console settings.

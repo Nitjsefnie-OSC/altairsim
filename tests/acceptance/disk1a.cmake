@@ -15,7 +15,10 @@
 #   1. the EPROM boots the disk to the 2.2LD sign-on and A>;
 #   2. DIR reads the directory, and STAT DSK: reads the BIOS's disk parameters;
 #   3. the write path: PIP copies STAT.COM, the copy runs and prints the same disk parameters,
-#      and ERA removes it.
+#      and ERA removes it;
+#   4. Format a Track: CompuPro's FORMAT.COM formats a blank disk in drive B as 8" single
+#      density (mode 0, 128-byte sectors). The image grows to 77 x 26 x 128 = 256,256 bytes,
+#      and STAT B: finds an empty CP/M disk on it.
 #
 # The guest writes, so the test works on a copy of tests/media/compupro, never the tracked
 # image.
@@ -50,6 +53,15 @@ cmd(5 "PIP X.COM=STAT.COM")
 cmd(6 "X DSK:")
 cmd(7 "ERA X.COM")
 cmd(8 "DIR X.COM")
+# 4. A blank disk in drive 1, and FORMAT.COM's prompts one at a time: the drive, the mode, and
+# the confirmation. Each answer is one key with no RETURN.
+call(9 monitor "{\"command\":\"MOUNT fd0:drive1 BLANK.DSK CREATE\"}")
+call(10 run "{\"input\":\"FORMAT\\r\",\"until\":\"(A: - D:)\",\"timeout_ms\":20000}")
+call(11 run "{\"input\":\"B\",\"until\":\"3 = 1024\",\"timeout_ms\":20000}")
+call(12 run "{\"input\":\"0\",\"until\":\"(y)\",\"timeout_ms\":20000}")
+call(13 run "{\"input\":\"y\",\"until\":\"exit back to system.\",\"timeout_ms\":60000}")
+call(14 run "{\"input\":\"N\",\"until\":\"A>\",\"timeout_ms\":20000}")
+cmd(15 "STAT B:")
 file(WRITE "${example}/in.jsonl" "${session}")
 
 execute_process(
@@ -78,7 +90,7 @@ function(reply id var)
 endfunction()
 
 # Every run must have stopped because its text arrived, not at the timeout.
-foreach(id 2 3 4 5 6 7 8)
+foreach(id 2 3 4 5 6 7 8 10 11 12 13 14 15)
   reply(${id} r)
   if(NOT r MATCHES "\"stopped\":\"match\"")
     fail("run ${id} did not come back to A>")
@@ -111,6 +123,21 @@ if(NOT r MATCHES "NO FILE")
   fail("ERA did not remove X.COM")
 endif()
 
+# 4. FORMAT finished every track, the image is a whole SSSD disk, and CP/M reads it. With
+# strip7out on the console, FORMAT's messages arrive with bit 7 clear.
+reply(13 r)
+if(NOT r MATCHES "FORMAT complete\\.")
+  fail("FORMAT.COM did not finish the blank disk")
+endif()
+file(SIZE "${example}/BLANK.DSK" size)
+if(NOT size EQUAL 256256)
+  fail("the formatted disk is ${size} bytes, expected 256256 (77 x 26 x 128)")
+endif()
+reply(15 r)
+if(NOT r MATCHES "Bytes Remaining On B: 241k")
+  fail("STAT B: did not find an empty single-density disk")
+endif()
+
 file(REMOVE_RECURSE "${work}")
-message(STATUS "disk1a: the boot EPROM loaded CompuPro CP/M 2.2LD; DIR, STAT, and a PIP "
-               "copy that ran and was erased.")
+message(STATUS "disk1a: the boot EPROM loaded CompuPro CP/M 2.2LD; DIR, STAT, a PIP "
+               "copy that ran and was erased, and FORMAT.COM formatted a blank disk.")

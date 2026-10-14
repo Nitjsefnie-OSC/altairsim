@@ -161,7 +161,7 @@ Bit 7 controls **both** 8″ drive #3 and **all** minifloppies together (miniflo
 one motor line) — they cannot be switched individually. The register has an **automatic
 ~15-second timeout**: all motors turn off ~15 s after the last controller access, and **any**
 access to the board restarts the timer. Jumper **J11** installed = timeout active; J11 removed =
-motors always on. (On Disk 1 the equivalent boot-disable write is `D0 = 0` to the **serial**
+motors always on. ⚠ §5 note 2 gives the opposite reading. This reading is the one taken (§8). (On Disk 1 the equivalent boot-disable write is `D0 = 0` to the **serial**
 port; on Disk 1A it is `D0 = 0` to this Motor Control Register — same bit, same port 3.)
 
 ---
@@ -289,7 +289,7 @@ carries full load continuously and the enclosure must cool for it.
 
 **5.25″ minifloppy programming notes (Disk 1A, §"Programming Considerations"):**
 1. Minifloppies use half the 8″ data rate → set Drive-Select-Reg bit 5 (5.25″), wait for the FDC to settle, and re-SPECIFY for the 4 MHz clock.
-2. Almost all minifloppies have a motor line → turn the motor on and wait for spin-up; the Motor Register times out in ~15 s (install **J11** to keep motors on, if desired).
+2. Almost all minifloppies have a motor line → turn the motor on and wait for spin-up; the Motor Register times out in ~15 s (install **J11** to keep motors on, if desired). ⚠ The opposite of §2.3 (§8).
 3. If the drive drives READY, connect **J6 A-C**; if not, connect **J6 B-C** so READY is forced whenever the 5.25″ bit is set (you then can't tell if the drive is truly ready).
 4. Minifloppies have no single/double-sided signal → set **Force Two Sided** (Drive-Select bit 3) for double-sided media, or the FDC won't access side 1.
 
@@ -314,7 +314,7 @@ a CompuPro machine and a WD177x-based one (Tarbell, Cromemco, VersaFloppy).
 
 ## 7. Emulation checklist
 
-For a `disk1` / `disk1a` board over a shared 8272/765A FDC core:
+For a `disk1` / `disk1a` board over a shared 8272/765A FDC core. The Disk 1A is emulated as `disk1a` (`docs/boards/compupro-disk1a.md`), over the `Upd765` chip. The Disk 1 is not emulated.
 
 1. **Four ports at a multiple-of-four base (default `C0H`).** Port 0 IN = FDC main status, port 1 = FDC data, port 2 IN = board status / OUT = 24-bit DMA address (three writes, MSB first). Port 3 and port-0 OUT differ per board (§2).
 2. **DMA is the only data path.** The FDC's DRQ drives an onboard 24-bit counter that reads/writes host memory directly, incrementing across 64 K boundaries; there is no PIO data port. Model the transfer as DMA against the loaded 24-bit address.
@@ -335,4 +335,4 @@ For a `disk1` / `disk1a` board over a shared 8272/765A FDC core:
 - **DMA Address Register is MSB-first into a three-deep push-down stack** — three writes, high byte first, not a low/high pair.
 - **Disk 1 serial-line polarity is inverted onto D7** (SPACING/logic-0 = D7 high; MARKING/logic-1 = D7 low), and cleared to MARKING on reset — easy to get backwards.
 - **Motor bit 7 (Disk 1A) is shared** between 8″ drive #3 and *all* minifloppies; you cannot switch them independently.
-- No internal contradictions were found in either manual.
+- ⚠ **J11 polarity: two readings.** §2.3 reads J11 installed = timeout active, removed = motors always on. §5 note 2 reads install J11 to keep the motors on. **§2.3 is taken:** the factory setting (§4) is J11 installed, which agrees with §2.3 and not with §5. Not confirmed on hardware. The `disk1a` board's `motor_timeout = on` is J11 installed.

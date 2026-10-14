@@ -100,6 +100,7 @@ in the monitor prints this list with a one-line description of each (`SHOW BOARD
 | `dcdd` | MITS 88-DCDD — 8″ hard-sector floppy, up to 16 drives. |
 | `mds` | MITS 88-MDS — 5¼″ minidisk. The DCDD's registers, different physics. |
 | `icom` | iCOM FD3712/3812 — 8″ floppy with a boot PROM; boots CP/M 2.2 and FDOS. |
+| `disk1a` | CompuPro Disk 1A — NEC µPD765A, 24-bit DMA and a boot EPROM; boots CompuPro CP/M 2.2LD. 8″ only for now. |
 | `mdsa` / `mdsad` | North Star MDS-A (SD) / MDS-A-D (DD) — 5¼″ hard-sector floppy with no ports: a 1 K block of memory where a read is the command. Boots CP/M and North Star DOS. |
 | `versafloppy` | SD Systems VersaFloppy I/II — WD FD177x soft-sector; boots SDOS. |
 | `tarbell` / `tarbelldd` | Tarbell #1011 (SD) / #2022 (DD) — auto-boots CP/M the moment a disk is in it. |
@@ -143,7 +144,7 @@ in the monitor prints this list with a one-line description of each (`SHOW BOARD
 names them all. The Altairs proper — `default`, `original` (as it left Albuquerque),
 `altmon`, `amon`, `acuter`, `cuter`, `turnkey`, `rombasic`. The BASIC and PS2 benches —
 `basic4k`, `basic8k`, `ps2`, `ps2int`. The disk machines — `minidisk`, `tarbell`,
-`tarbelldd`, `icom`, `northstar`, `northstardd`. Other CPUs and other makers — `z80`, `8085`, `sbc200`,
+`tarbelldd`, `icom`, `northstar`, `northstardd`, `disk1a`. Other CPUs and other makers — `z80`, `8085`, `sbc200`,
 `sbc200v`, `dualsd`, `dualide`, `dualidesd`. And the peripheral demos — `vdm1`, `dazzler`,
 `cadzilla`, `sol20`, `lineprinter`, `parallel`, `bankmem`, `compupro`.
 
