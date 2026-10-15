@@ -31,7 +31,10 @@ the standard µPD765A/8272 model (the Disk 1 manual reprints Intel's *Single/Dou
 Floppy Disk Controller* data sheet, © Intel 1980, as pages 31–46; the chip is distilled in
 [NEC µPD765A FDC](NEC%20uPD765A%20FDC.md)). What this file adds is the **board** wrapper: the port map, the
 board registers, the DMA/boot/`PHANTOM*` mechanism, the switch/jumper configuration, and — the
-point of grouping them — exactly what differs between Disk 1 and Disk 1A.
+point of grouping them — exactly what differs between Disk 1 and Disk 1A. The CP/M that ran on
+these boards — the floppy formats, the system-disk layout, the boot chain and the switch
+settings for a CP/M machine — is in
+[CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md).
 
 ---
 
@@ -66,6 +69,9 @@ and 32-bit CPU families.
 ---
 
 ## 2. I/O port map
+
+The map of every CompuPro board's ports (Disk 1 `C0`–`C3`, MDrive/H `C6`/`C7`, Disk 2 `C8`, Disk 3
+`90`) is in [CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md) §1.1.
 
 Four consecutive ports, base a multiple of four. Standard base `C0H` (both boards); Disk 1
 also documents `CCH` as the recommended 5.25″ base. Ports below are **relative** (0–3); actual
@@ -228,6 +234,11 @@ Within each family the four routines differ only in drive-search behavior:
 - **Third (2, 6, 10, 14)** — try 8″ drive 0; else a 5.25″ as physical drive 2; else loop (8″, then 5.25″).
 - **Fourth (3, 7, 11, 15)** — try a 5.25″ drive 0; else DISK 3; then loop.
 
+⚠ The CompuPro *CP/M 2.2 Technical Manual* (October 1984, p.35) gives a different Disk 1A S1
+map: **S1 4–6** pick the processor and the console, with S1 1–3 ON. That is not this EPROM 1.4
+map, and `291B_1.HEX` follows the 1.4 map. See
+[CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md) §5.1 and §8.
+
 Every routine ends by passing (2 + the sense-switch **S3-1** value) so the OS selects the
 console: **S3-1 ON** → System Support 1 console, **S3-1 OFF** → Interfacer 3/4 user 7.
 
@@ -309,6 +320,10 @@ after the header CRC bytes; that byte is not specified in either IBM standard an
 the 8272/765 on the Disk 1. Diskettes formatted by a true-IBM controller (or by IBM) are fine.
 This is a real interoperability note for anyone modeling cross-controller disk exchange between
 a CompuPro machine and a WD177x-based one (Tarbell, Cromemco, VersaFloppy).
+
+The four formats CompuPro's FORMAT writes (track 0 side 0 always FM 26 × 128; data tracks
+26 × 128 FM, 26 × 256, 15 × 512 or 8 × 1024 MFM) and the CP/M system-disk layout are in
+[CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md) §2–§3.
 
 ---
 

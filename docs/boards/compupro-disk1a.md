@@ -27,6 +27,7 @@ usually a System Support 1.
 | Source | Path | Authority |
 |---|---|---|
 | CompuPro *Disk 1A Technical Manual* (1984) | `reference/CompuPro Disk 1 & 1A Floppy Controllers.md` | The ports, the register bits, the switches and jumpers, and the boot routine table. The section numbers in the source are this file's. |
+| CompuPro *CP/M 2.2 Technical Manual* (October 1984; 1983 compared) | `reference/CompuPro CPM-22 Technical Manual.md` | The CP/M side: the four floppy formats, the system-disk layout, the boot chain, the CBIOS console ports, and the switch settings for a CP/M machine, with the Disk 1A standard settings. Its Disk 1A S1 table follows an earlier EPROM map, not `291B_1.HEX`. |
 | NEC µPD765A data sheet (1982) | `reference/NEC uPD765A FDC.md` | The chip: commands, result bytes, ST0–ST3, the MSR handshake. |
 | `291B_1.HEX` | `roms/DISK1A/` | The boot EPROM, all sixteen routines. |
 | CompuPro `ROM1.ASM` (August 1984) | not tracked | Routine 0 of an earlier EPROM revision. It agrees with `291B_1.HEX` on the ports and the Read Data command. Its Specify bytes differ. |
@@ -188,6 +189,7 @@ format it track by track with Format a Track.
 ## References
 
 - `reference/CompuPro Disk 1 & 1A Floppy Controllers.md`
+- `reference/CompuPro CPM-22 Technical Manual.md`
 - `reference/NEC uPD765A FDC.md`
 - `roms/DISK1A/README.md`
 - `docs/devguide/soft-sector-floppy.md`
