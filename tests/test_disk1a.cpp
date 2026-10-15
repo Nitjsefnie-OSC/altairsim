@@ -1,7 +1,8 @@
 // CompuPro Disk 1A (src/boards/compupro-disk1a.h). The µPD765A itself is pinned in
 // test_upd765; this file pins the board around it, through real bus cycles: the port map,
 // the board status bits, the Drive Select Register, the DMA engine and its 24-bit counter,
-// the boot ROM over PHANTOM*, the motor timeout, the size probe, the snapshot and the
+// the boot ROM over PHANTOM*, the 5.25" boot from unit 2, the motor timeout, the size probe
+// (a blank formats as any disk), the snapshot and the
 // property checks.
 //
 // The command sequences are the ones CompuPro's own ROM1.ASM and HMXBIOS.ASM send: Specify
@@ -311,6 +312,55 @@ void test_disk1a() {
         }
         CHECK(!k.fdc->mount("drive4", "x.dsk", false, err), "there is no drive4");
     }
+    {
+        // A blank formats as any disk: a 5.25" FORMAT writes cylinder 79 head 1, and an 8"
+        // single-sided one lays its tracks out end to end.
+        MemoryMedia* blank = nullptr;
+        setMediaResolver([&blank](const std::string& path, bool ro, std::string&) {
+            auto m = std::make_unique<MemoryMedia>(path, std::vector<uint8_t>{}, ro);
+            blank  = m.get();
+            return m;
+        });
+        auto format = [](Rig& k, uint8_t c, uint8_t h, uint8_t n, uint8_t sc, bool mfm) {
+            k.command({0x0F, 0x01, c});  // Seek, unit 1
+            k.out(DATA, 0x08);
+            k.results(2);
+            for (uint8_t r = 0; r < sc; ++r) {
+                const uint8_t id[] = {c, h, (uint8_t)(r + 1), n};
+                for (int i = 0; i < 4; ++i) k.m.bus.memWrite((uint16_t)(0x5000 + r * 4 + i), id[i]);
+            }
+            k.dmaAt(0x5000);
+            k.command({(uint8_t)(mfm ? 0x4D : 0x0D), (uint8_t)(h << 2 | 1), n, sc, 0x1B, 0xE5});
+            return k.results(7);
+        };
+        {
+            Rig         k;
+            std::string err;
+            CHECK(k.fdc->mount("drive1", "blank5.dsk", false, err), "a blank (0-byte) disk mounts");
+            k.out(DSR, 0x28);  // 5.25" rate + Force Two Sided, as the EPROM and HMXBIOS set
+            k.home(1);
+            auto r = format(k, 79, 1, 3, 5, true);
+            CHECK((r[0] & 0xC0) == 0, "a blank formats cylinder 79 head 1, 5 x 1024 MFM");
+            CHECK(blank->bytes().size() == 5120, "...and the image holds that one track");
+            k.out(DSR, 0x20);
+            k.out(DATA, 0x04); k.out(DATA, 0x01);
+            CHECK((k.in(DATA) & 0x08) == 0x08, "side 1 is formatted: TS is high without Force Two Sided");
+        }
+        {
+            Rig         k;
+            std::string err;
+            k.fdc->mount("drive1", "blank8.dsk", false, err);
+            k.out(DATA, 0x04); k.out(DATA, 0x01);
+            CHECK((k.in(DATA) & 0x08) == 0, "a blank reads one-sided (ST3 TS low), so an 8\" FORMAT writes side 0 only");
+            k.home(1);
+            format(k, 0, 0, 0, 26, false);
+            auto r = format(k, 1, 0, 0, 26, false);
+            CHECK((r[0] & 0xC0) == 0 && blank->bytes().size() == 6656,
+                  "an 8\" SSSD format of cylinders 0 and 1 lays out end to end: 6,656 bytes");
+            k.out(DATA, 0x04); k.out(DATA, 0x01);
+            CHECK((k.in(DATA) & 0x08) == 0, "...and it still reads one-sided");
+        }
+    }
 
     SECTION("disk1a: the boot ROM");
     // ---- the boot ROM over PHANTOM*: reads only, the routine, D0 = 0, reset ----
@@ -360,6 +410,59 @@ void test_disk1a() {
         fdc->peek(0, b0);
         fdc->peek(1, b1);
         CHECK(b0 == 0xDB && b1 == 0xFD, "routine 4 is the 8086 set: IN FD");
+    }
+
+    SECTION("disk1a: the 5.25\" boot");
+    // ---- routines 2 and 3 of the built-in EPROM boot unit 2: 5 x 1024 MFM to 0100 ----
+    {
+        // 5.25" DSDD 5 x 1024, 80 cylinders (CP/M 2.2Q's BOOTSCPM.LIB layout). Byte 0 is a HLT,
+        // so the machine stops at the jump to 0100; the rest is the stamp.
+        setMediaResolver([](const std::string& path, bool ro, std::string&) {
+            std::vector<uint8_t> d(819200);
+            for (size_t i = 0; i < d.size(); ++i) d[i] = stamp(i);
+            d[0] = 0x76;
+            return std::make_unique<MemoryMedia>(path, std::move(d), ro);
+        });
+        auto boot = [](int routine, bool sense, int unit) {
+            struct Out { RunResult r; bool loaded = true; uint8_t c = 0; uint32_t hz = 0; } o;
+            Machine     m;
+            std::string err;
+            auto* mem = dynamic_cast<MemoryBoard*>(m.add("memory", "mem0", err));
+            Region r;
+            r.kind = RegionKind::Ram;
+            r.at   = 0x0000;
+            r.size = 0x10000;
+            mem->addRegion(r, err);
+            setProperty(*mem, "fill", "zero", err);
+            setProperty(*mem, "honors_phantom", "read", err);
+            mem->power();
+            auto* fdc = dynamic_cast<CompuProDisk1aBoard*>(m.add("disk1a", "fd0", err));
+            setProperty(*fdc, "routine", std::to_string(routine), err);
+            setProperty(*fdc, "sense_switch", sense ? "on" : "off", err);
+            fdc->mount("drive" + std::to_string(unit), "q5.dsk", false, err);
+            m.add("z80", "cpu0", err);
+            m.cpu()->reset(Reset::PowerOn);
+            fdc->power();
+            o.r = m.debug.run(20000000);
+            for (uint32_t i = 1; i < 5120; ++i)
+                if (m.bus.memRead((uint16_t)(0x0100 + i)) != stamp(i)) o.loaded = false;
+            if (m.bus.memRead(0x1500) != 0) o.loaded = false;
+            for (const RegDef& x : m.cpu()->registers())
+                if (x.name == "C") o.c = (uint8_t)x.get();
+            o.hz = fdc->chip().fdcClockHz;
+            return o;
+        };
+        auto o = boot(3, true, 2);
+        CHECK(o.r.why == StopReason::Halted && o.r.pc == 0x0101,
+              "routine 3: the EPROM jumps to 0100, where the disk's first byte is");
+        CHECK(o.loaded, "...after it reads cylinder 0 head 0 of unit 2, 5 x 1024, to 0100-14FF");
+        CHECK(o.hz == 4000000, "...at the 5.25\" rate");
+        CHECK(o.c == 2, "C = 2 with S3-1 ON");
+        CHECK(boot(3, false, 2).c == 3, "C = 3 with S3-1 OFF");
+        CHECK(boot(3, true, 0).r.pc != 0x0101, "routine 3 does not boot a 5.25\" disk in unit 0");
+        o = boot(2, true, 2);
+        CHECK(o.r.why == StopReason::Halted && o.r.pc == 0x0101 && o.loaded && o.c == 2,
+              "routine 2: unit 0 is empty, and the EPROM boots unit 2");
     }
 
     SECTION("disk1a: the motors");

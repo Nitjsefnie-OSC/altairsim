@@ -1,9 +1,10 @@
 # CompuPro Disk 1A floppy disk controller
 
-**Status:** built (`disk1a`) for 8″ drives. The board boots CompuPro CP/M 2.2LD through routine 0
-of its own boot EPROM. `tests/test_disk1a.cpp` tests the board, and `acceptance-disk1a` boots the
-tracked disk through the `disk1a` machine. **5.25″ drives are not tested.** No 5.25″ CompuPro disk
-image is available yet (see *Limitations*).
+**Status:** built (`disk1a`) for 8″ and 5.25″ drives. The board boots CompuPro CP/M 2.2LD from an
+8″ disk through routine 0 of its own boot EPROM. `tests/test_disk1a.cpp` tests the board, and
+`acceptance-disk1a` boots the tracked disk through the `disk1a` machine. A 5.25″ CompuPro CP/M 2.2Q
+disk, built from CompuPro's 1985 sources, boots through routine 3 from unit 2. That disk is not in
+the tree (see *Limitations*).
 
 ## The real hardware
 
@@ -105,8 +106,15 @@ order puts it.
 
 Three 5.25″ formats have 327,680 bytes, and two have 655,360 bytes. The probe refuses these
 two sizes, because a raw image cannot say which format it is. An image that is smaller than
-the largest format and has no known size mounts as a blank 8″ one-sided disk. A guest can
-format it track by track with Format a Track.
+the largest format and has no known size mounts as a blank disk. A guest can format it track by
+track with Format a Track. A blank has 80 cylinders and two sides, the size of the largest disk. A
+track that is never formatted takes no bytes in the image. Because of this, a one-sided or a
+77-cylinder format is written end to end, and the probe reads it at the next mount.
+
+The TS line to the 765 is high in two cases: Drive Select bit 3 (Force Two Sided) is set, or side
+1 of the disk has a formatted track. A blank disk reads one-sided until a FORMAT writes side 1, as new
+8″ one-sided media does. An 8″ `FORMAT.COM` reads TS to decide how many sides to write. CompuPro's
+BIOS and the EPROM set bit 3 for every 5.25″ drive.
 
 ### Properties
 
@@ -139,9 +147,12 @@ format it track by track with Format a Track.
 
 ## Limitations and deliberate departures
 
-- **5.25″ drives are not tested** (issue #746). No 5.25″ CompuPro disk image is available. The 5.25″
-  formats in the size probe come from the `MAKEDPB` table of `HMXBIOS.ASM`, and no real disk has
-  checked them. That build of the BIOS sets 80 tracks (`TRK5 EQU 80` in `ACTIVE.LIB`). The BIOS
+- **One 5.25″ format is tested.** A CP/M 2.2Q disk built from CompuPro's 1985 sources (two sides,
+  80 cylinders, 5 × 1024) boots through routine 3 from unit 2. It formats a blank disk in unit 3
+  and copies files to it, and its warm boot reads the CCP again. The disk and the record of how it
+  was built are kept outside the tree, as the CompuPro master disk is. The other 5.25″ formats in
+  the size probe come from the `MAKEDPB` table of `HMXBIOS.ASM`, and no real disk has checked
+  them. That build of the BIOS sets 80 tracks (`TRK5 EQU 80` in `ACTIVE.LIB`). The BIOS
   can also be built for 40-track and 77-track 5.25″ drives, but the probe knows only 80 tracks.
   The rule that a 5.25″ disk has no single-density track 0 comes from the BIOS as well. The
   probe refuses 327,680 and 655,360 bytes, as *The size probe* says.
@@ -158,13 +169,15 @@ format it track by track with Format a Track.
   fails. Here, Drive Select bit 5 changes only the Specify timing of the 765.
 - **Only routines 0–3 can run.** Routines 4–7 are 8086 code, 8–11 are 68000 code and 12–15 are
   32016 code. The machine has no processor board for them. Routine 1 boots only the DISK 3 hard
-  disk, which is not emulated. Routine 2 tries 8″ drive 0 and then a 5.25″ drive. Routine 3
-  tries a 5.25″ drive and then the DISK 3. Only routine 0 is tested.
+  disk, which is not emulated. Routine 2 tries 8″ drive 0 and then the 5.25″ drive in unit 2.
+  Routine 3 tries the 5.25″ drive in unit 2 and then the DISK 3. Routines 0, 2 and 3 are tested.
 - **No Disk 1.** The Disk 1 (1981) has a different port 0 and port 3, a 256-byte EPROM and a
   bit-banged serial port. It is not built. It can use the same `Upd765` chip.
 - **No Disk 2 or DISK 3.** CP/M 2.2NZ, which boots from a Disk 2 hard disk, does not boot.
-- **CompuPro CP/M 2.2Q needs the 8088 of the CPU 8085/88 board.** Its BIOS moves records with
-  the 8088 (`IN FD`). The machine has no 8088, so its `DIR` repeats one record.
+- **The CompuPro CP/M 2.2Q master disk needs the 8088 of the CPU 8085/88 board.** Its BIOS, as
+  shipped, moves records with the 8088 (`IN FD`). The machine has no 8088, so its `DIR` repeats
+  one record. The same BIOS source, built with `I8088 FALSE`, runs on the Z80. The 5.25″ disk
+  above is that build.
 - **⚠ The J11 polarity is chosen, not proven** (issue #747). The reference gives two readings. §2.3 says that
   J11 installed makes the timeout active, and that J11 removed keeps the motors on. §5 says that
   J11 installed keeps the motors on. The board takes the §2.3 reading, because the factory
@@ -176,8 +189,10 @@ format it track by track with Format a Track.
 - `tests/test_disk1a.cpp` (suite `disk1a`) uses real bus cycles. It tests these things:
   - the port map at a moved base, each status bit, and the DMA stack
   - a DMA read, a DMA write and the 24-bit counter
-  - the size probe
+  - the size probe, a blank disk formatted as a 5.25″ and as an 8″ disk, and the TS line
   - the read-only shadow of the EPROM, and the built-in EPROM
+  - the 5.25″ boot: routines 2 and 3 of the built-in EPROM read track 0 of unit 2 to `0100` and
+    jump to it, and routine 2 does this when unit 0 is empty
   - the motor timeout, a snapshot round trip and the property checks
 - `tests/test_upd765.cpp` (suite `upd765`) tests the chip against the data sheet.
 - `acceptance-disk1a` boots `tests/media/compupro/CCPM22LD.DSK` through routine 0 to the

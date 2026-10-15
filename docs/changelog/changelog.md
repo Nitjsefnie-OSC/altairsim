@@ -17,8 +17,9 @@ register, the bit or the command that was wrong.
 machine adds it to a Z80, 64K of RAM and a CompuPro System Support 1 for the console. Mount a
 CompuPro CP/M 2.2 disk in drive 0 and run from `0000`. Routine 0 of the EPROM then boots the disk
 to `A>`. The board reads 8″ disks with one side or two, in single and double density.
-CompuPro's `FORMAT.COM` formats a blank disk. 5.25″ disks are not supported yet, because no
-5.25″ CompuPro disk image was available to test them.
+CompuPro's `FORMAT.COM` formats a blank disk. Routines 2 and 3 boot a 5.25″ disk from unit 2, as
+CompuPro CP/M 2.2P and 2.2Q do. A 5.25″ CP/M 2.2Q disk built from CompuPro's 1985 sources boots
+this way, formats a blank disk in unit 3 and copies files to it.
 
 **Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
 The `ss1` board could not take the line that `--mcp` builds for the console, so the program

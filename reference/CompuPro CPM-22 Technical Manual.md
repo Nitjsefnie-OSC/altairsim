@@ -596,8 +596,26 @@ None of the three May 1984 systems describes a 5.25″ boot disk.
   minifloppies only "using DISK 1 - 5", CP/M-86 R has only "a skeleton" for 5.25″ support, and
   every pre-built CP/M 2.2N and CP/M-86 R system is for 8″ floppies; the CP/M-68K loaders set
   only the 8″ step rate `STEPR8` (§3.3, §6A). As of
-  May 1984 no CompuPro operating system documents a 5.25″ boot disk. Issue #746 tracks the search
-  for a 5.25″ image.
+  May 1984 no CompuPro operating system documents a 5.25″ boot disk.
+- **CP/M 2.2P and 2.2Q boot from a 5.25″ disk on the Disk 1A.** These are the 1985 sources on the
+  CP/M 2.2Q master disk, not this manual. The `HMXBIOS.ASM` history says "04 FEB 85, VER 2.2P
+  Added DISK1A driver code and 5" floppy disk boot". With `BOOT5X` and `DISK1A` set, A: and B:
+  are the 5.25″ units 2 and 3. E: and F: are the 8″ units 0 and 1. The 5.25″ disk has two
+  sides and 80 cylinders, with 5 × 1024 MFM on each track (819,200 bytes). `BOOTSCPM.LIB` gives
+  the system tracks:
+
+  | Track | What it holds |
+  |---|---|
+  | Cylinder 0 head 0 | `HMXFBOOT` (0100–01FF), the loader BIOS (E800–F3FF), the loader program part 1 (D200–D8FF) |
+  | Cylinder 1 head 0 | The loader program part 2 (D900–D9FF), the BDOS (DA00–E7FF) |
+  | Cylinder 1 head 1 | The CCP (D200–D9FF) |
+
+  The boot EPROM reads cylinder 0 head 0 to `0100` (the Disk 1A reference §3.2). `HMXFBOOT` moves
+  the loader BIOS to E800 and the loader program to D200. The loader program reads the full BIOS
+  from the file `BIOS.COM` on A: and starts it. The full BIOS reads the CCP and the BDOS from
+  cylinder 1, and starts the CCP with `SUBMIT STARTUP` in its command buffer. The loader program
+  has no source on the master disk. A 5.25″ CP/M 2.2Q disk built from these sources boots on the
+  `disk1a` board (issue #746).
 - **Format 0 does not make a system disk.** The CBIOS needs an MFM format on cylinder 1.
 - **"System tracks are always FM" (p.24) is only true of cylinder 0 side 0**; cylinder 1 is in
   the data format (p.25).
