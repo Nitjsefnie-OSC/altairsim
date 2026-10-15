@@ -195,6 +195,7 @@ The boards are in groups, in the same order as the sections below.
 | `tarbell` | Tarbell #1011: a single-density floppy controller with its own boot PROM. Boots CP/M by itself |
 | `tarbelldd` | Tarbell #2022: the double-density version, for mixed-density disks |
 | `icom` | iCOM FD3712/FD3812: an 8″ floppy controller with its own boot PROM. Boots CP/M and FDOS |
+| `disk1` | CompuPro Disk 1: an 8″ floppy controller with DMA, its own boot EPROM and a bit-banged serial line. Boots CompuPro CP/M 2.2N |
 | `disk1a` | CompuPro Disk 1A: an 8″ floppy controller with DMA and its own boot EPROM. Boots CompuPro CP/M |
 | `mdsa` | North Star MDS-A: a single-density 5¼″ floppy controller in memory, with its own boot PROM. Boots CP/M and North Star DOS |
 | `mdsad` | North Star MDS-A-D: the double-density version, for one-sided and two-sided disks |
@@ -1320,11 +1321,74 @@ side or two. A smaller image that has no known size mounts as a blank disk. Comp
 
 These things are not part of the board:
 
-- **5.25″ disks are not supported yet.** No 5.25″ CompuPro disk image was available to test
-  them.
+- **A 5.25″ disk boots from unit 2.** Routines 2 and 3 of the EPROM read it.
 - **Only routines 0–3 run.** The other routines are for the 8086, 68000 and 32016 processors.
 - **CompuPro CP/M 2.2Q does not run.** Its BIOS needs the 8088 of the CompuPro CPU 8085/88
   board.
+
+### `disk1`: CompuPro Disk 1
+
+The **CompuPro Disk 1** (1981) is the board that came before the Disk 1A. It has the same
+**NEC µPD765A** chip, **DMA** engine and four ports at `C0`–`C3`, and up to four drives. Port 3
+is different. On the Disk 1, bit 7 of port 3 is a serial line with no UART. A guest program
+sends and receives each bit itself, with a delay loop for the timing.
+
+The boot EPROM holds eight 256-byte routines. The `routine` switch picks one, and RESET puts it
+at address `0000`. The built-in EPROM is a copy of a factory EPROM. Routines 4–7 are for the
+8080, 8085 and Z80, and routine 4 is the default. Each reads the start of track 0 of an 8″ disk
+in drive 0 into memory at `0100`, switches the EPROM off, and starts the loader. Each routine
+passes a different console code to the loaded system:
+
+| Routine | Console of CompuPro CP/M 2.2N |
+|---|---|
+| 4 | The Interfacer at `00`/`01` |
+| 5 | An Interfacer at `10`/`11` |
+| 6 | The serial channel of the System Support 1 |
+| 7 | An Interfacer 3 or 4 at `10` |
+
+Routines 0–3 are for the 8086 and do not run here.
+
+The `disk1` machine has this board, a Z80 processor, 64K of RAM, a **System Support 1** and an
+Interfacer I console. The console is the first serial port of the Interfacer I, at ports `00`
+and `01`, as the CompuPro CP/M 2.2N BIOS expects. To boot a CompuPro CP/M 2.2N disk:
+
+1. Press `Ctrl-E` to get the monitor.
+2. Mount the disk in drive 0.
+3. Run from `0000`.
+
+```
+altairsim> MOUNT fd0:drive0 "CPM22N.DSK"
+altairsim> RUN 0
+```
+
+To use the System Support 1 as the console, set routine 6 and move the console:
+
+```
+altairsim> SET fd0 routine=6
+altairsim> CONNECT if1:a null
+altairsim> CONNECT ss1:serial console
+```
+
+Each boot logs one line, `fd0: serial: a break on the line (no stop bit); nothing sent`. The
+CP/M 2.2N BIOS sets bit 7 of port 3 to 1, and 1 holds the serial line at SPACING. Nothing is
+connected to the line, so nothing is lost. To use the line, connect its `serial` unit:
+
+```
+altairsim> CONNECT fd0:serial telnet:2323
+altairsim> SET fd0:serial baud=1200
+```
+
+Set `baud` to the rate of the guest's delay loop.
+
+These things are not part of the board:
+
+- **The board runs 8″ drives only.** A Disk 1 ran 5.25″ drives only after a change to the
+  board's parts and wiring. The board refuses a 5.25″ disk image.
+- **A blank disk is one-sided until side 1 is formatted.** CompuPro's `FORMAT.COM` on the
+  2.2N disk stops with `Drive Format Error` on a blank disk. It formats a disk that is already
+  formatted.
+- **The M-Drive/H RAM disk is not part of the machine.** The 2.2N BIOS reports
+  `0 M-Drive/H` and continues.
 
 ### `mdsa` and `mdsad`: North Star MDS-A and MDS-A-D
 

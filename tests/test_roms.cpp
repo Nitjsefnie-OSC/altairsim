@@ -161,6 +161,9 @@ void test_roms() {
         // The CompuPro Disk 1A's 2764: sixteen 512-byte boot routines in one full 8 KB part.
         // The board shows one routine at 0000 (`routine`), so the image starts at 0 too.
         {"disk1a", 0x0000, 0x1FFF, 8192, 0x93DBAEF4u, true},
+        // The CompuPro Disk 1's 2716, a factory dump: eight 256-byte routines, 0-3 for the 8086
+        // and 4-7 for the 8080/Z80. The board shows one at 0000 (`routine`).
+        {"disk1", 0x0000, 0x07FF, 2048, 0xEBA8EE41u, true},
     };
     for (const auto& c : cases) {
         std::string tag = std::string("builtin:") + c.name;

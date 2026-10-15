@@ -15,7 +15,7 @@ layouts, the four status registers, the multi-sector and multi-track rules, the 
 rules and the timer encodings. It omits the DC/AC electrical tables, the FDD-side waveforms,
 the data separator and write precompensation, and the package outlines.
 
-Emulated as `Upd765` (`src/chips/upd765.{h,cpp}`), the chip of the CompuPro Disk 1A board `disk1a`.
+Emulated as `Upd765` (`src/chips/upd765.{h,cpp}`), the chip of the CompuPro Disk 1 and Disk 1A boards `disk1` and `disk1a`.
 
 ---
 

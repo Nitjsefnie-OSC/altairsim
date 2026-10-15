@@ -19,6 +19,7 @@
 #include "boards/io4.h"
 #include "boards/proctech-sol.h"
 #include "boards/proctech-vdm1.h"
+#include "boards/compupro-disk1.h"
 #include "boards/compupro-ss1.h"
 #include "boards/sd-sbc.h"
 #include "boards/sd-vdb8024.h"
@@ -110,12 +111,14 @@ const struct {
     {"telnet", test_telnet},
     {"wd17xx", test_wd17xx},
     {"upd765", test_upd765},
+    {"bitserial", test_bitserial},
     {"i8257", test_i8257},
     {"bt453", test_bt453},
     {"hd63484", test_hd63484},
     {"cadzilla", test_cadzilla},
     {"versafloppy", test_versafloppy},
     {"tarbell", test_tarbell},
+    {"disk1", test_disk1},
     {"disk1a", test_disk1a},
     {"cromemco_fdc", test_cromemco_fdc},
     {"spindle", test_spindle},
@@ -197,6 +200,7 @@ int main(int argc, char** argv) {
     altair::StrapSerialBoard::setResolver(altair::resolveEndpoint);
     altair::Io4Board::setResolver(altair::resolveEndpoint);
     altair::CromemcoFdcBoard::setResolver(altair::resolveEndpoint);
+    altair::CompuProDisk1Board::setResolver(altair::resolveEndpoint);
     altair::FrontPanelBoard::setResolver(altair::resolveEndpoint);
     altair::Ss1Board::setResolver(altair::resolveEndpoint);
     altair::FdcPlusBoard::setResolver(altair::resolveEndpoint);

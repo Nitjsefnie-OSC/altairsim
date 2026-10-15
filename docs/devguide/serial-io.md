@@ -279,6 +279,12 @@ A concrete UART is a part in `src/chips/`: `Mc6850` (both halves of the 2SIO), `
 COM2502 — the 88-SIO and the ACR), `Intel8251` (the SBC console). A chip knows nothing about
 S-100; it has a clock, some pins, and a `ByteStream`.
 
+A board with no UART at all, where the guest moves each bit with an `OUT` and a delay loop, uses
+`BitSerialLine` (`src/chips/bitserial.h`). It models the UART at the far end of the wire. It
+turns the levels the guest writes into bytes, and the bytes from the stream into levels the
+guest reads. Its levels are the wire's (true = MARKING). Which way up the bit is on the bus is
+the board's: the CompuPro Disk 1 inverts it on port 3 D7.
+
 But the *glue* that turns `IN 10h` into "read channel A's status register" — decode, the even→
 status/odd→data dispatch, the single card-owned Clock deadline, interrupt aggregation, connect/
 units/properties, SNAPSHOT — is needed by **every** card that carries a 6850, and copying it onto

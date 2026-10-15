@@ -18,6 +18,7 @@
 #include "boards/proctech-sol.h"
 #include "boards/proctech-vdm1.h"
 #include "boards/sd-vdb8024.h"
+#include "boards/compupro-disk1.h"
 #include "boards/compupro-ss1.h"
 #include "boards/sd-sbc.h"
 #include "boards/terminal-font.h"
@@ -369,6 +370,7 @@ int main(int argc, char** argv) {
     StrapSerialBoard::setResolver(resolveEndpoint);  // the gsio / propio strap-serial family's lines
     Io4Board::setResolver(resolveEndpoint);          // the real SSM IO-4's two UART channels
     CromemcoFdcBoard::setResolver(resolveEndpoint);  // the FDC family's TMS 5501 console (16/64FDC)
+    CompuProDisk1Board::setResolver(resolveEndpoint);  // the Disk 1's bit-banged port 3 line
     FrontPanelBoard::setResolver(resolveEndpoint);   // the fp panel dials OUT to the graphical bridge
     Ss1Board::setResolver(resolveEndpoint);          // the System Support 1's 2651 serial channel
     FdcPlusBoard::setResolver(resolveEndpoint);      // the FDC+ serial drive's line to its server

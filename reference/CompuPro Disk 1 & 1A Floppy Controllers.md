@@ -1,7 +1,7 @@
 # CompuPro Disk 1 / Disk 1A Floppy Disk Controllers
 
 Source: [CompuPro Disk 1 Manual.pdf](#) (© CompuPro/Godbout 1981, board 171F,
-Fourth Printing March 1983),
+Fourth Printing March 1983), with two facts from the 1982 printing (cited "1982 manual"),
 [CompuPro Disk 1A Manual.pdf](#) (© CompuPro 1984, board 203 Rev D, EPROM 1.4,
 Doc #12036, Second Edition November 1984)
 
@@ -129,7 +129,10 @@ do not use it as the console longer than needed to patch the BIOS. Suggested max
 CPU clock (software-timed, so clock-dependent): **2 MHz → 600, 4 MHz → 1200, 6 MHz → 2400**.
 
 If the serial port is not wired for RS-232, **switch S1 position 3** repurposes the output latch
-as a **MOTOR-ON** bit for 5.25″ minifloppies (see §5).
+as a **MOTOR-ON** bit for 5.25″ minifloppies (see §5). The 1982 manual (p.19, *Motor Control
+Enable*) gives the sense: with S1-3 **ON**, the motors turn **on when the guest writes 0** to
+the bit and off when it writes 1. With S1-3 **OFF**, the serial port works and the minifloppy
+motors are on all the time.
 
 ### 2.3 Disk 1A — Drive Select Register (port 0 WRITE) and Motor Control Register (port 3 WRITE)
 
@@ -213,6 +216,12 @@ except #1 which is unused by 8086/87):
 
 Some Disk 1 boards ship set for routines 4–7 rather than 0–3; in that case leave J17 as
 shipped and treat them as 0–3.
+
+**A factory EPROM dump agrees** (`roms/DISK1/`, from deramp.com). Pages 4–7 are 8080 code and
+pages 0, 2 and 3 are 8086 code. Page 1 is a copy of page 0. Pages 4–7 are one routine that
+differs only at `00FD`: the console code it passes in register C, 0–3 for routines 4–7. The
+loaded system decides what each code means. CompuPro CP/M 2.2N maps 0 to the Interfacer at
+`00` and 2 to the System Support 1, and it has no driver for the board's own serial line.
 
 ### 3.2 Disk 1A boot routines (16, selected by S1 pos 2–5)
 
@@ -320,7 +329,9 @@ carries full load continuously and the enclosure must cool for it.
 
 **Disk 1 5.25″ conversion:** a Disk 1 built for 8″ is converted to 5.25″ by a solder mod
 (alternate parts, cut three traces behind J11/J12/J13, add jumpers "5"/"C" and J14, set J15 for
-the READY option). CompuPro offered the mod at the factory.
+the READY option). CompuPro offered the mod at the factory (1982 manual p.19, *Modifications
+for Minifloppy Drives*). It is a hardware change, not a switch, so the `disk1` board models the
+8″ board only.
 
 ---
 
@@ -343,12 +354,12 @@ The four formats CompuPro's FORMAT writes (track 0 side 0 always FM 26 × 128; d
 
 ## 7. Emulation checklist
 
-For a `disk1` / `disk1a` board over a shared 8272/765A FDC core. The Disk 1A is emulated as `disk1a` (`docs/boards/compupro-disk1a.md`), over the `Upd765` chip. The Disk 1 is not emulated.
+For a `disk1` / `disk1a` board over a shared 8272/765A FDC core. The Disk 1A is emulated as `disk1a` (`docs/boards/compupro-disk1a.md`) and the Disk 1 as `disk1` (`docs/boards/compupro-disk1.md`), both over the `Upd765` chip.
 
 1. **Four ports at a multiple-of-four base (default `C0H`).** Port 0 IN = FDC main status, port 1 = FDC data, port 2 IN = board status / OUT = 24-bit DMA address (three writes, MSB first). Port 3 and port-0 OUT differ per board (§2).
 2. **DMA is the only data path.** The FDC's DRQ drives an onboard 24-bit counter that reads/writes host memory directly, incrementing across 64 K boundaries; there is no PIO data port. Model the transfer as DMA against the loaded 24-bit address.
 3. **Board Status bit 7 = FDC INT** (both boards) is the polled completion flag. Disk 1A adds ready/index/sense-switch in bits 0–2.
-4. **Disk 1 serial port (port 3, bit 7):** a bit-banged RS-232 line, MARKING/SPACING inverted onto D7 (D7=1 → space → logic 0). Rarely needed for guest software once a real console board exists; model it only if booting routine #5. Boot-disable = write D0=0.
+4. **Disk 1 serial port (port 3, bit 7):** a bit-banged RS-232 line, MARKING/SPACING inverted onto D7 (D7=1 → space → logic 0). Rarely needed for guest software once a real console board exists. The `disk1` board models it as a `BitSerialLine` on its `serial` unit. Boot-disable = write D0=0. With S1-3 set for the motor, D7 = 0 is motor on (1982 manual).
 5. **Disk 1A Drive Select Register (port 0 OUT)** and **Motor Control Register (port 3 OUT):** unit/data-rate/F2S/head-load, and 5 motor bits with a ~15 s auto-off timer (reset on any access, defeated by removing J11). Boot-disable = write D0=0 to the motor register.
 6. **Boot EPROM via `PHANTOM*`** at the reset address (256 B page Disk 1, 512 B Disk 1A); needs cooperating RAM that yields to `PHANTOM*`. Disabled by the D0=0 write, re-enabled by reset. The specific boot image is the thing that actually varies; the search/console-select behavior is in §3.
 7. **Config knobs that change guest-visible behavior:** base address, boot-routine number (console selection), DMA priority, wait-state count, and the VI-line the FDC interrupt drives (default VI4*). Everything else (data separator, precompensation) is timing the guest cannot read back — do not model it as hardware the guest can observe.

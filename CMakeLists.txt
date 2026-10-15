@@ -438,6 +438,9 @@ add_library(altair_core STATIC
   src/chips/wd17xx.cpp
   # The NEC uPD765A (Intel 8272) -- the CompuPro Disk 1A's FDC (src/chips/upd765.h).
   src/chips/upd765.cpp
+  # A bit-banged RS-232 line with no UART on the board -- the CompuPro Disk 1's port 3 D7
+  # (src/chips/bitserial.h).
+  src/chips/bitserial.cpp
   src/chips/i8257.cpp
   # The OKI MSM5832 -- a BCD real-time clock/calendar reading the host's wall clock.
   # The CompuPro System Support 1 carries one (src/chips/msm5832.h).
@@ -501,7 +504,9 @@ add_library(altair_core STATIC
   # (issue #392); today the OKI MSM5832 real-time clock. See src/boards/compupro-ss1.h.
   src/boards/compupro-ss1.cpp
   # The CompuPro Disk 1A -- a uPD765A floppy controller with its own DMA and a boot EPROM over
-  # PHANTOM*. See src/boards/compupro-disk1a.h.
+  # PHANTOM*, on the base it shares with the Disk 1. See src/boards/compupro-disk.h.
+  src/boards/compupro-disk.cpp
+  src/boards/compupro-disk1.cpp
   src/boards/compupro-disk1a.cpp
   # The iCOM FD3712/FD3812 8" floppy -- like the 88-HDSK, a "controller does the work" card
   # (Board directly): two programmed-I/O ports (C0/C1) shift whole sectors, and a boot PROM
@@ -845,12 +850,14 @@ add_executable(altair_tests
   tests/test_telnet.cpp
   tests/test_wd17xx.cpp
   tests/test_upd765.cpp
+  tests/test_bitserial.cpp
   tests/test_i8257.cpp
   tests/test_bt453.cpp
   tests/test_hd63484.cpp
   tests/test_cadzilla.cpp
   tests/test_versafloppy.cpp
   tests/test_tarbell.cpp
+  tests/test_disk1.cpp
   tests/test_disk1a.cpp
   tests/test_cromemco-fdc.cpp
   tests/test_spindle.cpp
@@ -1094,6 +1101,16 @@ add_test(NAME acceptance-disk1a
                  -DBIN=${CMAKE_CURRENT_BINARY_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/disk1a.cmake)
 set_tests_properties(acceptance-disk1a PROPERTIES LABELS acceptance TIMEOUT 200)
+
+# The CompuPro Disk 1: boot CompuPro CP/M 2.2N off a real 8" disk through builtin:DISK1
+# (the factory EPROM, routine 4), then read and write files on it.
+add_test(NAME acceptance-disk1
+         COMMAND ${CMAKE_COMMAND}
+                 -DSIM=$<TARGET_FILE:altairsim>
+                 -DSRC=${CMAKE_CURRENT_SOURCE_DIR}
+                 -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/disk1.cmake)
+set_tests_properties(acceptance-disk1 PROPERTIES LABELS acceptance TIMEOUT 140)
 
 # ---------------------------------------------------------------------------
 # THE SSM IO-4: the shipped example machine boots the SSM 8080 monitor on a real IO-4
