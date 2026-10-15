@@ -12,6 +12,15 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The CompuPro Disk 1 floppy controller is a new board, `disk1`.** The Disk 1 came before the
+Disk 1A. It has the same µPD765A chip and DMA engine, and a 2 KB boot EPROM. Bit 7 of port 3 is
+a serial line with no UART. The guest makes each bit of the line itself, and the `serial` unit
+connects the line to a terminal or a socket. The board runs 8″ drives. Its EPROM,
+`builtin:DISK1`, is a copy of a factory EPROM, and routines 4–7 are for the 8080, 8085 and Z80.
+The new `disk1` machine adds the board to a Z80, 64K of RAM, a System Support 1 and an
+Interfacer I console. Mount a CompuPro CP/M 2.2N disk in drive 0 and run from `0000`. Routine 4
+then boots the disk to `A>` on the Interfacer. Routine 6 boots it on the System Support 1.
+
 **The CompuPro Disk 1A floppy controller is a new board, `disk1a`.** The board has an NEC
 µPD765A floppy chip, a DMA engine and a boot EPROM with all sixteen routines. The new `disk1a`
 machine adds it to a Z80, 64K of RAM and a CompuPro System Support 1 for the console. Mount a

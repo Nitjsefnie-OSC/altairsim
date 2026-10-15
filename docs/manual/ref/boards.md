@@ -39,6 +39,7 @@ and within a group the boards are in **alphabetical order**.
 | [`16fdc`](#16fdc) | Cromemco 16FDC: floppy controller + console UART, RDOS 2.52 |
 | [`64fdc`](#64fdc) | Cromemco 64FDC: floppy controller + console UART, RDOS 3.12 |
 | [`dcdd`](#dcdd) | MITS 88-DCDD: 8" hard-sector floppy controller |
+| [`disk1`](#disk1) | CompuPro Disk 1: uPD765A floppy controller with DMA |
 | [`disk1a`](#disk1a) | CompuPro Disk 1A: uPD765A floppy controller with DMA |
 | [`dualide`](#dualide) | S100Computers IDE-AB: two CompactFlash sockets for CP/M 3 |
 | [`dualsd`](#dualsd) | S100Computers Dual SD: two microSD sockets for CP/M 3 |
@@ -315,6 +316,39 @@ MITS 88-DCDD: 8" hard-sector floppy, up to 16 drives. Three ports at BASE+0..2. 
 | `port` | int | `0x8` | `0x0` .. `0xFD` | Base address. The board decodes three ports: BASE+0 .. BASE+2 |
 | `drives` | int | `4` | `1` .. `16` | Drives on the daisy chain |
 | `interrupt` | enum | `none` | `none` \| `int` \| `vi0` \| `vi1` \| `vi2` \| `vi3` \| `vi4` \| `vi5` \| `vi6` \| `vi7` | Where the card's interrupt is soldered *(interrupt strap)* |
+
+
+### `disk1`
+
+CompuPro Disk 1 (1981), the Disk 1A's predecessor: an NEC uPD765A floppy controller for 8" drives, single and double density, up to 4 drives. Four ports at BASE+0..3 (default C0): 765 status, 765 data, board status / DMA address, and a bit-banged serial line on D7. All data moves by DMA. Carries a 2716 boot EPROM whose selected 256-byte routine answers at 0000 over PHANTOM* until the guest switches it off; any reset turns it back on
+
+**Units:** `drive0` (disk, MOUNT), `drive1` (disk, MOUNT), `drive2` (disk, MOUNT), `drive3` (disk, MOUNT), `serial` (serial, CONNECT)
+
+#### `[[board.drive]]` — a list you may add
+
+| Key | Kind | Legal | Meaning |
+|---|---|---|---|
+| `unit` | int | `0` .. `3` | Which drive (0..3) |
+| `mount` | string | text | The disk image to put in it. Relative to THIS FILE. |
+| `readonly` | bool | `on` \| `off` | Write-protect the disk. The drive senses it, so the guest is never told *(also `writeprotect`)* |
+
+#### Board properties
+
+| Key | Kind | Default | Legal | Meaning |
+|---|---|---|---|---|
+| `port` | int | `0xC0` | `0x0` .. `0xFC` | Base address (S2-3..8). The board decodes four ports: BASE+0 .. BASE+3 (default C0) |
+| `rom` | string | `builtin:DISK1` | text | The boot EPROM: builtin:DISK1 (default), or a 2716 image file (Intel HEX, S-records or binary) |
+| `routine` | int | `4` | `0` .. `7` | Boot routine (S2-1..2 and J17): the 256-byte page of the EPROM at 0000. J17 at A adds 4. In builtin:DISK1, 4-7 are 8080/Z80 code (default 4) |
+| `boot` | bool | `true` | `on` \| `off` | Boot EPROM enable (S1-4). On (default, S1-4 OFF): the ROM answers reads at 0000-00FF over PHANTOM* after a reset. Off: a plain disk controller |
+| `port3` | enum | `serial` | `serial` \| `motor` | S1-3: what the port 3 D7 latch drives. serial (default): the RS-232 output line. motor: the MOTOR ON line of the minifloppy cable, D7 = 0 on |
+| `interrupt` | enum | `none` | `none` \| `int` \| `vi0` \| `vi1` \| `vi2` \| `vi3` \| `vi4` \| `vi5` \| `vi6` \| `vi7` | Where the 765's INT goes (J0-J7 = vi0-vi7, J8 = int; default none, polled) *(interrupt strap)* |
+
+#### Unit `serial` — `[board.unit.serial]`
+
+| Key | Kind | Default | Legal | Meaning |
+|---|---|---|---|---|
+| `baud` | int | `9600` | `50` .. `115200` | Line rate: the far end's setting, and what the guest's delay loop must match. 8 data bits, no parity, 1 stop bit |
+| `connect` | string | `null` | text | The endpoint on the other end of the line (CONNECT sets this) |
 
 
 ### `disk1a`

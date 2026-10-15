@@ -37,7 +37,7 @@ printing adds the **Disk 1A** settings. The board registers are not in this manu
 the board reference. The troubleshooting tables (pp.29–31) are omitted.
 
 **Not emulated** — it is software documentation. The `disk1a` board boots CompuPro CP/M 2.2LD,
-a release of the same family (see §8).
+a release of the same family (see §8). The `disk1` board boots CompuPro CP/M 2.2N.
 
 ---
 

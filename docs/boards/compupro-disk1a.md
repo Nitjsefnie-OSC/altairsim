@@ -20,7 +20,8 @@ controller. It has three parts:
 
 The board decodes four ports at a base that is a multiple of four. The CompuPro base is `C0`.
 The Disk 1 has a bit-banged serial port on its port 3. The Disk 1A has a Drive Select Register
-on port 0 and a Motor Control Register on port 3 instead. The console is on a separate board,
+on port 0 and a Motor Control Register on port 3 instead. The Disk 1 is the `disk1` board
+(`docs/boards/compupro-disk1.md`). The two boards share one class, `CompuProDiskBoard`. The console is on a separate board,
 usually a System Support 1.
 
 ## Sources
@@ -171,8 +172,6 @@ BIOS and the EPROM set bit 3 for every 5.25″ drive.
   32016 code. The machine has no processor board for them. Routine 1 boots only the DISK 3 hard
   disk, which is not emulated. Routine 2 tries 8″ drive 0 and then the 5.25″ drive in unit 2.
   Routine 3 tries the 5.25″ drive in unit 2 and then the DISK 3. Routines 0, 2 and 3 are tested.
-- **No Disk 1.** The Disk 1 (1981) has a different port 0 and port 3, a 256-byte EPROM and a
-  bit-banged serial port. It is not built. It can use the same `Upd765` chip.
 - **No Disk 2 or DISK 3.** CP/M 2.2NZ, which boots from a Disk 2 hard disk, does not boot.
 - **The CompuPro CP/M 2.2Q master disk needs the 8088 of the CPU 8085/88 board.** Its BIOS, as
   shipped, moves records with the 8088 (`IN FD`). The machine has no 8088, so its `DIR` repeats

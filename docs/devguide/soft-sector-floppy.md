@@ -237,7 +237,9 @@ Validate this number against the format program's gap tables, not by "it booted.
 
 ## The other chip: the µPD765A
 
-The CompuPro Disk 1A (`src/boards/compupro-disk1a.cpp`) does not use a WD part. Its chip is an
+The CompuPro Disk 1 and Disk 1A do not use a WD part. The two boards share one class,
+`CompuProDiskBoard` (`src/boards/compupro-disk.{h,cpp}`), and each board is a small class over it
+(`compupro-disk1.cpp`, `compupro-disk1a.cpp`). Their chip is an
 NEC µPD765A, `Upd765` in `src/chips/upd765.{h,cpp}`, modeled from the data sheet in
 `reference/NEC uPD765A FDC.md`. The chip uses the same drive layer: `FloppyDrive` and
 `SectorId` are in `src/chips/floppy.h`, and the board puts a `DiskImageDrive` in each slot. The
@@ -255,12 +257,11 @@ three layers of this chapter hold, but four things differ from the WD chip:
   mode and does not model byte timing, so it never reports an overrun.
 - **The clock input scales the timing.** `fdcClockHz` is 8 MHz for an 8″ drive and 4 MHz for
   a 5.25″ drive, and every Specify interval doubles at 4 MHz. The Disk 1A sets it from bit 5 of
-  its Drive Select Register.
+  its Drive Select Register. The Disk 1 runs 8″ drives only, so it is always 8 MHz.
 
 Format a Track takes C, H, R and N for each sector through the data path. The chip gives
 them to `FloppyDrive::formatTrack()`, a separate entry point from the `writeTrackImage()` of
-the WD chip. A Disk 1 board, or any other
-board with a 765 or an 8272, can use `Upd765` as it is.
+the WD chip. Any other board with a 765 or an 8272 can use `Upd765` as it is.
 
 ## The flat-`.DSK` limitation
 

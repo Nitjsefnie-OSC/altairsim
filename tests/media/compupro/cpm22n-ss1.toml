@@ -1,0 +1,29 @@
+# CompuPro CP/M 2.2N on the Disk 1 through routine 6, for acceptance-disk1
+# (tests/acceptance/disk1.cmake).
+#
+# Routine 6 of the factory EPROM passes C = 2, and the 2.2N BIOS then uses the System Support 1
+# serial channel as its console. The console moves to that channel here, and the Interfacer
+# is not connected. The test copies this folder out of the tree first, so the guest never
+# writes to the tracked image.
+
+[machine]
+name = "disk1-cpm22n-ss1"
+base = "disk1"
+
+[[board]]
+id = "if1"
+  [board.unit.a]
+  connect = "null"
+
+[[board]]
+id = "ss1"
+  [board.unit.serial]
+  connect = "console"
+
+[[board]]
+id      = "fd0"
+routine = 6
+
+  [[board.drive]]
+  unit  = 0
+  mount = "CPM22N.DSK"
