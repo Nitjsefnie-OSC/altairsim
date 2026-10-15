@@ -53,8 +53,11 @@ int driveIndex(const std::string& unit) {
 // in that order.
 //
 // Three 5.25" formats share 327,680 bytes and two share 655,360, so those sizes are
-// refused rather than guessed. A smaller image of no known size is a BLANK 8" single-sided
-// disk: READY, steppable, and formattable track by track with Format a Track.
+// refused rather than guessed. A smaller image of no known size is a BLANK disk: READY,
+// steppable, and formattable track by track with Format a Track. A blank has the reach of the
+// largest disk, 80 cylinders and two sides, so a 5.25" two-sided FORMAT can write every track.
+// A slot that is never formatted takes no bytes (DiskImage::rebuild), so a one-sided or
+// 77-cylinder format still lays out end to end, and the size probe reads it back.
 // ---------------------------------------------------------------------------
 struct Format {
     bool    eightInch;
@@ -121,7 +124,7 @@ bool probe(DiskImage& img, bool& eightInch, std::string& err) {
     }
     if (bytes < largestImage()) {
         eightInch = true;
-        img.init(77, 1, true);  // blank: no tracks formatted yet
+        img.init(80, 2, true);  // blank: no tracks formatted yet
         return true;
     }
     err = std::to_string(bytes) + " bytes is larger than any disk the Disk 1A reads (" +
@@ -139,8 +142,15 @@ CompuProDisk1aBoard::CompuProDisk1aBoard() {
     mover_.d = this;
     chip_.wiring.drive = [this](int us) -> FloppyDrive* { return &drive_[(size_t)cableUnit(us)].drv; };
     chip_.wiring.head  = [this](int us, int hd) { drive_[(size_t)cableUnit(us)].drv.setSide(hd); };
+    // TS is the disk's: two-sided when side 1 has a formatted track. A blank reaches both
+    // sides, but reads one-sided until a FORMAT writes side 1, as a new 8" SS disk does.
     chip_.wiring.twoSided = [this](int us) {
-        return (dsr_ & kDsrForce2s) != 0 || drive_[(size_t)cableUnit(us)].drv.twoSided();
+        if (dsr_ & kDsrForce2s) return true;
+        const DiskImage* img = drive_[(size_t)cableUnit(us)].img.get();
+        TrackFormat      f;
+        for (int t = 0; img && img->heads() > 1 && t < img->tracks(); ++t)
+            if (img->trackFormat(t, 1, f)) return true;
+        return false;
     };
     rom_.assign(kRomBytes, 0xFF);
 }

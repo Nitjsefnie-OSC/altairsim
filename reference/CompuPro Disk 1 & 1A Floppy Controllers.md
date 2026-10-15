@@ -234,6 +234,20 @@ Within each family the four routines differ only in drive-search behavior:
 - **Third (2, 6, 10, 14)** — try 8″ drive 0; else a 5.25″ as physical drive 2; else loop (8″, then 5.25″).
 - **Fourth (3, 7, 11, 15)** — try a 5.25″ drive 0; else DISK 3; then loop.
 
+⚠ **The 5.25″ drive is physical unit 2, not drive 0.** The EPROM (`291B_1.HEX`) does the same
+5.25″ attempt in routines 2 and 3:
+
+1. Write `28` to the Drive Select Register: the 5.25″ data rate and Force Two Sided.
+2. Send SPECIFY `03 DF 1E`, then RECALIBRATE unit 2.
+3. Set the DMA address to `000100`.
+4. Send READ DATA `46 02 00 00 01 03 05 <GPL> FF`: unit 2, cylinder 0, head 0, sectors 1–5 of
+   1024 bytes, MFM. The 5,120 bytes go to `0100`–`14FF`.
+5. Jump to `0100`, with C = 2 + S3-1.
+
+Unit 2 is CompuPro's drive order: the 8″ drives are units 0 and 1, the 5.25″ drives are units 2
+and 3. CompuPro CP/M 2.2P and 2.2Q (February 1985) boot a 5.25″ disk this way, from unit 2. See
+[CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md) §8.
+
 ⚠ The CompuPro *CP/M 2.2 Technical Manual* (October 1984, p.35) gives a different Disk 1A S1
 map: **S1 4–6** pick the processor and the console, with S1 1–3 ON. That is not this EPROM 1.4
 map, and `291B_1.HEX` follows the 1.4 map. See
