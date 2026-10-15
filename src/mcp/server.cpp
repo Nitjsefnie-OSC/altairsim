@@ -392,8 +392,8 @@ Json toolList() {
         p["id"]       = strSchema("Board id.");
         p["unit"]     = strSchema("Which serial unit on the board.");
         p["endpoint"] = strSchema("The endpoint to wire it to, e.g. loopback, tcp:HOST:PORT, "
-                                  "file:PATH, printer:QUEUE. (The console line is adopted onto a "
-                                  "scripted stream automatically under --mcp.)");
+                                  "file:PATH, printer:QUEUE. (Under --mcp, every unit "
+                                  "connected to console shares one scripted stream.)");
         list.push(tool("connect",
                        "Wire a board's serial unit to a host endpoint -- the same schemes CONNECT "
                        "accepts at the prompt.",
@@ -768,7 +768,11 @@ struct FreeRun {
 };
 
 struct McpSession {
-    std::string conBoard;
+    // The console line every unit wired to `console` shares (issue #756): the resolved
+    // `scripted[|mirror][|log]` stack. Each unit holds a SharedStream to it. Null when no
+    // unit holds it, or when a board that cannot share it owns a bare line (console()).
+    std::shared_ptr<ByteStream> line;
+    std::string conBoard;  // the first unit adopted -- the console, for "console lost"
     std::string conUnit;
     // `--mirror socket:PORT[?ro]`: when set, the console is `scripted` WRAPPED in a
     // MirrorStream so a human can telnet in and share the session (issue #381). Empty =
@@ -848,24 +852,51 @@ ScriptedStream* asScripted(ByteStream* s) {
         if (auto* ss = dynamic_cast<ScriptedStream*>(s)) return ss;
         if (auto* f = dynamic_cast<FilterStream*>(s)) { s = f->inner(); continue; }
         if (auto* mir = dynamic_cast<MirrorStream*>(s)) { s = mir->inner(); continue; }
+        if (auto* sh = dynamic_cast<SharedStream*>(s)) { s = sh->inner(); continue; }
         if (auto* tee = dynamic_cast<TeeStream*>(s)) { s = tee->inner(); continue; }
         return nullptr;
     }
     return nullptr;
 }
 
-// Find the serial unit wired to the host console and REBIND it to an in-memory
+// Does any serial unit's line still reach `ss`? False once CONFIG LOAD has replaced the
+// boards, or once every unit that held the console line has been re-wired.
+bool anyUnitReaches(Machine& m, ScriptedStream* ss) {
+    for (const auto& b : m.boards())
+        for (const auto& u : b->units())
+            if (u.kind == UnitKind::Serial && asScripted(b->unitStream(u.name)) == ss) return true;
+    return false;
+}
+
+// Find EVERY serial unit wired to the host console and REBIND it to one in-memory
 // ScriptedStream. Under --mcp there is no terminal, so "console" would aim the guest's
-// keyboard at the JSON-RPC pipe and hang the first run forever (monitor.cpp:818); a
-// scripted line is one we can feed() and read out() instead. Under --mirror the scripted
-// line is wrapped in a socket mirror (scripted|socket:PORT), transparently -- we still
-// return the inner scripted, so the run loop is unchanged. Idempotent: once a channel is
-// ours, later calls just re-fetch it. Null + err if the machine has no such line.
+// keyboard at the JSON-RPC pipe and hang the first run forever (monitor.cpp:818), and aim
+// its output at the JSON-RPC stdout; a scripted line is one we can feed() and read out()
+// instead. Two units on `console` share one keyboard and one screen at a terminal, so here
+// they share one scripted line: the session owns it, each unit holds a SharedStream to it,
+// and re-wiring one unit cannot destroy it under another (issue #756). Under --mirror the
+// scripted line is wrapped in a socket mirror (scripted|socket:PORT), transparently -- we
+// still return the inner scripted, so the run loop is unchanged. Called again after every
+// monitor command and `connect`, so a unit wired to `console` mid-session is adopted at
+// once. Null + err if the machine has no such line.
 ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
-    if (!s.conBoard.empty())
-        if (Board* b = m.find(s.conBoard))
-            if (auto* ss = asScripted(b->unitStream(s.conUnit)))
-                return ss;
+    // The line that is the console now, if any unit still reaches it: the shared line, or
+    // (see the fallback below) a bare line one board owns.
+    ScriptedStream* ss = nullptr;
+    if (s.line) {
+        ss = asScripted(s.line.get());
+        if (!anyUnitReaches(m, ss)) {
+            ss = nullptr;
+            s.line.reset();  // closes a --mirror port now, so a rebuilt line can reopen it
+        }
+    }
+    if (!ss && !s.conBoard.empty()) {  // e.g. the console unit re-wired to its own `scripted`
+        if (Board* b = m.find(s.conBoard)) ss = asScripted(b->unitStream(s.conUnit));
+    }
+    if (!ss) {
+        s.conBoard.clear();
+        s.conUnit.clear();
+    }
 
     // Bare `scripted`, or `scripted|socket:PORT` when a mirror was asked for. The mirror
     // rides the same tap grammar the resolver already knows (host/endpoint.cpp).
@@ -879,40 +910,60 @@ ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
             if (u.kind != UnitKind::Serial) continue;
             if (u.state != "console") continue;
 
-            // Wrap the scripted (optionally mirrored) line in the CONSOLE's transform chain,
-            // so the AI -- and any mirror watcher -- see what a terminal would, not the raw
-            // 8-bit wire. Without it, a machine like `ps2` (strip7out=on, upper=on) reads
-            // back as bit-7 parity junk (0x4F 'O' -> 0xCF). The transforms are the console's,
-            // applied to the console's stand-in; the endpoint grammar deliberately cannot
-            // express a filter (host/filter.h), so it is installed as a pre-built stream.
-            // It FOLLOWS the console's settings rather than copying them, so a SET CONSOLE
-            // made mid-session reaches the guest (issue #529).
-            auto base = resolveEndpoint(baseSpec, err);
-            if (!base) return nullptr;
+            if (!ss && !s.line) {
+                auto base = resolveEndpoint(baseSpec, err);
+                if (!base) return nullptr;
 
-            // A pseudo-terminal mirror gets its name at run time, so say where it is --
-            // to STDERR, never the JSON-RPC channel. Said again after a CONFIG LOAD,
-            // because a rebuilt mirror is a new device.
-            {
+                // A pseudo-terminal mirror gets its name at run time, so say where it is --
+                // to STDERR, never the JSON-RPC channel. Said again after a CONFIG LOAD,
+                // because a rebuilt mirror is a new device.
                 ByteStream* p = base.get();
                 if (auto* t = dynamic_cast<TeeStream*>(p)) p = t->inner();
                 if (auto* ms = dynamic_cast<MirrorStream*>(p))
                     if (std::string note = ms->sinkNote(); !note.empty())
                         std::cerr << "altairsim: --mirror: open " << note << "\n";
+                s.line = std::move(base);
             }
-            auto filt = std::make_unique<FilterStream>(std::move(base));
-            filt->follow(Console::instance().filter());
 
-            // connectStream takes the pre-built, filtered stack. A board not taught the seam
-            // refuses; fall back to the bare line -- no transforms, but no regression. (Every
-            // shipped machine with console transforms consoles on a 2sio or sio, both taught.)
-            if (!b->connectStream(u.name, std::move(filt), err)) {
-                if (!b->connect(u.name, baseSpec, err)) return nullptr;
+            if (s.line) {
+                // Wrap the shared line in the CONSOLE's transform chain, so the AI -- and
+                // any mirror watcher -- see what a terminal would, not the raw 8-bit wire.
+                // Without it, a machine like `ps2` (strip7out=on, upper=on) reads back as
+                // bit-7 parity junk (0x4F 'O' -> 0xCF). The transforms are the console's,
+                // applied to the console's stand-in; the endpoint grammar deliberately
+                // cannot express a filter (host/filter.h), so it is installed as a pre-built
+                // stream. It FOLLOWS the console's settings rather than copying them, so a
+                // SET CONSOLE made mid-session reaches the guest (issue #529).
+                auto filt = std::make_unique<FilterStream>(std::make_unique<SharedStream>(s.line));
+                filt->follow(Console::instance().filter());
+                if (b->connectStream(u.name, std::move(filt), err)) {
+                    if (s.conBoard.empty()) {
+                        s.conBoard = b->id;
+                        s.conUnit  = u.name;
+                    }
+                    ss = asScripted(s.line.get());
+                    continue;
+                }
+                // A board not taught the seam refuses. If no unit holds the line yet, fall
+                // back to a bare line of its own -- no transforms, but no regression.
+                if (s.conBoard.empty()) {
+                    s.line.reset();
+                    if (!b->connect(u.name, baseSpec, err)) return nullptr;
+                    s.conBoard = b->id;
+                    s.conUnit  = u.name;
+                    ss = asScripted(b->unitStream(u.name));
+                    continue;
+                }
             }
-            s.conBoard = b->id;
-            s.conUnit  = u.name;
-            if (auto* ss = asScripted(b->unitStream(u.name))) return ss;
+
+            // A further unit that cannot share the console line. Unplug it: left on
+            // `console` it would write guest output onto the JSON-RPC stdout.
+            std::string nullErr;
+            b->connect(u.name, "null", nullErr);
+            std::cerr << "altairsim: --mcp: " << b->id << ":" << u.name
+                      << " cannot share the console line; connected to null\n";
         }
+    if (ss) return ss;
     err = "no console line: CONNECT a serial unit to 'scripted' (one wired to 'console' "
           "is adopted automatically).";
     return nullptr;
@@ -2093,6 +2144,10 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         std::string endpoint = args.at("endpoint").str();
         std::string err;
         if (!b->connect(unit, endpoint, err)) return textResult(err, true);
+        // A unit wired to `console` joins the scripted line now, as after a monitor
+        // command -- left alone, it writes guest output onto our stdout (issue #756).
+        std::string conErr;
+        console(m, sess, conErr);
         Json d = Json::obj();
         d["id"] = Json(b->id);
         d["unit"] = Json(unit);

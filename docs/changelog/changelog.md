@@ -36,6 +36,15 @@ connected a plain line to it. That line skipped `strip7out` and the other consol
 CompuPro's `FORMAT.COM` sets bit 7 of the last character of each message, and an MCP client
 got `formatted®` for `formatted.`. The board now takes the console line, as the `2sio` does.
 
+**Under `--mcp`, every serial unit that is connected to `console` now uses the line that the
+tools read.** The server moved only the first such unit to that line. The other units stayed on
+the host console, and under `--mcp` the host console is stdout. Their output went onto the
+JSON-RPC channel between the replies, and `run` did not show it. A unit that the `connect` tool
+connected to `console` also stayed on stdout until the next `run`. On the `disk1` machine with
+routine 6, the System Support 1 and the Interfacer were both on `console`. The CP/M 2.2N banner
+and `A>` went to stdout, and `run` stopped at its timeout with no output. Now all of these units
+share one line, so `run` shows the banner and the `A>` prompt.
+
 **On a Mac with a Retina screen, the text in a video window no longer changes between normal
 and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
 to fit. That scaling made all of the text change between a normal look and a bold look. The
