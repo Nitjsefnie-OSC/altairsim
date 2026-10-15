@@ -23,6 +23,23 @@ design. The plan names:
 - the tests to add or run
 - the docs to update
 - how you will prove it works
+- the `/compact` points, when the work has more than one task
+
+### `/compact` points
+
+Divide a plan with a lot of work into small tasks. Each task has its own check, such as a test
+that passes or a guest that boots. Put a **⏸ COMPACT** mark after each task. At that mark, the
+maintainer can run `/compact` or `/clear` before the next task starts.
+
+The plan gives two facts for each mark:
+
+1. **What is done.** The check that shows the task is complete.
+2. **Where the state is.** Write every fact the next task needs to a file before the mark: the
+   plan file, a progress file in the working folder, the tree, or a memory note. Do not keep
+   such a fact only in the conversation, because `/compact` can lose it.
+
+At each mark, stop. Report that the task is done, where its state is, and which task is next.
+The maintainer runs `/compact` or tells you to continue.
 
 Ask with `AskUserQuestion` only when different answers would lead to different work. Then
 `ExitPlanMode`.
