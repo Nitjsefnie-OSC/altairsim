@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -292,6 +293,39 @@ private:
     size_t           pos_ = 0;
     std::string      out_;
     mutable uint64_t hungry_ = 0;
+};
+
+// ONE LINE, SEVERAL CONNECTORS. A handle to a stream that more than one unit is plugged
+// into at once -- the --mcp console, where every unit wired to `console` shares the one
+// scripted line the assistant reads (issue #756), the way two units on `console` share
+// one keyboard and one screen at a terminal. Like ConsoleRef, it lets a unit's
+// FilterStream own a handle rather than the line; unlike ConsoleRef, the line is not a
+// singleton, so the handle keeps it alive until the last unit lets go. Re-wiring one unit
+// can then never destroy the line under another.
+class SharedStream : public ByteStream {
+public:
+    explicit SharedStream(std::shared_ptr<ByteStream> line) : line_(std::move(line)) {}
+    ByteStream* inner() { return line_.get(); }
+
+    std::string describe() const override { return line_->describe(); }
+    size_t read(uint8_t* buf, size_t n) override { return line_->read(buf, n); }
+    size_t write(const uint8_t* buf, size_t n) override { return line_->write(buf, n); }
+    bool readable() const override { return line_->readable(); }
+    bool writable() const override { return line_->writable(); }
+    bool pacesItself() const override { return line_->pacesItself(); }
+    bool pacedReceive() const override { return line_->pacedReceive(); }
+    void flush() override { line_->flush(); }
+    LineStatus status() const override { return line_->status(); }
+    void setControl(const LineControl& c) override { line_->setControl(c); }
+    bool setParams(const LineParams& p, std::string& err) override {
+        return line_->setParams(p, err);
+    }
+    void pump() override { line_->pump(); }
+    std::vector<std::string> drainLog() override { return line_->drainLog(); }
+    void greet(const std::string& owner) override { line_->greet(owner); }
+
+private:
+    std::shared_ptr<ByteStream> line_;
 };
 
 } // namespace altair

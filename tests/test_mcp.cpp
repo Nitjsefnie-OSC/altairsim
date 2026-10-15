@@ -153,15 +153,17 @@ bool waitFor(Fn ready, int ms = 2000) {
 }
 
 // The MirrorStream now wrapping the console unit (and its inner ScriptedStream), if any.
-// After runMcp with --mirror the console's line is Filter(Mirror(scripted)) -- the console
-// transform filter is outermost (always), the mirror rides under it, the assistant drives
-// the inner scripted. Peel the filter to reach the mirror.
+// After runMcp with --mirror the console's line is Filter(Shared(Mirror(scripted))) -- the
+// console transform filter is outermost (always), the SharedStream every console unit holds
+// under it (#756), the mirror under that, the assistant drives the inner scripted. Peel the
+// filter and the shared handle to reach the mirror.
 MirrorStream* consoleMirror(Machine& m, ScriptedStream** innerOut = nullptr) {
     for (const auto& b : m.boards())
         for (const auto& u : b->units()) {
             if (u.kind != UnitKind::Serial) continue;
             ByteStream* s = b->unitStream(u.name);
             if (auto* f = dynamic_cast<FilterStream*>(s)) s = f->inner();  // peel the console filter
+            if (auto* sh = dynamic_cast<SharedStream*>(s)) s = sh->inner(); // the shared handle
             if (auto* t = dynamic_cast<TeeStream*>(s)) s = t->inner();     // and a --log tap
             if (auto* mir = dynamic_cast<MirrorStream*>(s)) {
                 if (innerOut) *innerOut = dynamic_cast<ScriptedStream*>(mir->inner());
@@ -494,6 +496,115 @@ void test_mcp() {
         const Json& out = rep[4].at("result").at("structuredContent");
         CHECK(out.at("output").str().find("3E 03 D3 10") != std::string::npos,
               "the guest executed the TYPEd command -- its dump reached the scripted console");
+    }
+
+    SECTION("MCP: every unit connected to console shares the scripted line (issue #756)");
+    {
+        // Only the FIRST unit on `console` was moved to the scripted line. A second one kept
+        // the host console, which under --mcp is the JSON-RPC stdout: the guest's text landed
+        // between the JSON lines, and `run` never saw it. Each case wires sio0:b to `console`
+        // beside sio0:a and runs a program that writes 'Z' out of port B, then 'Y' out of A.
+        const std::string prog =
+            R"({"name":"monitor","arguments":{"command":"DEPOSIT 100 3E 03 D3 12 3E 11 D3 12 )"
+            R"(3E 5A D3 13 3E 03 D3 10 3E 11 D3 10 3E 59 D3 11 76"}})";
+        const std::string run = R"({"name":"run","arguments":{"from":256,"timeout_ms":4000}})";
+
+        // The scripted line at the bottom of a unit's stack (Filter -> Shared -> Scripted).
+        auto scriptedOf = [](Machine& mm, const char* unit) -> ScriptedStream* {
+            Board* b = mm.find("sio0");
+            ByteStream* st = b ? b->unitStream(unit) : nullptr;
+            if (auto* f = dynamic_cast<FilterStream*>(st)) st = f->inner();
+            if (auto* sh = dynamic_cast<SharedStream*>(st)) st = sh->inner();
+            return dynamic_cast<ScriptedStream*>(st);
+        };
+
+        struct Case {
+            const char* how;
+            std::string wire;  // the request that wires sio0:b to console
+        };
+        const Case cases[] = {
+            {"the monitor tool's CONNECT",
+             R"({"name":"monitor","arguments":{"command":"CONNECT sio0:b console"}})"},
+            {"the connect tool",
+             R"({"name":"connect","arguments":{"id":"sio0","unit":"b","endpoint":"console"}})"},
+        };
+        for (const Case& c : cases) {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            std::ostringstream s;
+            int id = 0;
+            auto req = [&](const char* method, const std::string& params) {
+                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
+                  << R"(","params":)" << params << "}\n";
+            };
+            req("initialize", "{}");
+            req("tools/call", prog);
+            req("tools/call", c.wire);
+            req("tools/call", run);
+            auto rep = runScript(m, s.str());
+
+            std::printf("  via %s\n", c.how);
+            CHECK(!rep[3].at("result").has("isError"), "the request wires sio0:b to console");
+            const std::string out =
+                rep[4].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Z') != std::string::npos, "port B's output reaches run's output");
+            CHECK(out.find('Y') != std::string::npos, "and port A's output still does");
+            ScriptedStream* a = scriptedOf(m, "a");
+            CHECK(a != nullptr && a == scriptedOf(m, "b"),
+                  "both units reach the same scripted line");
+        }
+
+        // The connect tool adopts the unit AT ONCE, not at the next run: a `step` right after
+        // it must not write port B's byte onto stdout.
+        {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            std::ostringstream s;
+            int id = 0;
+            auto req = [&](const char* method, const std::string& params) {
+                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
+                  << R"(","params":)" << params << "}\n";
+            };
+            req("initialize", "{}");
+            req("tools/call", prog);
+            // RUN first: the monitor tool adopts console units itself after each command.
+            req("tools/call", R"({"name":"monitor","arguments":{"command":"RUN 100"}})");
+            req("tools/call", cases[1].wire);
+            req("tools/call", R"({"name":"step","arguments":{"count":13}})");
+            req("tools/call", R"({"name":"recv","arguments":{}})");
+            auto rep = runScript(m, s.str());
+
+            const std::string out =
+                rep[6].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Z') != std::string::npos,
+                  "after the connect tool, a step's port B output reaches recv");
+        }
+
+        // Re-wiring the first unit away leaves the line alive under the second: the session
+        // shares it with every unit, so no unit owns it.
+        {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            std::ostringstream s;
+            int id = 0;
+            auto req = [&](const char* method, const std::string& params) {
+                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
+                  << R"(","params":)" << params << "}\n";
+            };
+            req("initialize", "{}");
+            req("tools/call", prog);
+            req("tools/call", cases[0].wire);
+            req("tools/call", R"({"name":"monitor","arguments":{"command":"CONNECT sio0:a null"}})");
+            req("tools/call", run);
+            auto rep = runScript(m, s.str());
+
+            const std::string out =
+                rep[5].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Z') != std::string::npos,
+                  "with sio0:a unplugged, port B still reaches run's output");
+            CHECK(out.find('Y') == std::string::npos, "and port A, on null, does not");
+            CHECK(scriptedOf(m, "b") != nullptr, "sio0:b is still on the scripted line");
+        }
     }
 
     SECTION("MCP: TYPE sends a quote and a control byte through the monitor tool (issue #624)");
@@ -852,7 +963,8 @@ void test_mcp() {
         CHECK(show.find("(--mcp)") != std::string::npos && show.find("(nobody") == std::string::npos,
               "SHOW CONSOLE under --mcp names the console stand-in as the holder");
 
-        // The console unit's stream is a FilterStream (outermost) over the scripted line.
+        // The console unit's stream is a FilterStream (outermost) over the shared handle
+        // (#756) to the scripted line.
         FilterStream*   filt = nullptr;
         ScriptedStream* sc   = nullptr;
         for (const auto& b : m.boards())
@@ -860,7 +972,8 @@ void test_mcp() {
                 if (u.kind != UnitKind::Serial) continue;
                 if (auto* f = dynamic_cast<FilterStream*>(b->unitStream(u.name))) {
                     filt = f;
-                    sc   = dynamic_cast<ScriptedStream*>(f->inner());
+                    if (auto* sh = dynamic_cast<SharedStream*>(f->inner()))
+                        sc = dynamic_cast<ScriptedStream*>(sh->inner());
                 }
             }
         CHECK(filt != nullptr, "the console line is wrapped in the console's transform filter");
