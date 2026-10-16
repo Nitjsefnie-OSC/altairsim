@@ -386,7 +386,7 @@ static const std::vector<CommandDef> kCommands = {
      "  SHOW PATHS          ; what a path resolves against -- and there is more than one answer\n"
      "  SHOW CONSOLE        ; which unit holds the keyboard, and its transforms\n"
      "  SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look\n"
-     "  SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)\n"
+     "  SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, crlf, bsdel, ...)\n"
      "  SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)\n"
      "  SHOW DEBUG          ; the diagnostic channels and their flags, and where they print\n"
      "  SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS\n"

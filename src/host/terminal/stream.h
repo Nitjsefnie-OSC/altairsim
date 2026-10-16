@@ -98,10 +98,13 @@ public:
         bool  echo      = false;  // local echo of keystrokes, for half-duplex guests
         bool  bell      = true;   // pass 0x07 to the emulator
         BsMap bsdel     = BsMap::Off;
-        enum class Cr { Cr, CrLf } cr = Cr::Cr;  // pass CR through, or add LF after each CR
+        bool  crlf      = false;  // add LF after each CR the guest prints
     };
     static Settings&             settings() { return s_settings; }
     static std::vector<Property> properties();
+    // SET TERMINAL and a [terminal] table both come through here, so the two cannot
+    // disagree about a key. It refuses the old `cr` key (issue #768) with the new line.
+    static bool set(const std::string& key, const std::string& value, std::string& err);
 
     // ---- composition root: the borrowed host video service and bundled font ----
     static void setDisplay(Display* d) { s_display = d; }

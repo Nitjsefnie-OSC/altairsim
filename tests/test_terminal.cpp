@@ -251,17 +251,35 @@ void test_terminal() {
             s.strip7out = false;
         }
 
-        // cr = crlf: a guest that emits a bare CR and no LF. Off, CR only homes the column;
+        // crlf: a guest that emits a bare CR and no LF. Off, CR only homes the column;
         // on, an LF follows and the row advances.
         {
             TerminalStream ts("terminal", 24, 80, std::make_unique<Vt100Emulator>());
             const uint8_t cr[] = {'X', 0x0D};
             ts.write(cr, 2);
-            CHECK(ts.screen().cursorRow() == 0, "cr=cr: a bare CR stays on the same row");
-            s.cr = TerminalStream::Settings::Cr::CrLf;
+            CHECK(ts.screen().cursorRow() == 0, "crlf=off: a bare CR stays on the same row");
+            s.crlf = true;
             ts.write(cr, 2);
-            CHECK(ts.screen().cursorRow() == 1, "cr=crlf: an LF follows the CR, the row advances");
-            s.cr = TerminalStream::Settings::Cr::Cr;
+            CHECK(ts.screen().cursorRow() == 1, "crlf=on: an LF follows the CR, the row advances");
+            s.crlf = false;
+        }
+
+        // Issue #768: one name on the console and the terminal. `crlf` is set through the
+        // same path SET TERMINAL and [terminal] use; the old `cr` key is refused with the
+        // line to write instead, in any case.
+        {
+            std::string err;
+            CHECK(TerminalStream::set("crlf", "on", err) && s.crlf, "SET TERMINAL crlf=on sets it");
+            CHECK(TerminalStream::set("CRLF", "off", err) && !s.crlf, "...and crlf=off clears it");
+            err.clear();
+            CHECK(!TerminalStream::set("cr", "crlf", err) && !s.crlf,
+                  "the old key `cr` is refused and changes nothing");
+            CHECK(err.find("'cr' is now 'crlf'") != std::string::npos &&
+                      err.find("crlf=on") != std::string::npos,
+                  "...and the refusal gives the new key and value");
+            err.clear();
+            CHECK(!TerminalStream::set("CR", "cr", err) && !err.empty(),
+                  "...in any case, as every key is");
         }
 
         // upper / strip7in / bsdel fold KEYSTROKES, in keyAscii(), on the way to the guest.

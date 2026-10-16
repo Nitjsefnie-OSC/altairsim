@@ -1025,6 +1025,11 @@ void test_toml_errors() {
     CHECK(refusedWith("[machine]\nbase = \"default\"\n[console]\nbsdle = \"bs\"\n",
                       {"line 4: [console]:", "bsdle"}),
           "a bad [console] key");
+    // Issue #768: the terminal's `cr = cr | crlf` is now the console's `crlf = on | off`.
+    // A file that still says `cr` stops at that line and is told what to write instead.
+    CHECK(refusedWith("[machine]\nbase = \"default\"\n[terminal]\ncr = \"crlf\"\n",
+                      {"line 4: [terminal]:", "'cr' is now 'crlf'", "crlf=on"}),
+          "the terminal's old `cr` key, with the new key and value");
     CHECK(refusedWith("[machine]\nbase = \"default\"\n[[board]]\nid = \"nope\"\n",
                       {"line 3: [[board]] nope: no board with that id"}),
           "a MODIFY of a board that is not there, at its [[board]]");

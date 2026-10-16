@@ -716,7 +716,7 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
         // a build with no window simply has nothing to apply it to.
         if (t.name == "terminal") {
             for (size_t i = 0; i < t.kv.size(); ++i) {
-                if (!setPropertyIn(TerminalStream::properties(), "terminal", t.kv[i].first, t.kv[i].second, err)) {
+                if (!TerminalStream::set(t.kv[i].first, t.kv[i].second, err)) {
                     err = at(t.kvLine[i]) + "[terminal]: " + err;
                     return false;
                 }

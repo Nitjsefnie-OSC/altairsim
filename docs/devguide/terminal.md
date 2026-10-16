@@ -157,9 +157,11 @@ Design points, all in `src/host/terminal/stream.{h,cpp}`:
   which `upper` would corrupt. Keystrokes enter through `keyAscii()`, so that is where `upper`,
   `strip7in` and `bsdel` belong; reports never pass through it. `test_terminal.cpp` has a guard
   for exactly this.
-- **`cr = cr | crlf`** is the terminal's one line-ending knob (the console spells the same idea
-  `crlf=on/off`). Default `cr` passes the guest's CR through untouched; `crlf` appends an LF
-  after each CR, applied *after* `strip7out` so it triggers on the real `0x0D`.
+- **`crlf = on | off`** is the terminal's one line-ending setting. It has the console's name and
+  values (issue #768). Off by default, the guest's CR passes through unchanged. On, an LF follows
+  each CR. The LF is added *after* `strip7out`, so it triggers on the real `0x0D`. The key was
+  `cr = cr | crlf` up to 1.3.3. `TerminalStream::set()` refuses the old key and gives the new
+  line, and both `SET TERMINAL` and the `[terminal]` table go through it.
 
 ## The run banner and a non-stdio console
 
