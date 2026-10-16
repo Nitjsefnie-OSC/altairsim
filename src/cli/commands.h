@@ -69,4 +69,28 @@ std::string abbreviation(const CommandDef& c);
 // at runtime: a user cannot create one, only a board author can.
 std::string boardAbbreviation(const CommandDef& c);
 
+// The full help for ONE FORM of a command, when that form has more to say than an
+// example line: `HELP SET CONSOLE` prints its topic whole, where `HELP SET DISPLAY`
+// narrows SET's examples. A topic belongs to the PRIMARY command. A shortcut for it
+// (CONSOLE is SET CONSOLE spelled short) says so and pulls the same text in with the
+// token {topic:VERB WORD}, so one command has one answer and the text is written once.
+struct HelpTopic {
+    const char* verb;    // the command it is a form of: "SET"
+    const char* word;    // the word after it: "CONSOLE"
+    const char* usage;   // "SET CONSOLE <k>=<v>..."
+    const char* detail;  // the help text, as CommandDef::detail
+};
+
+const std::vector<HelpTopic>& helpTopics();
+
+// The topic for `HELP <verb> <typed>`, the typed word matched case-blind by prefix as
+// HELP's narrowing does (`HELP SE CONS`). `verb` is the resolved command name. Null if
+// there is none.
+const HelpTopic* findHelpTopic(const std::string& verb, const std::string& typed);
+
+// A help text as a reader sees it: `{endpoints}` becomes `endpoints` (the caller asks
+// endpointHelp(), which this layer does not reach), and `{topic:VERB WORD}` becomes that
+// topic's text. The live HELP and the reference emitter both print through this.
+std::string expandHelp(const std::string& detail, const std::string& endpoints);
+
 } // namespace altair

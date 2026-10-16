@@ -1372,6 +1372,56 @@ void test_cli() {
                   (std::string("HELP SET ") + kw + " drops the board siblings").c_str());
         }
 
+        // ONE COMMAND, ONE ANSWER (issue #745). SET CONSOLE is the primary spelling of
+        // the console settings, so HELP SET CONSOLE is their whole help; CONSOLE is a
+        // shortcut for it, says so, and prints the same text. HELP CONSOLE had the keys
+        // and HELP SET CONSOLE one example line.
+        {
+            auto help = [&](const char* line) {
+                std::ostringstream o;
+                monH.exec(line, o);
+                return o.str();
+            };
+            auto has = [](const std::string& s, const char* w) {
+                return s.find(w) != std::string::npos;
+            };
+            const std::string setCon = help("HELP SET CONSOLE");
+            CHECK(has(setCon, "SET CONSOLE <k>=<v>") && has(setCon, "strip7out") &&
+                      has(setCon, "bsdel") && has(setCon, "STOP is the key"),
+                  "HELP SET CONSOLE is the whole console help: every key, and STOP");
+            CHECK(has(setCon, "SHOW DEBUG lists") && !has(setCon, "SET ... DEBUG"),
+                  "and its DEBUG note leads to SHOW DEBUG, which exists");
+            CHECK(help("help se cons") == setCon, "HELP SE CONS (abbreviated, lower case) is the same");
+
+            const std::string con = help("HELP CONSOLE");
+            CHECK(has(con, "A shortcut for SET CONSOLE.") && has(con, "CONSOLE [<k>=<v>...]"),
+                  "HELP CONSOLE says it is a shortcut, and gives its own usage");
+            const size_t      at   = setCon.find("The console is the window");
+            const std::string body = at == std::string::npos ? setCon : setCon.substr(at);
+            CHECK(at != std::string::npos && has(con, body.c_str()),
+                  "and then prints the SET CONSOLE text, word for word");
+
+            CHECK(has(help("HELP DISCONNECT"), "A shortcut for CONNECT <id>:<u> null"),
+                  "HELP DISCONNECT says it is a shortcut for CONNECT ... null");
+
+            // An explicit link, not a rule: SET MACHINE renames, MACHINE loads a built-in.
+            CHECK(!has(help("HELP SET MACHINE"), "MACHINE <name> | MACHINE none"),
+                  "HELP SET MACHINE does not print the MACHINE command's help");
+            const std::string setDisp = help("HELP SET DISPLAY");
+            CHECK(has(setDisp, "SET DISPLAY crt=on") && has(setDisp, "SHOW DISPLAY lists"),
+                  "HELP SET DISPLAY still narrows, and points to SHOW DISPLAY");
+
+            // And one code path: CONSOLE k=v is SET CONSOLE k=v.
+            CHECK(help("CONSOLE upper=on") == help("SET CONSOLE upper=on"),
+                  "CONSOLE k=v and SET CONSOLE k=v give the same reply");
+            const std::string bad =
+                (std::filesystem::temp_directory_path() / "no_such_dir_altairsim" / "d.log").string();
+            CHECK(help(("CONSOLE DEBUG=" + bad).c_str()) ==
+                      help(("SET CONSOLE DEBUG=" + bad).c_str()),
+                  "a bad DEBUG= file fails the same way under both");
+            help("SET CONSOLE upper=off");
+        }
+
         // The same for SHOW DEBUG, which SHOW accepted and its help did not list.
         std::ostringstream dbg;
         monH.exec("HELP SHOW DEBUG", dbg);
@@ -2816,7 +2866,7 @@ void test_achieved_hz() {
         // two of them still has one operator with one keyboard -- so this is the
         // display's, alongside the console's own transforms, and it answers even in a
         // build with no video at all (host/display.h).
-        CHECK(!Display::focusPolicy(), "the terminal keeps the keyboard by default");
+        CHECK(!Display::focusPolicy(), "a window opens behind the console by default");
 
         Machine md;
         Monitor monD(md);

@@ -109,7 +109,9 @@ One name for each thing, in every document and every comment.
 | **guest** | program (alone) | The software that runs on the machine. |
 | **monitor** | prompt, shell | The `altairsim>` prompt. |
 | **machine file** | config, TOML file | The `.toml` that describes a machine. |
-| **console** | terminal (for the role) | The unit that has the keyboard. "Terminal" is the host window. |
+| **console** | terminal, the host's terminal | The window you started altairsim in, where the monitor runs. A unit connected to it "holds the console". |
+| **terminal window** | terminal (alone) | The window that `connect = "terminal"` opens. "Terminal" alone is never the console. |
+| **altairsim's windows** | the video window (for `[display]`) | Every window altairsim opens: each video board's window and each terminal window. `SET DISPLAY` sets them all. |
 | ***User Manual*** | the manual, this manual | Use the full name in the Monitor and Debugger documents, which are not the *User Manual*. Inside the *User Manual*, "this manual" is fine. |
 
 When a review finds a concept with two names, choose one, add a row, and report it.

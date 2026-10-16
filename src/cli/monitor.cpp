@@ -2160,7 +2160,7 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
 // A null pointer still means something (an embedder that never called setDisplay, as the
 // unit tests do), so it keeps its own answer rather than being folded into the other.
 void Monitor::showDisplay(std::ostream& out) {
-    out << "display  (the host video window";
+    out << "display  (the windows altairsim opens";
 #ifndef ALTAIRSIM_ENABLE_SDL
     out << " -- no video service in this build";
 #else
@@ -2221,6 +2221,30 @@ void Monitor::showJoysticks(std::ostream& out) {
     out << "\n  A D+7A maps these onto its JS-1 consoles: SHOW <id> for the live mapping,\n"
            "  SET <id> joystick1=auto|keyboard|<index> to choose.\n";
 #endif
+}
+
+bool Monitor::setConsoleKey(const std::string& k, const std::string& v,
+                            std::ostream& out) {
+    std::string err;
+    // DEBUG on the console is the one global diagnostic SINK, not a console
+    // property -- it lives on the dbg facility (per-channel flags are set on
+    // the channel: SET <board> DEBUG=...).
+    if (is(k, "DEBUG")) {
+        if (!applyDebugSink(v, resolveInput(v), err)) {
+            out << err << "\n";
+            failed_ = true;
+            return false;
+        }
+        out << "debug: sink=" << dbg::sinkName() << "\n";
+        return true;
+    }
+    if (!setPropertyIn(Console::instance().properties(), "console", k, v, err)) {
+        out << err << "\n";
+        failed_ = true;
+        return false;
+    }
+    out << "console: " << k << "=" << v << "\n";
+    return true;
 }
 
 void Monitor::showConsole(std::ostream& out) {
@@ -3147,6 +3171,20 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 return true;
             }
 
+            // A FORM WITH A TOPIC OF ITS OWN gets the whole topic, not a narrow:
+            // `HELP SET CONSOLE` is the console's full help (commands.h, HelpTopic).
+            if (!fromBoard && a.size() >= 3)
+                if (const HelpTopic* t = findHelpTopic(h->name, a[2])) {
+                    std::string d = expandHelp(t->detail, endpointHelp());
+                    out << "\n  " << t->usage << "\n\n  ";
+                    for (char ch : d) {
+                        out << ch;
+                        if (ch == '\n') out << "  ";
+                    }
+                    out << "\n\n";
+                    return true;
+                }
+
             // EXTRA WORDS NARROW THE ANSWER. `HELP SHOW BOARD` asked about one
             // sub-level, not the whole of SHOW -- so keep only the detail lines that
             // begin with the words you typed. We do NOT keep a second list to do this:
@@ -3204,9 +3242,9 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 // long after resolveEndpoint() implemented both. A literal that
                 // DUPLICATES a list someone else owns is a second schema, and it drifts.
                 // So the literal names the token and the printer asks the owner.
-                for (size_t at = d.find("{endpoints}"); at != std::string::npos;
-                     at        = d.find("{endpoints}", at))
-                    d.replace(at, 11, endpointHelp());
+                // {topic:...} is the same idea for a shortcut: CONSOLE prints SET
+                // CONSOLE's text instead of keeping a copy of it (commands.h).
+                d = expandHelp(d, endpointHelp());
 
                 out << "  ";
                 for (char ch : d) {
@@ -3881,27 +3919,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         }
 
         if (setSel == "CONSOLE") {
-            // DEBUG on the console is the one global diagnostic SINK, not a console
-            // property -- it lives on the dbg facility (per-channel flags are set on
-            // the channel: SET <board> DEBUG=..., handled below).
-            if (is(k, "DEBUG")) {
-                std::string err;
-                if (!applyDebugSink(v, resolveInput(v), err)) {
-                    out << err << "\n";
-                    failed_ = true;
-                } else {
-                    out << "debug: sink=" << dbg::sinkName() << "\n";
-                }
-                return true;
-            }
-            std::string err;
-            if (!setPropertyIn(Console::instance().properties(), "console", k, v,
-                               err)) {
-                out << err << "\n";
-                failed_ = true;
-            } else {
-                out << "console: " << k << "=" << v << "\n";
-            }
+            setConsoleKey(k, v, out);
             return true;
         }
 
@@ -4111,23 +4129,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 failed_ = true;
                 return true;
             }
-            std::string k = a[i].substr(0, eq), v = a[i].substr(eq + 1);
-            std::string err;
-            if (is(k, "DEBUG")) {  // the global sink, as in SET CONSOLE DEBUG= above
-                if (!applyDebugSink(v, resolveInput(v), err)) {
-                    out << err << "\n";
-                    failed_ = true;
-                    return true;
-                }
-                out << "debug: sink=" << dbg::sinkName() << "\n";
-                continue;
-            }
-            if (!setPropertyIn(Console::instance().properties(), "console", k, v, err)) {
-                out << err << "\n";
-                failed_ = true;
-                return true;
-            }
-            out << "console: " << k << "=" << v << "\n";
+            if (!setConsoleKey(a[i].substr(0, eq), a[i].substr(eq + 1), out)) return true;
         }
         return true;
     }

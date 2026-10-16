@@ -75,6 +75,23 @@ with a command and a word shows the example lines of the command that contain th
 each one and says that `TERMINAL` is the built-in terminal window. The `SHOW` help now lists
 `TERMINAL`, `JOYSTICKS` and `DEBUG` on its first line and has a `SHOW DEBUG` example.
 
+**`HELP SET CONSOLE` and `HELP CONSOLE` now give the same help.** `CONSOLE k=v` is the same
+command as `SET CONSOLE k=v`, but the two had different help. `HELP CONSOLE` listed the keys
+and what each one does. `HELP SET CONSOLE` showed one example line. `HELP SET CONSOLE` now
+prints the full help for the console keys. `HELP CONSOLE` says that `CONSOLE` is a shortcut for
+`SET CONSOLE` and `SHOW CONSOLE`, then prints the same text. `HELP DISCONNECT` now says that
+`DISCONNECT` is a shortcut for `CONNECT <id>:<u> null`. `HELP CONSOLE` sent you to `SET ... DEBUG`
+for `DEBUG=`, and the `SET` help had no text about `DEBUG`. It now sends you to `SHOW DEBUG`.
+The `SET DISPLAY` example now names `SHOW DISPLAY`, the only list of the display keys.
+
+**The help and the manual now use one name for each window.** The help called the window you
+started altairsim in "the terminal", and `SET TERMINAL` sets a different window, the built-in
+terminal window. The `SET DISPLAY focus=on` example said that the video window takes the
+keyboard "not the terminal". The help, `SHOW CONSOLE`, `SHOW DISPLAY` and the manual now call
+the window you started altairsim in the console. They say that the `[display]` settings apply to
+every window that altairsim opens, a terminal window too, and that `focus` acts when a window
+opens.
+
 **`--set` changes settings for one run.** `altairsim cpm22-buffered.toml --set "cpu0
 clock_hz=2000000"` boots the CP/M example at 2 MHz and leaves the machine file as it is. The
 text is what you type after `SET` at the prompt, and you can give `--set` more than one time:

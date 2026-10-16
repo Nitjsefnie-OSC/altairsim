@@ -59,6 +59,11 @@ case and lower case are the same, in a command and in the name of a board.
 
 `HELP <command>` shows the usage and examples for one command. `?` is the same as `HELP`.
 
+Some commands are shortcuts for a longer command. The help of a shortcut says which command
+it is short for. `CONSOLE` is a shortcut for `SET CONSOLE` and `SHOW CONSOLE`. Thus
+`HELP CONSOLE` prints the full help of `SET CONSOLE`, which is also what `HELP SET CONSOLE`
+prints.
+
 > **`R` is `RUN`, not `RESET`. To reset, type `RES`.** You type `RUN` in every session, and an
 > unwanted `RUN` does no damage. If `R` reset the machine, one wrong key could make you set up
 > the machine again.
@@ -279,7 +284,7 @@ decodes, and what is in its units.
 | `SHOW <id>` | one board: each setting, its value, and the values that it accepts |
 | `SHOW MACHINE` | the whole machine |
 | `SHOW CONSOLE` | which unit has your keyboard, and which transforms apply to its bytes |
-| `SHOW DISPLAY` | the video window: whether the window or the terminal has the keyboard, and whether the CRT look is on |
+| `SHOW DISPLAY` | the windows altairsim opens: whether a window comes to the front when it opens, where its keys go, and whether the CRT look is on |
 | `SHOW JOYSTICKS` | the host game controllers that a D+7A can read (needs an SDL3 build) |
 | `SHOW BUS` | the whole backplane at one time: `MEMORY`, `I/O` and a short `INTERRUPTS` summary |
 | `SHOW BUS MAP` | which board decodes each address, and which addresses float |

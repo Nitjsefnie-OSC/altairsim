@@ -75,10 +75,10 @@ Type the part before the bracket.
 | `COM[PARE]` | Compare a range of memory against another address. | `COMPARE <range> <addr>` |
 | `C[ONFIG]` | Load or save the whole machine as a TOML file. | `CONFIG LOAD <f.toml> \| CONFIG SAVE <f.toml>` |
 | `CONN[ECT]` | Attach a serial unit to an endpoint (console, socket, file, ...). | `CONNECT <id>:<u> <endpoint>` |
-| `CONS[OLE]` | Show or set the host console's properties. | `CONSOLE [<k>=<v>...]` |
+| `CONS[OLE]` | Shortcut for SHOW CONSOLE and SET CONSOLE. | `CONSOLE [<k>=<v>...]` |
 | `DE[POSIT]` | Write bytes into memory at an address. | `DEPOSIT <addr> <bytes...>` |
 | `DI[SASM]` | Disassemble memory into instructions. | `DISASM [<addr>\|<range>] [n] [CPU=8080]` |
-| `DISC[ONNECT]` | Unplug the endpoint from a serial unit. | `DISCONNECT <id>:<u>` |
+| `DISC[ONNECT]` | Shortcut for CONNECT <id>:<u> null: unplug the endpoint. | `DISCONNECT <id>:<u>` |
 | `DO` | Run a file of monitor commands, one per line, as if typed. | `DO <file>` |
 | `D[UMP]` | Show memory as hex and ASCII. | `DUMP [<addr>\|<range>] [WIDTH=16]` |
 | `E[DIT]` | Enter bytes into memory interactively from an address. | `EDIT <addr> [ROM]` |
@@ -285,7 +285,7 @@ port = 10                  # remove = true        -> PULL THE CARD OUT
   unit  = 0
   mount = "cpm.dsk"        # relative to THIS FILE
 
-[console]                  # the HOST's terminal -- not a board
+[console]                  # the window you started altairsim in -- not a board
 strip7out = true
 base      = octal          # read/print the wire class in split octal (MITS style)
 ```
