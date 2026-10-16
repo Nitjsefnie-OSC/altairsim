@@ -3985,7 +3985,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         // real serial line stays 8-bit clean (host/terminal/stream.h).
         if (setSel == "TERMINAL") {
             std::string err;
-            if (!setPropertyIn(TerminalStream::properties(), "terminal", k, v, err)) {
+            if (!TerminalStream::set(k, v, err)) {
                 out << err << "\n";
                 failed_ = true;
             } else {

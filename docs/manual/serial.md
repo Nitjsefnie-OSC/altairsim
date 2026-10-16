@@ -770,7 +770,7 @@ The built-in `terminal` window draws the text itself, so it has the same kind of
 | `upper` | changes what you type to upper case |
 | `strip7in` | clears bit 7 of every character that you type |
 | `strip7out` | clears bit 7 of every character that the guest prints |
-| `cr` | `cr` (the default: pass the guest's CR unchanged) or `crlf` (add an LF after every CR) |
+| `crlf` | adds an LF after every CR that the guest prints. Off by default |
 | `echo` | shows your keys locally, for half-duplex software |
 | `bell` | passes `Ctrl-G` to the terminal. On by default |
 | `bsdel` | makes Backspace and Delete send the same code: `off` (the default), `bs`, or `del` |
@@ -799,4 +799,4 @@ strip7out = true
 `strip7out` is useful for an **even-parity monitor**. MITS Programming System II puts parity in
 bit 7 of every character, so it sends a carriage return as `8D`. In the terminal window, `8D` is
 not a carriage return, and every line feeds without going back to the left. `strip7out=on` fixes
-this. `cr=crlf` is for a guest that sends a CR alone and expects the terminal to add the LF.
+this. `crlf=on` is for a guest that sends a CR alone and expects the terminal to add the LF.

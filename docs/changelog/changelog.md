@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The terminal window's `cr` setting is now `crlf`, the name the console uses.** The setting
+adds an LF after each CR that the guest prints. On the console it was `crlf = on | off`. On the
+terminal window it was `cr = cr | crlf`, so one setting had two names and two sets of values.
+Both now use `crlf = on | off`. A machine file or a `SET TERMINAL` command that gives `cr`
+stops with a message that gives the new line: `crlf=on` for `cr=crlf`, `crlf=off` for `cr=cr`.
+
 **The CompuPro Disk 1 floppy controller is a new board, `disk1`.** The Disk 1 came before the
 Disk 1A. It has the same µPD765A chip and DMA engine, and a 2 KB boot EPROM. Bit 7 of port 3 is
 a serial line with no UART. The guest makes each bit of the line itself, and the `serial` unit

@@ -1204,7 +1204,7 @@ SHOW MOUNTS         ; every disk, tape and ROM in the machine, and what is in it
 SHOW PATHS          ; what a path resolves against -- and there is more than one answer
 SHOW CONSOLE        ; which unit holds the keyboard, and its transforms
 SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look
-SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)
+SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, crlf, bsdel, ...)
 SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)
 SHOW DEBUG          ; the diagnostic channels and their flags, and where they print
 SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS

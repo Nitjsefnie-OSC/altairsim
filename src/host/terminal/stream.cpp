@@ -1,5 +1,6 @@
 #include "host/terminal/stream.h"
 
+#include "core/board.h"  // setPropertyIn
 #include "host/display.h"
 #include "host/terminal/emulator.h"
 #include "host/terminal/font.h"
@@ -34,7 +35,7 @@ size_t TerminalStream::read(uint8_t* buf, size_t n) { return emu_->takeReply(buf
 
 size_t TerminalStream::write(const uint8_t* buf, size_t n) {
     // Outbound (guest -> screen): strip7out first, so an even-parity 0x8D becomes the
-    // 0x0D the emulator homes on; then drop a bell if muted, then feed. cr=crlf adds
+    // 0x0D the emulator homes on; then drop a bell if muted, then feed. crlf adds
     // the LF a bare-CR guest omits, AFTER masking so it triggers on the real 0x0D.
     const Settings& s = s_settings;
     for (size_t i = 0; i < n; ++i) {
@@ -42,7 +43,7 @@ size_t TerminalStream::write(const uint8_t* buf, size_t n) {
         if (s.strip7out) c &= 0x7F;
         if (!s.bell && c == 0x07) continue;
         emu_->feed(c, screen_);
-        if (s.cr == Settings::Cr::CrLf && c == 0x0D) emu_->feed(0x0A, screen_);
+        if (s.crlf && c == 0x0D) emu_->feed(0x0A, screen_);
     }
     return n;  // the emulated terminal consumes instantly -- it never back-pressures
 }
@@ -87,6 +88,8 @@ std::vector<Property> TerminalStream::properties() {
     flag("strip7in", "Mask the high bit on keyboard input", &s->strip7in);
     flag("strip7out", "Mask the high bit on guest output (fixes an even-parity monitor)",
          &s->strip7out);
+    flag("crlf", "Add LF after every CR the guest prints. Usually WRONG -- it sends its own",
+         &s->crlf);
     flag("echo", "Local echo of keystrokes, for half-duplex hardware", &s->echo);
     flag("bell", "Pass 0x07 through to the terminal", &s->bell);
 
@@ -108,21 +111,20 @@ std::vector<Property> TerminalStream::properties() {
         p.push_back(std::move(x));
     }
 
-    {
-        Property x;
-        x.name    = "cr";
-        x.help    = "Guest CR handling: cr (pass through) | crlf (add LF after every CR)";
-        x.kind    = Kind::Enum;
-        x.choices = {"cr", "crlf"};
-        x.get     = [s] { return Value::ofStr(s->cr == Settings::Cr::CrLf ? "crlf" : "cr"); };
-        x.set     = [s](const Value& v, std::string&) {
-            s->cr = v.s() == "crlf" ? Settings::Cr::CrLf : Settings::Cr::Cr;
-            return true;
-        };
-        p.push_back(std::move(x));
-    }
-
     return p;
+}
+
+// The key was `cr = cr | crlf` until 1.3.3; it is now the console's `crlf = on | off`. The
+// value types differ, so an alias cannot carry it, and a file that still says `cr` stops with
+// the line to write instead of loading with a setting it did not ask for.
+bool TerminalStream::set(const std::string& key, const std::string& value, std::string& err) {
+    std::string k;
+    for (char c : key) k += (char)std::tolower((unsigned char)c);
+    if (k == "cr") {
+        err = "terminal: 'cr' is now 'crlf' -- write crlf=on for cr=crlf, crlf=off for cr=cr";
+        return false;
+    }
+    return setPropertyIn(properties(), "terminal", key, value, err);
 }
 
 void TerminalStream::keySpecial(int key) {

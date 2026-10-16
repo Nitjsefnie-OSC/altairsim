@@ -86,8 +86,8 @@ id = "dsk0"
 #                      for CP/M; essential for `ps2`/`ps2int` on a terminal.
 #   strip7in  = true   mask bit 7 of what you type.
 #   upper     = true   fold your keystrokes to uppercase (a lot of period software insists).
-#   cr        = crlf   add an LF after every CR the guest prints. Default `cr` passes CR
-#                      through untouched; use `crlf` only for a guest that emits a bare CR.
+#   crlf      = true   add an LF after every CR the guest prints. Off by default, CR passes
+#                      through unchanged; turn it on only for a guest that sends a bare CR.
 #   echo      = true   local echo, for half-duplex software that does not echo for you.
 #   bell      = false  swallow 0x07 instead of passing it to the terminal.
 #
