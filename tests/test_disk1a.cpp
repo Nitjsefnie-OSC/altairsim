@@ -514,7 +514,7 @@ void test_disk1a() {
         std::string err;
         k.fdc->mount("drive0", "a.dsk", false, err);
         auto sawIndex = [&] {
-            const uint64_t rev = k.m.clock.tStatesPer(6);  // one 360 RPM revolution
+            const uint64_t rev = k.m.clock.tStatesPer(5);  // one 300 RPM revolution, or more
             bool seen = false;
             for (uint64_t t = 0; t < rev; t += 2000) {
                 k.m.clock.advance(2000);
@@ -535,8 +535,25 @@ void test_disk1a() {
         k.m.clock.advance(2 * sec);
         CHECK(k.fdc->motors() == 0, "15 s after the last access, the motors stop");
         CHECK(!k.m.clock.queued(), "...and the board leaves no deadline behind");
-        setProperty(*k.fdc, "motor_timeout", "off", err);
-        CHECK(sawIndex(), "motor_timeout = off: the motors always run");
+
+        // J11 is only in the 5.25" MTR ON line (1985 manual p.22 and its schematic): with it
+        // out, the 8" motors still follow their bits and still stop 15 s after the last access.
+        CHECK(setProperty(*k.fdc, "mini_motor_control", "off", err), "J11 out");
+        CHECK(!sawIndex(), "J11 out: an 8\" motor with its bit clear does not turn");
+        k.out(MOTOR, 0x11);
+        CHECK(sawIndex(), "J11 out: bit 4 still runs 8\" drive 0");
+        k.m.clock.advance(16 * sec);
+        CHECK(k.fdc->motors() == 0 && !sawIndex(), "J11 out: the 8\" motor still stops after 15 s");
+
+        // A 5.25" disk in unit 2, on the cable through the alternate select.
+        withRampDisk(409600);
+        k.fdc->mount("drive2", "a.dsk", false, err);
+        k.out(DSR, 0x26);  // alternate select of unit 2, 5.25" rate
+        CHECK(sawIndex(), "J11 out: the 5.25\" motor runs with bit 7 clear");
+        CHECK(setProperty(*k.fdc, "mini_motor_control", "on", err), "J11 in");
+        CHECK(!sawIndex(), "J11 in: the 5.25\" motor stops with bit 7 clear");
+        k.out(MOTOR, 0x81);
+        CHECK(sawIndex(), "J11 in: bit 7 runs the 5.25\" motor");
     }
 
     SECTION("disk1a: the snapshot");

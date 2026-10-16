@@ -32,7 +32,9 @@ CompuPro's `FORMAT.COM` formats a blank disk. Routines 2 and 3 boot a 5.25″ di
 CompuPro CP/M 2.2P and 2.2Q do. A 5.25″ CP/M 2.2Q disk built from CompuPro's 1985 sources boots
 this way, formats a blank disk in unit 3 and copies files to it. The `media` key of a drive
 sets the size and sides of a blank disk. It also names the format of a 5.25″ image of 327,680
-or 655,360 bytes, a size that more than one format has. `create` makes an empty disk file.
+or 655,360 bytes, a size that more than one format has. `create` makes an empty disk file. The
+`mini_motor_control` property is jumper J11. With J11 removed, the 5.25″ motors run all the
+time, and the 8″ motors follow their bits in the Motor Control Register.
 
 **Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
 The `ss1` board could not take the line that `--mcp` builds for the console, so the program

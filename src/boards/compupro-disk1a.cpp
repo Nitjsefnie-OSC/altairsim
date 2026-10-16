@@ -79,12 +79,13 @@ long long CompuProDisk1aBoard::fdcClockHz() const {
     return (dsr_ & kDsrMini) ? 4000000 : 8000000;
 }
 
-// Motor bits 4-6 are 8" drives 0-2; bit 7 is 8" drive 3 AND every 5.25" drive (§2.3).
-// With the timeout strapped out, the motors run all the time.
+// Motor bits 4-6 are 8" drives 0-2; bit 7 is 8" drive 3 AND every 5.25" drive (§2.3). J11 is
+// only in the 5.25" MTR ON line: with it out, the 5.25" motors run all the time, and the 8"
+// motors still follow their bits and the timer.
 bool CompuProDisk1aBoard::motorOn(int unit) const {
-    if (!timeout_) return true;
     const Drive& d = drive_[(size_t)unit];
-    return (motor_ & (d.eightInch ? (0x10 << unit) : 0x80)) != 0;
+    if (d.eightInch) return (motor_ & (0x10 << unit)) != 0;
+    return !j11_ || (motor_ & 0x80) != 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,13 +96,13 @@ bool CompuProDisk1aBoard::motorOn(int unit) const {
 void CompuProDisk1aBoard::touched() {
     if (!clock_) return;
     motorOffAt_ = clock_->now() + clock_->tStatesPer(1) * kMotorSecs;
-    if (timeout_ && motor_ && !clock_->pending(motorWake_))
+    if (motor_ && !clock_->pending(motorWake_))
         motorWake_ = clock_->at(motorOffAt_, [this] { motorCheck(); });
 }
 
 void CompuProDisk1aBoard::motorCheck() {
     motorWake_ = Clock::kNone;
-    if (!clock_ || !timeout_ || !motor_) return;
+    if (!clock_ || !motor_) return;
     if (clock_->now() >= motorOffAt_) {
         motor_ = 0;
         return;
@@ -109,7 +110,7 @@ void CompuProDisk1aBoard::motorCheck() {
     motorWake_ = clock_->at(motorOffAt_, [this] { motorCheck(); });
 }
 
-// Any reset clears both registers (§2.3).
+// Any reset clears both registers: INIT clears U6 and U29 (§2.3, from the 1985 schematic).
 void CompuProDisk1aBoard::resetRegisters() {
     dsr_   = 0;
     motor_ = 0;
@@ -138,13 +139,15 @@ void CompuProDisk1aBoard::boardProperties(std::vector<Property>& p) {
     }
     {
         Property x;
-        x.name = "motor_timeout";
-        x.help = "J11. On (default, J11 installed): the drive motors stop about 15 seconds after "
-                 "the last access to the board. Off: the motors run all the time";
+        x.name = "mini_motor_control";
+        x.help = "Jumper J11, in the 5.25\" MTR ON line. On (default, J11 installed): bit 7 of the "
+                 "Motor Control Register runs the 5.25\" motors, and they stop about 15 seconds "
+                 "after the last access. Off: the 5.25\" motors run all the time. The 8\" motors "
+                 "always follow bits 4-7";
         x.kind = Kind::Bool;
-        x.get  = [this] { return Value::ofBool(timeout_); };
+        x.get  = [this] { return Value::ofBool(j11_); };
         x.set  = [this](const Value& v, std::string&) {
-            timeout_ = v.b();
+            j11_ = v.b();
             return true;
         };
         p.push_back(std::move(x));
@@ -190,7 +193,7 @@ void CompuProDisk1aBoard::deserialize(StateReader& r) {
     if (clock_) {
         clock_->cancel(motorWake_);
         motorWake_ = Clock::kNone;
-        if (timeout_ && motor_) motorWake_ = clock_->at(motorOffAt_, [this] { motorCheck(); });
+        if (motor_) motorWake_ = clock_->at(motorOffAt_, [this] { motorCheck(); });
     }
     refresh();
     decodeChanged();

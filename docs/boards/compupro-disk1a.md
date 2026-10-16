@@ -29,6 +29,7 @@ usually a System Support 1.
 | Source | Path | Authority |
 |---|---|---|
 | CompuPro *Disk 1A Technical Manual* (1984) | `reference/CompuPro Disk 1 & 1A Floppy Controllers.md` | The ports, the register bits, the switches and jumpers, and the boot routine table. The section numbers in the source are this file's. |
+| Viasyn *Disk 1A Technical Manual* (May 1985, board 203 Rev F) | the same file, cited "1985 manual" | The schematic. It gives what J11 controls, the motor timer, the reset of the two board registers, and the J1–J5 and J12 jumpers. |
 | CompuPro *CP/M 2.2 Technical Manual* (October 1984; 1983 compared) | `reference/CompuPro CPM-22 Technical Manual.md` | The CP/M side: the four floppy formats, the system-disk layout, the boot chain, the CBIOS console ports, and the switch settings for a CP/M machine, with the Disk 1A standard settings. Its Disk 1A S1 table follows an earlier EPROM map, not `291B_1.HEX`. |
 | NEC µPD765A data sheet (1982) | `reference/NEC uPD765A FDC.md` | The chip: commands, result bytes, ST0–ST3, the MSR handshake. |
 | `291B_1.HEX` | `roms/DISK1A/` | The boot EPROM, all sixteen routines. |
@@ -71,7 +72,8 @@ Bits 3–6 read 0.
 
 **Motor Control Register** (`B+3` OUT): bits 4–6 are the motors of 8″ drives 0–2. Bit 7 is
 8″ drive 3 and also every 5.25″ drive. The motors stop about 15 seconds after the last access
-to the board, unless `motor_timeout` is off.
+to the board. With `mini_motor_control` off (jumper J11 removed), the 5.25″ motors run all the
+time. The 8″ motors always follow their bits and the timer.
 
 ## How it is simulated
 
@@ -158,7 +160,7 @@ on the DCDD and the VersaFloppy.
 | `routine` | `0` | The 512-byte routine at `0000` (switches S1-2 to S1-5), 0–15 |
 | `boot` | `on` | The boot EPROM (switch S3-8). Off: a plain disk controller |
 | `sense_switch` | `on` | Switch S3-1. On: routine 0 tells the BIOS that the console is on a System Support 1 |
-| `motor_timeout` | `on` | Jumper J11. On is J11 installed. Off: the motors run all the time |
+| `mini_motor_control` | `on` | Jumper J11, in the 5.25″ motor line. On is J11 installed: bit 7 runs the 5.25″ motors. Off: the 5.25″ motors run all the time. The 8″ motors always follow bits 4–7 |
 | `interrupt` | `vi4` | Jumper J10 |
 
 The `[[board.drive]]` table takes these keys:
@@ -219,11 +221,9 @@ The `[[board.drive]]` table takes these keys:
   shipped, moves records with the 8088 (`IN FD`). The machine has no 8088, so its `DIR` repeats
   one record. The same BIOS source, built with `I8088 FALSE`, runs on the Z80. The 5.25″ disk
   above is that build.
-- **⚠ The J11 polarity is chosen, not proven** (issue #747). The reference gives two readings. §2.3 says that
-  J11 installed makes the timeout active, and that J11 removed keeps the motors on. §5 says that
-  J11 installed keeps the motors on. The board takes the §2.3 reading, because the factory
-  setting in §4 is J11 installed, and the timeout is a feature of the board. `motor_timeout = on`
-  is J11 installed. No hardware has confirmed it.
+- **Jumpers J5 and J12 are not modeled.** Both are removed as shipped. J5 holds the 5.25″
+  READY on for unit 3. J12 lets the motor timer clear the Drive Select Register after about
+  2 seconds with no access to the board.
 
 ## Verification
 
@@ -237,7 +237,9 @@ The `[[board.drive]]` table takes these keys:
   - the read-only shadow of the EPROM, and the built-in EPROM
   - the 5.25″ boot: routines 2 and 3 of the built-in EPROM read track 0 of unit 2 to `0100` and
     jump to it, and routine 2 does this when unit 0 is empty
-  - the motor timeout, a snapshot round trip and the property checks
+  - the motor timeout, and J11: with J11 removed, a 5.25″ motor runs and an 8″ motor still
+    follows its bit and stops after 15 seconds
+  - a snapshot round trip and the property checks
 - `tests/test_upd765.cpp` (suite `upd765`) tests the chip against the data sheet.
 - `acceptance-disk1a` boots `tests/media/compupro/CCPM22LD.DSK` through routine 0 to the
   `64K CP/M 2.2LD` sign-on. It runs `DIR` and `STAT DSK:`. It copies `STAT.COM` with `PIP`, runs
