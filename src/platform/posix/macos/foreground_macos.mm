@@ -8,8 +8,8 @@
 // (src/video/cocoa/SDL_cocoaevents.m, Cocoa_RegisterApp). Without it a bare executable
 // is left in a policy that has no Dock tile and that the window server will not
 // activate, so clicking the video window does nothing. Putting the policy back is the
-// whole of this file: it restores click-to-focus without asking to be activated, which
-// is the distinction SDL's one hint does not let us draw.
+// whole of allowForegroundActivation(): it restores click-to-focus without asking to be
+// activated, which is the distinction SDL's one hint does not let us draw.
 //
 // Regular is set rather than restored-to-what-it-was on purpose: it is what SDL itself
 // would have set, so this leaves the process exactly where the default path leaves it,
@@ -28,7 +28,7 @@ namespace {
 
 // WHO HAD THE FOREGROUND BEFORE WE TOOK IT. Captured once, on the way in, and it is
 // the terminal the operator launched us from -- see yieldForeground() for why naming
-// it is necessary rather than merely tidy.
+// it is necessary rather than merely tidy. Set by rememberForeground().
 NSRunningApplication* g_priorApp = nil;
 
 // One line to stderr per decision, off unless ALTAIRSIM_FOCUS_DEBUG is set. Focus is
@@ -42,7 +42,7 @@ void focusLog(const char* what) {
 
 }  // namespace
 
-void allowForegroundActivation() {
+void rememberForeground() {
     @autoreleasepool {
         // WHO IS IN FRONT RIGHT NOW, asked before we can possibly be the answer. This
         // runs before SDL_Init and before any window exists, so the frontmost
@@ -58,7 +58,11 @@ void allowForegroundActivation() {
             focusLog(g_priorApp ? "remembered the application that launched us"
                                 : "nothing was in front at startup");
         }
+    }
+}
 
+void allowForegroundActivation() {
+    @autoreleasepool {
         // sharedApplication first: it is idempotent, and it means this is still correct
         // if it is ever called before the video backend has made an NSApp.
         [NSApplication sharedApplication];
@@ -78,7 +82,7 @@ void allowForegroundActivation() {
 // Modern macOS does not let an application drop the foreground into the void and
 // expect the window server to find the next tenant -- activation is handed FROM one
 // application TO another, and an app that merely resigns is liable to be handed
-// straight back. Which is why the way in above bothers to remember who we took it from.
+// straight back. Which is why rememberForeground() bothers to remember who we took it from.
 //
 // So: yield to a named application. -yieldActivationToApplication: (macOS 14+) tells
 // the window server that our successor's activation request is expected and should not

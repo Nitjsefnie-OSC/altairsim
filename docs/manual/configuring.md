@@ -531,12 +531,14 @@ The size of a window is different. Each video board opens its own window, so its
 | `crt` | show the picture as on the original monitor, with a soft glow and a 4:3 shape, and not as sharp square pixels. Default `false` |
 
 **`focus`.** With `focus = false`, the default, a window opens behind your other windows, and the
-console keeps the keyboard. You can click in the window and type there. On macOS, the console
-gets the keyboard back each time the machine stops, so you can type at `altairsim>` at once. On
-Linux and Windows, if you typed in the window, click in the console before you type at
-`altairsim>`. With `focus = true`, a window comes to the front when it opens, and it keeps the
-keyboard when the machine stops. Use this for a **Sol-20**, where the video window is the
-keyboard and screen of the machine.
+console keeps the keyboard. You can click in the window and type there. With `focus = true`, a
+window comes to the front and gets the keyboard when it opens. Use this for a **Sol-20**, where
+the video window is the keyboard and screen of the machine.
+
+The `focus` setting has an effect only when a window opens. Each time the machine stops, the
+console gets the keyboard back, so you can type at `altairsim>` at once. This is true on macOS,
+on Windows and on Linux with X11. On Linux with Wayland, one program cannot give the keyboard to
+the window of a different program. Click in the console before you type at `altairsim>`.
 
 **`keyboard`** decides whether a window is a keyboard at all. With `console`, the default, the
 keys that you type in a window go to the guest. If the machine has a terminal window, the keys go

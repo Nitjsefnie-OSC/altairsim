@@ -679,6 +679,9 @@ if(ALTAIRSIM_ENABLE_SDL)
       target_sources(altair_core PRIVATE src/platform/win32/foreground_win32.cpp)
     else()
       target_sources(altair_core PRIVATE src/platform/posix/foreground_posix.cpp)
+      # dlopen, for libX11 at run time: X11 hands the keyboard back to the terminal at a
+      # stop, and loading Xlib late keeps it out of the build and the package.
+      target_link_libraries(altair_core PRIVATE ${CMAKE_DL_LIBS})
     endif()
 
     message(STATUS "SDL3 found -- video boards enabled (windowed)")
