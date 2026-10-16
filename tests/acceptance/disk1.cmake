@@ -17,7 +17,11 @@
 #   3. the write path: PIP copies STAT.COM, the copy runs and prints the same disk parameters,
 #      and ERA removes it;
 #   4. routine 6 passes C = 2, and the same disk boots to A> on the System Support 1 serial
-#      channel (cpm22n-ss1.toml), with the Interfacer not connected.
+#      channel (cpm22n-ss1.toml), with the Interfacer not connected;
+#   5. FORMAT 3.1c formats a blank two-sided disk in drive B (cpm22n-format.toml, which sets
+#      `media = "8ds"`), and STAT reads it as an empty 1200K drive. Without `media` the blank
+#      reads one-sided until side 1 is formatted, and FORMAT stops with Drive Format Error
+#      (issue #755).
 #
 # The guest writes, so the test works on a copy of tests/media/compupro, never the tracked
 # image.
@@ -147,6 +151,67 @@ if(NOT r MATCHES "HMXFPROM ASM")
   fail("routine 6: DIR did not list the disk")
 endif()
 
+# 5. FORMAT 3.1c on a blank two-sided disk in drive B. `create` makes BLANK.DSK. FORMAT's
+# prompts one at a time: the drive, the format type, the confirmation, and the exit. Each
+# answer is one key with no RETURN, and FORMAT then waits for RETURN to go back to A>.
+file(COPY "${SRC}/tests/media/compupro/CPM22N.DSK" DESTINATION "${example}")
+set(session "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+call(2 run "{\"from\":0,\"until\":\"A>\",\"timeout_ms\":20000}")
+call(3 run "{\"input\":\"FORMAT\\r\",\"until\":\"(A: - P:)\",\"timeout_ms\":20000}")
+call(4 run "{\"input\":\"B\",\"until\":\"(0-3): ==>\",\"timeout_ms\":20000}")
+call(5 run "{\"input\":\"3\",\"until\":\"(Y/N).\",\"timeout_ms\":20000}")
+call(6 run "{\"input\":\"Y\",\"until\":\"exit back to system.\",\"timeout_ms\":60000}")
+call(7 run "{\"input\":\"N\",\"until\":\"press <return>\",\"timeout_ms\":20000}")
+call(8 run "{\"input\":\"\\r\",\"until\":\"A>\",\"timeout_ms\":20000}")
+cmd(9 "STAT B:")
+cmd(10 "STAT B:DSK:")
+file(WRITE "${example}/in-format.jsonl" "${session}")
+execute_process(
+  COMMAND           "${SIM}" cpm22n-format.toml --mcp
+  WORKING_DIRECTORY "${example}"
+  INPUT_FILE        "${example}/in-format.jsonl"
+  OUTPUT_VARIABLE   out
+  ERROR_VARIABLE    err
+  RESULT_VARIABLE   rc
+  TIMEOUT           110
+)
+if(NOT rc EQUAL 0)
+  fail("`altairsim cpm22n-format.toml --mcp` exited ${rc}, expected 0")
+endif()
+# The blank read one-sided, so FORMAT's write to side 1 failed (#755).
+reply(6 r)
+if(r MATCHES "Drive Format Error")
+  fail("FORMAT 3.1c stopped with Drive Format Error: drive B read as one-sided")
+endif()
+foreach(id 2 3 4 5 6 7 8 9 10)
+  reply(${id} r)
+  if(NOT r MATCHES "\"stopped\":\"match\"")
+    fail("FORMAT: run ${id} did not stop at the text it waited for")
+  endif()
+endforeach()
+reply(4 r)
+if(NOT r MATCHES " disk: 77 tracks, NOT formatted\\.")
+  fail("FORMAT did not find a blank 8\" disk in drive B")
+endif()
+reply(6 r)
+if(NOT r MATCHES "Format complete")
+  fail("FORMAT 3.1c did not format the blank two-sided disk")
+endif()
+# Track 0 side 0 is 26 x 128 (single density). Every other track of both sides is 8 x 1024.
+file(SIZE "${example}/BLANK.DSK" size)
+if(NOT size EQUAL 1256704)
+  fail("the formatted disk is ${size} bytes, expected 1256704 (3328 + 153 x 8192)")
+endif()
+reply(9 r)
+if(NOT r MATCHES "Bytes Remaining On B: 1192k")
+  fail("STAT B: did not find an empty two-sided disk")
+endif()
+reply(10 r)
+if(NOT r MATCHES "1200: Kilobyte Drive  Capacity")
+  fail("STAT B:DSK: did not report the 1200K two-sided drive")
+endif()
+
 file(REMOVE_RECURSE "${work}")
 message(STATUS "disk1: the boot EPROM loaded CompuPro CP/M 2.2N; DIR, STAT, and a PIP "
-               "copy that ran and was erased. Routine 6 booted it on the System Support 1.")
+               "copy that ran and was erased. Routine 6 booted it on the System Support 1. "
+               "FORMAT 3.1c formatted a blank two-sided disk.")

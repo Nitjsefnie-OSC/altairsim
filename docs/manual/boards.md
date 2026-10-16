@@ -1319,6 +1319,29 @@ track 0, which the EPROM reads, and its other tracks can be double density. A di
 side or two. A smaller image that has no known size mounts as a blank disk. CompuPro's
 `FORMAT.COM` formats it.
 
+The `media` key of a drive gives the diskette its size and sides. `8ds` is an 8″ disk with two
+sides, and `5ss` is a 5.25″ disk with one side. Without `media`, a blank disk reads as
+one-sided until a format writes side 1. In a machine file:
+
+```toml
+[[board]]
+id = "fd0"
+
+  [[board.drive]]
+  unit   = 1
+  mount  = "BLANK.DSK"
+  media  = "8ds"
+  create = true
+```
+
+`create` makes the empty file `BLANK.DSK` if it is not there. The drive keeps its `media` when
+`MOUNT` puts a different disk in it.
+
+Three 5.25″ formats have 327,680 bytes, and two have 655,360 bytes. The board refuses an image
+of these sizes, because the size does not tell it the format. Set `media` to the whole format,
+such as `5ds-dd512` for two sides of 8 × 512-byte sectors. The error message names the values
+that fit the image.
+
 These things are not part of the board:
 
 - **A 5.25″ disk boots from unit 2.** Routines 2 and 3 of the EPROM read it.
@@ -1380,13 +1403,28 @@ altairsim> SET fd0:serial baud=1200
 
 Set `baud` to the rate of the guest's delay loop.
 
+To format a blank disk, give its drive `media = "8ds"`, an 8″ disk with two sides. Without
+`media`, a blank disk reads as one-sided until a format writes side 1. On that blank,
+CompuPro's `FORMAT.COM` on the 2.2N disk stops with `Drive Format Error`. In a machine file:
+
+```toml
+[[board]]
+id = "fd0"
+
+  [[board.drive]]
+  unit   = 1
+  mount  = "BLANK.DSK"
+  media  = "8ds"
+  create = true
+```
+
+`create` makes the empty file `BLANK.DSK` if it is not there. `FORMAT.COM` formats drive B
+with two sides, and `STAT B:` reports a 1200K drive.
+
 These things are not part of the board:
 
 - **The board runs 8″ drives only.** A Disk 1 ran 5.25″ drives only after a change to the
   board's parts and wiring. The board refuses a 5.25″ disk image.
-- **A blank disk is one-sided until side 1 is formatted.** CompuPro's `FORMAT.COM` on the
-  2.2N disk stops with `Drive Format Error` on a blank disk. It formats a disk that is already
-  formatted.
 - **The M-Drive/H RAM disk is not part of the machine.** The 2.2N BIOS reports
   `0 M-Drive/H` and continues.
 

@@ -1,0 +1,23 @@
+# CompuPro CP/M 2.2N on the Disk 1 with a blank two-sided disk in drive 1, for step 5 of
+# acceptance-disk1 (tests/acceptance/disk1.cmake): FORMAT 3.1c formats drive B.
+#
+# `media = "8ds"` makes the blank an 8" two-sided diskette, so the drive reads two-sided (TS)
+# before FORMAT writes side 1. `create` makes BLANK.DSK when it is not there. The test copies
+# this folder out of the tree first, so the guest never writes to the tracked image.
+
+[machine]
+name = "disk1-cpm22n-format"
+base = "disk1"
+
+[[board]]
+id = "fd0"
+
+  [[board.drive]]
+  unit  = 0
+  mount = "CPM22N.DSK"
+
+  [[board.drive]]
+  unit   = 1
+  mount  = "BLANK.DSK"
+  media  = "8ds"
+  create = true

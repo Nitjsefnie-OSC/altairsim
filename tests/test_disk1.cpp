@@ -15,6 +15,7 @@
 #include "core/debug.h"
 #include "core/machine.h"
 #include "core/statefile.h"
+#include "host/cardimg.h"
 #include "host/media.h"
 #include "host/stream.h"
 #include "test.h"
@@ -204,6 +205,77 @@ void test_disk1() {
         k.out(DATA, 0x04); k.out(DATA, 0x00);
         CHECK((k.in(DATA) & 0x28) == 0x20, "ST3: ready, and TS 0 for an SS disk");
         CHECK(k.fdc->chip().fdcClockHz == 8000000, "...and the 765 still runs at 8 MHz");
+    }
+
+    SECTION("disk1: media");
+    // ---- `media` is the diskette: a blank 8ds reads two-sided before any format (#755) ----
+    {
+        auto ts = [](Rig& k, uint8_t unit) {
+            k.out(DATA, 0x04); k.out(DATA, unit);
+            return (k.in(DATA) & 0x08) != 0;
+        };
+        auto drive = [](Rig& k, const char* unit, const char* media, std::string& err) {
+            KeyValues kv{{"unit", unit}, {"mount", "x.dsk"}};
+            if (media) kv.push_back({"media", media});
+            return k.fdc->loadSubUnit("drive", kv, err);
+        };
+        withRampDisk(0);
+        Rig k;
+        std::string err;
+        CHECK(drive(k, "0", nullptr, err) && !ts(k, 0), "a blank with no media reads one-sided");
+        CHECK(drive(k, "1", "8ds", err) && ts(k, 1), "media = 8ds: a blank reads two-sided at once");
+        CHECK(drive(k, "2", "8SS", err) && !ts(k, 2), "media = 8ss (any case): a blank reads one-sided");
+        CHECK(!drive(k, "3", "5ds", err) && err.find("8ds") != std::string::npos,
+              "a 5.25\" media is refused, and the choices are the 8\" ones");
+
+        withRampDisk(256256);
+        err.clear();
+        CHECK(!drive(k, "3", "8ds", err) && err.find("not media = 8ds") != std::string::npos,
+              "an 8\" SSSD image is refused as media = 8ds, not taken for a blank");
+        CHECK(drive(k, "3", "8ss-sd", err) && !ts(k, 3), "...and mounts as 8ss-sd");
+        withRampDisk(1256704);
+        CHECK(!drive(k, "3", "8ds-sd", err), "an 8\" DSDD 8 x 1024 image is too large for 8ds-sd");
+        CHECK(!ts(k, 3), "...and a refused drive table leaves the old disk and its media");
+
+        auto subs = k.fdc->subUnits();
+        CHECK(subs.size() == 4, "every drive with a disk is saved");
+        bool saved = false;
+        for (const auto& su : subs)
+            for (const auto& f : su.fields)
+                if (f.key == "media" && f.text == "8ss") saved = true;
+        CHECK(saved, "media is saved as its own name, in lower case");
+        k.fdc->unmount("drive1", err);
+        CHECK(drive(k, "1", "8ds", err), "an 8\" DSDD image mounts as 8ds");
+        k.fdc->unmount("drive1", err);
+        subs = k.fdc->subUnits();
+        CHECK(subs.size() == 4, "an empty drive with a media is still saved");
+        withRampDisk(0);
+        CHECK(k.fdc->mount("drive1", "y.dsk", false, err) && ts(k, 1),
+              "the media stays with the drive: MOUNT a blank, and it reads two-sided");
+    }
+    {
+        // `create` makes the file when it is not there, and never writes over one that is.
+        setMediaResolver(openHostMedia);
+        const auto dir = std::filesystem::temp_directory_path() / "disk1-create-test";
+        std::filesystem::remove_all(dir);
+        std::filesystem::create_directories(dir);
+        const auto fresh = (dir / "fresh.dsk").string();
+        const auto old   = (dir / "old.dsk").string();
+        std::ofstream(old, std::ios::binary).write("x", 1);
+        Rig k;
+        std::string err;
+        CHECK(k.fdc->loadSubUnit("drive", {{"unit", "0"}, {"mount", fresh}, {"media", "8ds"},
+                                           {"create", "true"}}, err) &&
+                  std::filesystem::exists(fresh),
+              ("create makes an empty file and mounts it: " + err).c_str());
+        CHECK(k.fdc->loadSubUnit("drive", {{"unit", "1"}, {"mount", old}, {"create", "on"}}, err) &&
+                  std::filesystem::file_size(old) == 1,
+              "create does not write over a file that is there");
+        CHECK(!k.fdc->loadSubUnit("drive", {{"unit", "2"}, {"mount", (dir / "none.dsk").string()}}, err),
+              "without create, a missing file is refused");
+        k.fdc->unmount("drive0", err);
+        k.fdc->unmount("drive1", err);
+        std::filesystem::remove_all(dir);
     }
 
     SECTION("disk1: the boot ROM");

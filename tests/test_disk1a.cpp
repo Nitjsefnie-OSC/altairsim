@@ -362,6 +362,47 @@ void test_disk1a() {
         }
     }
 
+    SECTION("disk1a: media");
+    // ---- `media` names the format of a size that more than one 5.25" format has ----
+    {
+        auto drive = [](Rig& k, const char* media, std::string& err) {
+            err.clear();
+            KeyValues kv{{"unit", "1"}, {"mount", "x.dsk"}};
+            if (media) kv.push_back({"media", media});
+            return k.fdc->loadSubUnit("drive", kv, err);
+        };
+        Rig k;
+        std::string err;
+        withRampDisk(655360);
+        CHECK(!drive(k, nullptr, err) && err.find("5ds-dd256") != std::string::npos &&
+                  err.find("5ss-dd1024") == std::string::npos,
+              "655,360 bytes with no media is refused, and the error names the media to set");
+        CHECK(!drive(k, "5ds", err), "...and 5ds is still two formats");
+        CHECK(drive(k, "5ds-dd512", err), "media = 5ds-dd512 mounts it");
+        k.out(DSR, 0x21);  // 5.25" rate, unit 1, no Force Two Sided
+        k.home(1);
+        k.dmaAt(0x2000);
+        k.command({0x46, 0x05, 0, 1, 1, 2, 8, 0x1B, 0xFF});  // cylinder 0 head 1, 512-byte sectors
+        auto r = k.results(7);
+        CHECK(r[1] == 0x80 && k.m.bus.memRead(0x2000) == stamp(4096),
+              "cylinder 0 head 1 reads 8 x 512, and it is the file's second track (4,096)");
+        withRampDisk(327680);
+        CHECK(drive(k, "5ss-dd256", err), "327,680 bytes mounts as 5ss-dd256");
+        k.out(DATA, 0x04); k.out(DATA, 0x01);
+        CHECK((k.in(DATA) & 0x08) == 0, "...and reads one-sided");
+        CHECK(drive(k, "5ds-sd", err), "...and as 5ds-sd");
+        k.out(DATA, 0x04); k.out(DATA, 0x01);
+        CHECK((k.in(DATA) & 0x08) == 0x08, "...which reads two-sided");
+
+        withRampDisk(0);
+        CHECK(drive(k, "5ds", err), "a blank 5.25\" two-sided diskette mounts");
+        k.out(DATA, 0x04); k.out(DATA, 0x01);
+        CHECK((k.in(DATA) & 0x08) == 0x08, "...and reads two-sided without Force Two Sided");
+        withRampDisk(1256704);
+        CHECK(!drive(k, "5ds", err) && err.find("8\" DS") != std::string::npos,
+              "an 8\" image is refused as a 5.25\" media");
+    }
+
     SECTION("disk1a: the boot ROM");
     // ---- the boot ROM over PHANTOM*: reads only, the routine, D0 = 0, reset ----
     {
