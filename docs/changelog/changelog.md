@@ -53,6 +53,13 @@ line. The CP/M 2.2N banner and `A>` went to stdout, and `run` stopped at its tim
 output. Now the new unit takes the line, and the old unit goes to `null`. The reply says
 `console taken from if1:a`, and `run` shows the banner and the `A>` prompt.
 
+**`SET CONSOLE DEBUG=<file>` now writes each line to the file when the line is made.** The file
+was kept in a 4 KB buffer. A line got to the file only when the buffer was full or altairsim
+stopped. On the `cpm22-buffered` machine with `SET dsk0 DEBUG=all`, a boot and a `DIR` make 170
+lines. While CP/M was at `A>`, the file had 91 of them. Thus `tail -f` showed the lines late, and
+the lines before a hang or a crash were lost. Now `tail -f` in a second window shows each line
+as the guest makes it.
+
 **On a Mac with a Retina screen, the text in a video window no longer changes between normal
 and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
 to fit. That scaling made all of the text change between a normal look and a bold look. The
