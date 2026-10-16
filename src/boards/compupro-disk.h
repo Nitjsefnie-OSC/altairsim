@@ -112,6 +112,7 @@ protected:
         std::unique_ptr<DiskImage> img;
         std::string    path;           // as WRITTEN (round-trips through SAVE)
         bool           eightInch = true;
+        std::string    forced;         // `media`, or empty: the size decides
         DiskImageDrive drv;
     };
 
@@ -175,7 +176,8 @@ protected:
     Clock::Handle wake_ = Clock::kNone;
 
 private:
-    bool probe(DiskImage& img, bool& eightInch, std::string& err) const;
+    bool probe(DiskImage& img, const std::string& forced, bool& eightInch,
+               std::string& err) const;
 };
 
 } // namespace altair

@@ -105,17 +105,49 @@ Each format can have one side or two. Two sides are cylinder-interleaved (C0H0, 
 the order of the CompuPro BIOS. The directory of the two-sided `CCPM22Q` disk is where this
 order puts it.
 
-Three 5.25″ formats have 327,680 bytes, and two have 655,360 bytes. The probe refuses these
-two sizes, because a raw image cannot say which format it is. An image that is smaller than
-the largest format and has no known size mounts as a blank disk. A guest can format it track by
+Three 5.25″ formats have 327,680 bytes, and two have 655,360 bytes. Without `media`, the probe
+refuses these two sizes, because a raw image cannot say which format it is. The error names the
+`media` values that fit. An image that is smaller than the largest format and has no known size
+mounts as a blank disk. A guest can format it track by
 track with Format a Track. A blank has 80 cylinders and two sides, the size of the largest disk. A
 track that is never formatted takes no bytes in the image. Because of this, a one-sided or a
 77-cylinder format is written end to end, and the probe reads it at the next mount.
 
-The TS line to the 765 is high in two cases: Drive Select bit 3 (Force Two Sided) is set, or side
-1 of the disk has a formatted track. A blank disk reads one-sided until a FORMAT writes side 1, as new
-8″ one-sided media does. An 8″ `FORMAT.COM` reads TS to decide how many sides to write. CompuPro's
-BIOS and the EPROM set bit 3 for every 5.25″ drive.
+The TS line to the 765 is high when Drive Select bit 3 (Force Two Sided) is set. Otherwise, it
+follows the disk:
+
+- With `media`, TS is the diskette's sides, formatted or blank.
+- Without `media`, TS is high when side 1 of the disk has a formatted track. A blank disk reads
+  one-sided until a FORMAT writes side 1, as new 8″ one-sided media does.
+
+An 8″ `FORMAT.COM` reads TS to decide how many sides to write. CompuPro's BIOS and the EPROM set
+bit 3 for every 5.25″ drive.
+
+### The `media` of a drive (issue #755)
+
+The diskette is a physical part of the drive, so its size and sides belong to the drive and not
+to the image. The `media` key of `[[board.drive]]` sets them. It takes two kinds of value:
+
+| Kind | Values | Use |
+|---|---|---|
+| Size and sides | `8ss`, `8ds`, `5ss`, `5ds` | A blank disk. The probe looks only at the formats of that size and that number of sides |
+| A whole format | the size and sides, then `-sd`, `-dd256`, `-dd512` or `-dd1024` (for example `5ds-dd512`) | An image size that more than one format has. The probe takes that one format |
+
+`-sd` is the single-density row of the size: 26 × 128 on 8″, 16 × 128 on 5.25″. The `disk1` board
+offers only the 8″ values. The schema takes any case, and the board stores the lower-case name.
+
+With `media`, the probe does these things:
+
+- An image of a format that fits mounts as that format.
+- A smaller image mounts as a blank of the forced shape: 80 cylinders, the forced number of
+  sides, and the rate of the forced size (a 5.25″ blank turns at 5 rev/s).
+- A formatted image of a different shape, or a larger image, is refused. The old disk stays.
+- `5ds` alone on 655,360 bytes is still refused, because two formats fit it.
+
+The media stays with the drive across `MOUNT` and `UNMOUNT`, and `CONFIG SAVE` writes it, also for
+an empty drive. When the mount of a `[[board.drive]]` table is refused, the drive keeps its old
+media. MOUNT options cannot set `media`, because the monitor applies them after the mount, as
+on the DCDD and the VersaFloppy.
 
 ### Properties
 
@@ -128,6 +160,16 @@ BIOS and the EPROM set bit 3 for every 5.25″ drive.
 | `sense_switch` | `on` | Switch S3-1. On: routine 0 tells the BIOS that the console is on a System Support 1 |
 | `motor_timeout` | `on` | Jumper J11. On is J11 installed. Off: the motors run all the time |
 | `interrupt` | `vi4` | Jumper J10 |
+
+The `[[board.drive]]` table takes these keys:
+
+| Key | What it sets |
+|---|---|
+| `unit` | The drive, 0–3 |
+| `mount` | The disk image |
+| `readonly` | Write-protect the disk (also `writeprotect`) |
+| `media` | The diskette's size and sides, or a whole format. See *The `media` of a drive* |
+| `create` | Make an empty file if it is not there, then mount it. It is not saved back |
 
 ### Reset
 
@@ -155,8 +197,8 @@ BIOS and the EPROM set bit 3 for every 5.25″ drive.
   the size probe come from the `MAKEDPB` table of `HMXBIOS.ASM`, and no real disk has checked
   them. That build of the BIOS sets 80 tracks (`TRK5 EQU 80` in `ACTIVE.LIB`). The BIOS
   can also be built for 40-track and 77-track 5.25″ drives, but the probe knows only 80 tracks.
-  The rule that a 5.25″ disk has no single-density track 0 comes from the BIOS as well. The
-  probe refuses 327,680 and 655,360 bytes, as *The size probe* says.
+  The rule that a 5.25″ disk has no single-density track 0 comes from the BIOS as well. Without
+  `media`, the probe refuses 327,680 and 655,360 bytes, as *The size probe* says.
 - **A16–A23.** The counter counts all 24 bits, but this is a 64 K bus (DESIGN.md §4.0). Only
   A0–A15 reach memory.
 - **No wait states and no DMA priority** (switches S2). The machine has one bus master and no
@@ -189,6 +231,9 @@ BIOS and the EPROM set bit 3 for every 5.25″ drive.
   - the port map at a moved base, each status bit, and the DMA stack
   - a DMA read, a DMA write and the 24-bit counter
   - the size probe, a blank disk formatted as a 5.25″ and as an 8″ disk, and the TS line
+  - `media`: a 655,360-byte image mounts as `5ds-dd512` and reads side 1, 327,680 bytes mounts
+    as `5ss-dd256` and as `5ds-sd`, a `5ds` blank reads two-sided, and an 8″ image is refused as
+    5.25″ media
   - the read-only shadow of the EPROM, and the built-in EPROM
   - the 5.25″ boot: routines 2 and 3 of the built-in EPROM read track 0 of unit 2 to `0100` and
     jump to it, and routine 2 does this when unit 0 is empty

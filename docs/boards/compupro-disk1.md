@@ -81,8 +81,14 @@ them off (1982 manual). With `port3 = serial`, the minifloppy motors are on all 
   `clock_hz = 0` too.
 - **8″ drives only.** The 765 runs at 8 MHz. The size probe takes 8″ images only and refuses
   an image the size of a 5.25″ disk. The board has no software rate select.
-- **The TS line** is the disk's own: high when side 1 of the disk has a formatted track. The
-  Disk 1 has no Force Two Sided bit. A blank disk reads one-sided until a format writes side 1.
+- **The TS line** is the disk's own. With `media`, it is the diskette's sides, formatted or
+  blank. Without `media`, it is high when side 1 of the disk has a formatted track. A blank disk
+  then reads one-sided until a format writes side 1. The Disk 1 has no Force Two Sided bit.
+- **`media` and `create`** on `[[board.drive]]` work as on the Disk 1A
+  (`docs/boards/compupro-disk1a.md`, *The `media` of a drive*), with the 8″ values only. CompuPro
+  `FORMAT.COM` 3.1c on the 2.2N disk formats a blank drive B only with `media = "8ds"`. The BIOS
+  reads no ID from a blank disk, so it keeps the drive's two-sided type and formats head 1. With
+  TS low, the 765 reports Not Ready, and FORMAT stops with `Drive Format Error`.
 - **The interrupt.** The 765's INT goes to the line that `interrupt` names (jumpers J0–J8). The
   default is `none`. The manual does not give a shipped jumper, and the EPROM and the 2.2N
   BIOS poll status bit 7.
@@ -99,6 +105,9 @@ them off (1982 manual). With `port3 = serial`, the minifloppy motors are on all 
 | `interrupt` | `none` | Jumpers J0–J7 (`vi0`–`vi7`) and J8 (`int`) |
 
 The `serial` unit has `baud` (default 9600) and `connect`.
+
+The `[[board.drive]]` table takes `unit`, `mount`, `readonly` (also `writeprotect`), `media`
+and `create`. `media` takes `8ss`, `8ds` and the whole 8″ formats, such as `8ds-dd1024`.
 
 ### The routines of `builtin:DISK1`
 
@@ -154,12 +163,6 @@ for the processor clock: 600 at 2 MHz, 1200 at 4 MHz and 2400 at 6 MHz.
   BIOS has no driver for the line.
 - **No 5.25″ drives.** A Disk 1 runs 5.25″ drives only after a hardware change: other parts,
   three cut traces and new jumpers (1982 manual). The change is not modeled.
-- **A blank disk is one-sided until side 1 is formatted.** CompuPro `FORMAT.COM` 3.1c on the
-  2.2N disk cannot format a blank disk. The BIOS reads no ID from a blank disk, so it keeps the
-  drive's two-sided type, and FORMAT formats head 1 first. The 765 then reports Not Ready,
-  because TS is low. A one-sided diskette on the real board fails in the same way. The board
-  has no setting that mounts a blank as two-sided media. FORMAT reformats a disk that is
-  already formatted. Issue #755 asks for a two-sided blank.
 - **The motor (`port3 = motor`) has no effect that a guest can read.** The Disk 1 has no ready
   or index bit. The latch is stored and shown, and nothing else.
 - **No wait states and no DMA priority** (switches S1-1 and S1-5 to S1-8). The machine has one
@@ -174,6 +177,8 @@ for the processor clock: 600 at 2 MHz, 1200 at 4 MHz and 2400 at 6 MHz.
   - the port map at a moved base, port 0 OUT not decoded, and status bit 7 only
   - the 256-byte EPROM window, `routine` paging, and D0 = 0 and a reset
   - a DMA read of track 0 to `0100`, the 765 at 8 MHz, and the refusal of a 5.25″ image
+  - `media`: TS on a blank with `8ds`, `8SS` and no media, the refusal of 5.25″ media and of a
+    formatted image of another shape, `CONFIG SAVE` of the media, and `create`
   - `port3 = motor`, the snapshot round trip and the property checks
   - an 8080 guest that bit-bangs `HELLO` at 1200 baud and echoes bytes from a stream
   - `builtin:DISK1`: the default routine 4, routines 5–7 differ only in the console code, and
@@ -184,7 +189,9 @@ for the processor clock: 600 at 2 MHz, 1200 at 4 MHz and 2400 at 6 MHz.
   `CompuPro Systems 64K CP/M 2.2N` sign-on. It runs `DIR` and `STAT DSK:`. It copies
   `STAT.COM` with `PIP`, runs the copy, and erases it. It then boots the disk through routine 6
   (`tests/media/compupro/cpm22n-ss1.toml`), with the System Support 1 serial channel as the
-  console, and runs `DIR`.
+  console, and runs `DIR`. Last, `tests/media/compupro/cpm22n-format.toml` mounts a blank `8ds`
+  disk in drive 1, and `FORMAT.COM` 3.1c formats it as 8 × 1024 with two sides. The image grows
+  to 1,256,704 bytes, and `STAT B:DSK:` reports a 1200K drive.
 
 ## References
 

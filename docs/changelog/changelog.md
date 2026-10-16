@@ -20,6 +20,8 @@ connects the line to a terminal or a socket. The board runs 8″ drives. Its EPR
 The new `disk1` machine adds the board to a Z80, 64K of RAM, a System Support 1 and an
 Interfacer I console. Mount a CompuPro CP/M 2.2N disk in drive 0 and run from `0000`. Routine 4
 then boots the disk to `A>` on the Interfacer. Routine 6 boots it on the System Support 1.
+The `media` key of a drive gives a blank disk its sides. With `media = "8ds"`, CompuPro's
+`FORMAT.COM` 3.1c formats a blank two-sided disk in drive B.
 
 **The CompuPro Disk 1A floppy controller is a new board, `disk1a`.** The board has an NEC
 µPD765A floppy chip, a DMA engine and a boot EPROM with all sixteen routines. The new `disk1a`
@@ -28,7 +30,9 @@ CompuPro CP/M 2.2 disk in drive 0 and run from `0000`. Routine 0 of the EPROM th
 to `A>`. The board reads 8″ disks with one side or two, in single and double density.
 CompuPro's `FORMAT.COM` formats a blank disk. Routines 2 and 3 boot a 5.25″ disk from unit 2, as
 CompuPro CP/M 2.2P and 2.2Q do. A 5.25″ CP/M 2.2Q disk built from CompuPro's 1985 sources boots
-this way, formats a blank disk in unit 3 and copies files to it.
+this way, formats a blank disk in unit 3 and copies files to it. The `media` key of a drive
+sets the size and sides of a blank disk. It also names the format of a 5.25″ image of 327,680
+or 655,360 bytes, a size that more than one format has. `create` makes an empty disk file.
 
 **Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
 The `ss1` board could not take the line that `--mcp` builds for the console, so the program
