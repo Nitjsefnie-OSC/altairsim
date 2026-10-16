@@ -315,10 +315,10 @@ are the most important:
   `structuredContent` and does not parse the text.
 - A machine named on the command line is loaded, but **its `startup` list does not run**. The
   client boots it with `run`.
-- Every serial unit that is connected to `console` uses the same line, and the tools type on
-  that line and read it. The output of each of these units is in the `run` output. Units that
-  you connect to `console` later, with the `connect` tool or `CONNECT`, also use this line.
-  The server writes only JSON-RPC to stdout.
+- One serial unit holds the console. The tools type on its line and read its output. When the
+  `connect` tool or `CONNECT` connects another unit to `console`, that unit takes the console.
+  The unit that held it goes to `null`, and the reply says `console taken from` that unit, as
+  in the monitor. The server writes only JSON-RPC to stdout.
 - A `run` **never blocks**. It stops when `until` matches, when the guest waits at a prompt, or
   at `timeout_ms`. `timeout_ms` is a limit, not a wait.
 - `start` returns at once and **leaves the guest running** until `stop`, a `HLT` or a

@@ -326,10 +326,10 @@ static bool octalMode() {
 // Under --mcp there is no terminal, so the server rebinds the console serial unit to a
 // ScriptedStream (mcp/server.cpp): Console::instance() is no longer wired to the guest.
 // Peel whatever decorates the line -- the console's transform FilterStream (always), the
-// SharedStream every console unit holds, a TeeStream under --log and a MirrorStream under
+// SharedStream the console unit holds, a TeeStream under --log and a MirrorStream under
 // --mirror (Filter -> Shared -> [Tee ->] [Mirror ->] Scripted) -- to reach the same
-// scripted line the send/run tools feed(). Every console unit shares that one line
-// (issue #756), so the first match is the one.
+// scripted line the send/run tools feed(). One unit holds the console (issue #759), so the
+// first match is the one.
 static ScriptedStream* mcpScriptedConsole(Machine& m) {
     for (const auto& b : m.boards())
         for (const auto& u : b->units()) {
