@@ -387,8 +387,9 @@ stop   {}                          # stopped: "requested", steps, t_states
 - **`SET cpu0 clock_hz=N` paces the guest to that crystal**, as at the monitor, so a real serial
   device or a network peer gets wall-clock time to reply. Without it the guest runs flat out, and
   at a prompt the server naps between slices, so an idle guest does not use a whole core.
-- **Only an interrupt or RESET ends a `HLT`.** `start {from: ...}` on a halted processor stops
-  again at once with `halt`, as `run` does. Send `reset` first.
+- **Only an interrupt or RESET ends a `HLT`.** On a halted processor, `run`, `start` and `step`
+  with `from` return an error: `processor halted at PC=0042 -- RESET ends the halt.` Without
+  `from`, they return the same error when nothing can end the halt. Send `reset` first.
 - **Two machines are two servers.** Start each with its own `altairsim --mcp`, and `start` both.
   They then run side by side, each on its own server.
 

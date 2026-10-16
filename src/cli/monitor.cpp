@@ -1606,7 +1606,8 @@ void Monitor::showBoards(std::ostream& out, const Machine& m) {
     if (anyConsole) out << "\n  * holds the console\n";
 }
 
-static void reportStop(const RunResult& r, const Debugger& dbg, std::ostream& out);
+static void reportStop(const RunResult& r, const Debugger& dbg, std::ostream& out,
+                       bool intsOff);
 
 // ---------------------------------------------------------------------------
 // CONSOLE mode -- the guest owns the keyboard.
@@ -2105,16 +2106,20 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
     // cycle earlier -- cleanly between instructions -- so the lamps still hold the last
     // executed cycle and M1 is dark. Re-drive that pending fetch here as a real read, so
     // the bus stays the emitter and snoop() latches it like any other cycle (the same path
-    // EXAMINE relies on). Skip HLT: the CPU is halted, not fetching -- that is HLTA below,
-    // not M1. No-ops on a machine with no fp board.
-    if (cpu && r.why != StopReason::Halted)
-        m_.bus.memRead(cpu->pc(), StM1 | StMemR | StWo);
+    // EXAMINE relies on). Skip a halted 8080 or 8085: it is not fetching, and its buses
+    // float -- that is HLTA below, with every ADDRESS and DATA lamp lit. A halted Z80 keeps
+    // running NOP fetches, so it gets the re-driven M1 like any stop. No-ops on a machine
+    // with no fp board.
+    const bool halted = cpu && cpu->halted();
+    const bool floats = halted && cpu->haltFloatsBus();
+    if (cpu && !floats) m_.bus.memRead(cpu->pc(), StM1 | StMemR | StWo);
 
-    // The machine has stopped -- WAIT lights again, and HLTA if the CPU stopped on a HLT.
+    // The machine has stopped -- WAIT lights again, and HLTA if the processor is halted:
+    // stopped on a final HLT, or by ATTN while it waited on one for an interrupt.
     // Unconditional (the panel has no window), and followed by a pump() so the WAIT-on
     // frame ships immediately rather than waiting for the next discrete command to push it.
     m_.setRunning(false);
-    m_.setHalted(r.why == StopReason::Halted);
+    m_.setHalted(halted, floats);
     m_.pump();
 
     if (anyConsole) out << "\n";  // the guest was mid-line; do not print on top of it
@@ -2128,7 +2133,7 @@ void Monitor::runMachine(std::ostream& out, bool stepOver) {
     // and stays silent -- the NEXT handler shows the registers itself. But a REAL
     // stop reached mid-callee is exactly the surprise the operator needs told: a
     // user breakpoint fired, the callee halted, or ATTN/^C took it back. Say those.
-    if (!stepOver || r.why != StopReason::StepTarget) reportStop(r, m_.debug, out);
+    if (!stepOver || r.why != StopReason::StepTarget) reportStop(r, m_.debug, out, intsOff());
 
     // The tally is about WORK DONE, and none of taking the keyboard back, closing
     // the window, or running out of script is a fault worth counting instructions
@@ -2748,6 +2753,27 @@ CpuCore* Monitor::needCpu(std::ostream& err) {
     return c;
 }
 
+bool Monitor::refuseHalted(CpuCore* cpu, std::ostream& out, bool finalOnly) {
+    if (!cpu || !cpu->halted()) return false;
+    if (finalOnly && !m_.debug.haltIsFinal()) return false;
+    out << Debugger::haltedRefusal(fmtWord(cpu->pc())) << "\n";
+    failed_ = true;
+    return true;
+}
+
+// RESET ENDS THE HALT (#770): HLTA goes out, and the lamps stop reading a floating bus.
+// No fetch is re-driven at the new PC: a board that counts the reads after a reset (a
+// jump-start PROM, say) would see one the processor never made.
+void Monitor::panelAfterReset() {
+    m_.setHalted(false, false);
+    m_.pump();
+}
+
+bool Monitor::intsOff() {
+    CpuCore* c = m_.cpu();
+    return c && !c->interruptsEnabled();
+}
+
 // PEEK, never read: a disassembly must not consume a byte from a UART that happens
 // to live in the range you asked about (DESIGN.md 10.2). The status line goes
 // through here too -- and IT would be the one to eat the console's own input.
@@ -2914,7 +2940,8 @@ std::string Monitor::renderInsn(const Debugger::InsnRec& rec) {
 
 // What stopped it, said out loud. A run that just... comes back, with no reason
 // given, is a debugger you cannot trust.
-static void reportStop(const RunResult& r, const Debugger& dbg, std::ostream& out) {
+static void reportStop(const RunResult& r, const Debugger& dbg, std::ostream& out,
+                       bool intsOff) {
     char buf[120];
     switch (r.why) {
     case StopReason::Breakpoint: {
@@ -2927,8 +2954,12 @@ static void reportStop(const RunResult& r, const Debugger& dbg, std::ostream& ou
         break;
     }
     case StopReason::Halted:
+        // Two reasons nothing can end it, and they read differently: after DI the
+        // processor takes no interrupt at all; with interrupts on, no board will raise one.
         std::snprintf(buf, sizeof buf,
-                      "HLT at %s, and nothing can interrupt it -- no board is pulling pINT.",
+                      intsOff ? "HLT at %s with interrupts disabled. RESET ends the halt."
+                              : "HLT at %s, and nothing can interrupt it -- no board is pulling "
+                                "pINT. RESET ends the halt.",
                       fmtWord(r.pc).c_str());
         out << buf << "\n";
         break;
@@ -4635,6 +4666,9 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         // answers reads like anything else -- §10.2), and with it the second cursor.
         CpuCore* pcOwner = needCpu(out);
         if (!pcOwner) return true;
+        // The panel loads the PC by giving the processor a JMP to fetch. A halted
+        // processor fetches nothing, so EXAMINE does nothing until RESET (#770).
+        if (refuseHalted(pcOwner, out, /*finalOnly=*/false)) return true;
 
         uint32_t A;
         bool addressed = a.size() >= 2;
@@ -4681,12 +4715,68 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
     }
 
     if (cmd == "DEPOSIT") {
-        if (!need(3, "DEPOSIT <addr> <byte...>")) return true;
+        // THE PANEL'S DEPOSIT SWITCHES (#772). Three forms:
+        //
+        //   DEPOSIT <byte>                 writes at the PC; the PC stays put
+        //   DEPOSIT NEXT <byte...>         steps the PC, then writes there, per byte
+        //   DEPOSIT <addr> <byte...>       EXAMINE <addr>, DEPOSIT, then DEPOSIT NEXT for
+        //                                  each byte after the first
+        //
+        // So the PC ends on the last byte written, as it does on the panel. One value is a
+        // byte at the PC; two or more are an address and its bytes. A byte is range-checked,
+        // so `DEPOSIT 100` (an address with its byte forgotten) is an error, not a 00.
+        //
+        // The panel deposits through the processor -- the PC is its address -- so there is
+        // no DEPOSIT without a CPU (EDIT, FILL and LOAD write memory on a machine with none),
+        // and none on a halted processor, which drives nothing until RESET (#770).
+        if (!need(2, "DEPOSIT <byte> | DEPOSIT NEXT <byte...> | DEPOSIT <addr> <byte...>"))
+            return true;
+        CpuCore* cpu = needCpu(out);
+        if (!cpu) return true;
+        if (refuseHalted(cpu, out, /*finalOnly=*/false)) return true;
+
+        const bool next = is(a[1], "NEXT");
+        if (next && a.size() < 3) {
+            out << "usage: DEPOSIT NEXT <byte...>\n";
+            failed_ = true;
+            return true;
+        }
+        // The first byte's address, and the first argument that is a byte.
         uint32_t A;
-        if (!addrSym(a[1], A, out)) return true;
-        for (size_t i = 2; i < a.size(); ++i) {
+        size_t first;
+        if (next) {
+            A     = (uint32_t)((cpu->pc() + 1) & 0xFFFF);
+            first = 2;
+        } else if (a.size() == 2) {
+            A     = cpu->pc();
+            first = 1;
+        } else {
+            if (!addrSym(a[1], A, out)) return true;
+            if (A > 0xFFFF) {
+                out << "address is 16 bits: 0000-FFFF\n";
+                failed_ = true;
+                return true;
+            }
+            first = 2;
+        }
+        // Every byte is checked before any is written, so a typo writes nothing.
+        std::vector<uint8_t> bytes;
+        for (size_t i = first; i < a.size(); ++i) {
             uint32_t v;
             if (!addr(a[i], v, out)) return true;
+            if (v > 0xFF) {
+                out << "byte is 8 bits: 00-FF (" << a[i] << ")\n";
+                failed_ = true;
+                return true;
+            }
+            bytes.push_back((uint8_t)v);
+        }
+        if (A + bytes.size() - 1 > 0xFFFF) {
+            out << "the bytes run past FFFF\n";
+            failed_ = true;
+            return true;
+        }
+        for (uint8_t v : bytes) {
             if (romOverride) {
                 std::string why;
                 if (!burn(A, (uint8_t)v, why)) {
@@ -4712,6 +4802,12 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 }
             }
             ++A;
+        }
+        // The PC is the panel's address: it ends on the last byte written. A bare
+        // DEPOSIT wrote at the PC and leaves it there.
+        if (a.size() > 2) {
+            cpu->setPc((uint16_t)(A - 1));
+            disasmNext_ = cpu->pc();
         }
         flush(out);
         // Push the last write's bus cycle to the panel (see EXAMINE). The burn/ROM
@@ -5284,6 +5380,10 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
     if (cmd == "STEP") {
         CpuCore* cpu = needCpu(out);
         if (!cpu) return true;
+        // A HLT that nothing can end: a step would execute nothing and count idle
+        // T-states. A HLT waiting on an interrupt still steps -- time passes, and the
+        // interrupt that ends it is clocked by those T-states.
+        if (refuseHalted(cpu, out, /*finalOnly=*/true)) return true;
 
         uint32_t n = 1;
         if (a.size() >= 2 && !count(a[1], n, out)) return true;  // a count: DECIMAL
@@ -5310,7 +5410,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             total.tStates += r.tStates;
             total.pc = r.pc;
             bool stopped = r.why != StopReason::Steps;
-            if (stopped) reportStop(r, m_.debug, out);
+            if (stopped) reportStop(r, m_.debug, out, intsOff());
             if (echo) showRegs(out);
             if (stopped) break;
         }
@@ -5340,6 +5440,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
     if (cmd == "NEXT") {
         CpuCore* cpu = needCpu(out);
         if (!cpu) return true;
+        if (refuseHalted(cpu, out, /*finalOnly=*/true)) return true;  // as a bare RUN
 
         uint8_t op = m_.bus.peek(cpu->pc());
         SigintGuard guard;
@@ -5351,7 +5452,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             m_.debug.setStepTarget(-1);  // ALWAYS clear -- a real bp/HLT/ATTN may have stopped us first
         } else {
             RunResult r = m_.debug.run(1);
-            if (r.why != StopReason::Steps) reportStop(r, m_.debug, out);
+            if (r.why != StopReason::Steps) reportStop(r, m_.debug, out, intsOff());
         }
         flush(out);
         // Push the resting bus cycle to the panel (see EXAMINE). The CALL/RST branch
@@ -5444,6 +5545,13 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
     if (cmd == "RUN") {
         CpuCore* cpu = needCpu(out);
         if (!cpu) return true;
+
+        // A HALTED PROCESSOR (#770). The panel's RUN only lets the processor go on, and a
+        // halted one goes nowhere until RESET. `RUN <addr>` is EXAMINE + RUN, and EXAMINE
+        // cannot move a halted processor's PC, so it refuses any halt. A bare RUN still
+        // waits out an EI/HLT for the interrupt that ends it, and refuses only a halt
+        // that nothing can end.
+        if (refuseHalted(cpu, out, /*finalOnly=*/a.size() < 2)) return true;
 
         if (a.size() >= 2) {
             uint32_t at;
@@ -5826,10 +5934,12 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             CpuCore* cpu = needCpu(out);
             if (!cpu) return true;
             cpu->reset(Reset::Bus);
+            panelAfterReset();
             out << "CPU reset: PC=0000, interrupts off. The other boards were NOT told.\n";
             return true;
         }
         m_.reset(Reset::Bus);
+        panelAfterReset();
         out << "RESET* pulsed. (Memory is UNTOUCHED -- only POWER loses RAM.)\n";
         return true;
     }

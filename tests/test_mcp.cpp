@@ -1248,6 +1248,41 @@ void test_mcp() {
               "the same call with numbers works");
     }
 
+    // A HALTED PROCESSOR UNDER MCP (#770), as at the monitor: `from` would move a PC the
+    // front panel cannot move, and a run or step of a halt nothing can end would only
+    // count idle T-states. Each is a tool error that says RESET ends the halt.
+    SECTION("MCP: run, step and start refuse a halted processor until RESET (#770)");
+    {
+        Machine m;
+        if (!loadAltmon(m)) return;
+        std::ostringstream s;
+        int id = 0;
+        auto req = [&](const std::string& params) {
+            s << R"({"jsonrpc":"2.0","id":)" << ++id
+              << R"(,"method":"tools/call","params":)" << params << "}\n";
+        };
+        req(R"({"name":"monitor","arguments":{"command":"DEPOSIT 40 F3 76"}})");     // 1 DI;HLT
+        req(R"({"name":"run","arguments":{"from":64,"timeout_ms":2000}})");          // 2
+        req(R"({"name":"run","arguments":{"from":128,"timeout_ms":200}})");          // 3
+        req(R"({"name":"run","arguments":{"timeout_ms":200}})");                     // 4
+        req(R"({"name":"step","arguments":{"count":1}})");                           // 5
+        req(R"({"name":"start","arguments":{"from":128}})");                         // 6
+        req(R"({"name":"monitor","arguments":{"command":"RESET"}})");                // 7
+        req(R"({"name":"step","arguments":{"count":1}})");                           // 8
+        auto rep = runScript(m, s.str());
+
+        CHECK(rep[2].at("result").at("structuredContent").at("stopped").str() == "halt",
+              "set up: the run stops on the HLT");
+        for (int n : {3, 4, 5, 6}) {
+            const Json& r = rep[n].at("result");
+            CHECK(r.has("isError") && r.at("isError").boolean() &&
+                      r.at("content").items()[0].at("text").str() ==
+                          "processor halted at PC=0042 -- RESET ends the halt.",
+                  "a run, step or start on a halted processor is a tool error naming RESET");
+        }
+        CHECK(!rep[8].at("result").has("isError"), "after RESET, step works again");
+    }
+
     // SET BUS UNCLAIMED=WARN|HALT HOLDS UNDER MCP AS AT THE MONITOR (#580). HALT stops the
     // run with `unclaimed`; WARN returns the warning line in `warnings`; each run re-arms
     // the once-per-port de-dup, so a second run reports the port again.

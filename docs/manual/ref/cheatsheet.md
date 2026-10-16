@@ -76,7 +76,7 @@ Type the part before the bracket.
 | `C[ONFIG]` | Load or save the whole machine as a TOML file. | `CONFIG LOAD <f.toml> \| CONFIG SAVE <f.toml>` |
 | `CONN[ECT]` | Attach a serial unit to an endpoint (console, socket, file, ...). | `CONNECT <id>:<u> <endpoint>` |
 | `CONS[OLE]` | Shortcut for SHOW CONSOLE and SET CONSOLE. | `CONSOLE [<k>=<v>...]` |
-| `DE[POSIT]` | Write bytes into memory at an address. | `DEPOSIT <addr> <bytes...>` |
+| `DE[POSIT]` | Write bytes into memory at an address. | `DEPOSIT <byte> \| DEPOSIT NEXT <bytes...> \| DEPOSIT <addr> <bytes...>` |
 | `DI[SASM]` | Disassemble memory into instructions. | `DISASM [<addr>\|<range>] [n] [CPU=8080]` |
 | `DISC[ONNECT]` | Shortcut for CONNECT <id>:<u> null: unplug the endpoint. | `DISCONNECT <id>:<u>` |
 | `DO` | Run a file of monitor commands, one per line, as if typed. | `DO <file>` |

@@ -390,11 +390,26 @@ void test_debug() {
     // this HLT never wakes.
     ib3.raise(true);
     h2.m.bus.attach(&ib3);
-    h2.load({0x76});
+    h2.load({0xFB, 0x76});  // EI ; HLT -- the processor will take the interrupt
     h2.cpu->setPc(0);
     RunResult hr2 = h2.m.debug.run(20);
     CHECK(hr2.why == StopReason::Steps,
           "but a HLT with a live interrupt source is NOT the end -- it is a machine WAITING");
+
+    // AFTER DI, NOTHING BUT RESET ENDS A HLT, however hard a board pulls pINT: the
+    // processor takes no interrupt (#770). This used to be counted as "waiting" for an
+    // interrupt that could never be taken, and the run went on until ATTN.
+    Rig h3;
+    IntBoard ib4;
+    ib4.id = "int0";
+    ib4.raise(true);
+    h3.m.bus.attach(&ib4);
+    h3.load({0xF3, 0x76});  // DI ; HLT
+    h3.cpu->setPc(0);
+    RunResult hr3 = h3.m.debug.run(20);
+    CHECK(hr3.why == StopReason::Halted,
+          "a HLT after DI is the end, even with a board pulling pINT -- only RESET ends it");
+    CHECK(h3.m.debug.haltIsFinal(), "and haltIsFinal says so");
 
     SECTION("BREAK <addr> IF <expr> -- a condition over the reflected registers");
 

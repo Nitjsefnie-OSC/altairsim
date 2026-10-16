@@ -68,6 +68,7 @@ void FrontPanelBoard::power() {
     // yet. The monitor clears this the instant a RUN session begins (setRunning).
     running_  = false;
     halted_   = false;  // and not halted -- nothing has run to execute a HLT
+    floated_  = false;
 }
 
 void FrontPanelBoard::serialize(StateWriter& w) const {
@@ -292,7 +293,7 @@ void FrontPanelBoard::pump() {
         uint8_t flags = 0;
         if (!running_) flags |= fplink::FlWait;
         if (halted_)   flags |= fplink::FlHalted;
-        std::string frame = fplink::encodeL(addrLeds_, dataLeds_, status_, flags);
+        std::string frame = fplink::encodeL(addressLamps(), dataLamps(), status_, flags);
         if (frame != lastFrame_ && stream_->writable()) {
             stream_->write(reinterpret_cast<const uint8_t*>(frame.data()), frame.size());
             lastFrame_ = std::move(frame);

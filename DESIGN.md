@@ -1323,7 +1323,12 @@ MEMORY
                                     with NO CPU CARD IT IS AN ERROR -- nothing is driving
                                     the bus. (Look at a CPU-less machine with DUMP: it
                                     runs no cycle, so it needs nobody to drive one.)
-  DEPOSIT <addr> <bytes...>
+  DEPOSIT <byte>                    The panel's other two switches, and the PC is their
+  DEPOSIT NEXT <bytes...>           address (#772). <byte> writes at the PC; NEXT adds 1
+  DEPOSIT <addr> <bytes...>         to the PC, then writes, per byte; <addr> is EXAMINE
+                                    <addr>, DEPOSIT, then DEPOSIT NEXT for the rest. The PC
+                                    ends on the last byte written. Like EXAMINE, it needs
+                                    a CPU (EDIT, FILL and LOAD write a CPU-less machine).
   FILL <range> <byte>
   SEARCH <range> <bytes...>|"str"
   COMPARE <range> <addr>            memory to memory. There is no <file> form.
@@ -1376,12 +1381,15 @@ DEBUG
   used to GUESS at two of them from whether a console happened to be attached, and a
   guess is what you write when the reason was never carried in the first place.
 
-  A HALTED 8080 DOES NOT RUN. It leaves HALT for an interrupt or a RESET, and loading
-  the PC is neither -- so `RUN <addr>` on a halted machine says HLT again, correctly,
-  and the fix is the RESET a human would throw. (This is what the honest stop reason
-  caught first, in our OWN test: tests/acceptance/cli.exp had been "testing" ATTN
-  against a machine that was halted the whole time, and matching the prompt that came
-  back with the HLT.)
+  A HALTED PROCESSOR DOES NOT RUN. It leaves HALT for an interrupt it will take, or for
+  RESET. It fetches nothing in between, so on a real panel RUN, EXAMINE, EXAMINE NEXT,
+  DEPOSIT and DEPOSIT NEXT all do nothing (tested on hardware, #770). The monitor
+  says so instead: `RUN <addr>`, EXAMINE and every DEPOSIT refuse any halt, and a bare
+  RUN, STEP or NEXT refuses a halt that nothing can end ("processor halted at PC=0101 --
+  RESET ends the halt."). The registers and flags are unaffected (Intel). The fix is
+  the RESET a human would throw. (This is what the honest stop reason caught first, in
+  our OWN test: tests/acceptance/cli.exp had been "testing" ATTN against a machine that
+  was halted the whole time, and matching the prompt that came back with the HLT.)
   TRACE ON|OFF [file] [MASK=IN,OUT,IRQ,DMA,CONTENTION]   HISTORY [n]
   SYMBOLS LOAD <file> [REPLACE] | SYMBOLS CLEAR          SHOW SYMBOLS [<name>|<glob>]
                                     A .PRN/.LST listing or a CP/M .SYM, so a name works

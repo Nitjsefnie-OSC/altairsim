@@ -356,6 +356,10 @@ A `RUN` ends when it reaches a **breakpoint**, or a `HLT` that no interrupt can 
 tells you which. If no board holds the console, the guest does not get the keyboard. To stop
 that run, press `Ctrl-C`.
 
+After a `HLT`, the processor stays halted until `RESET`. On a halted processor, `RUN`,
+`EXAMINE` and `DEPOSIT` do nothing, as the front-panel switches do. The monitor tells you:
+*"processor halted at PC=0101 -- RESET ends the halt."* *The Debugger* has the details.
+
 **`RUN` and `Ctrl-E` are the front panel's RUN and STOP switches.** `RUN` starts the processor. STOP, a
 breakpoint or a `HLT` stops the processor and starts the monitor. **The monitor is
 available only while the machine is stopped.** While the machine runs, the guest has the keyboard

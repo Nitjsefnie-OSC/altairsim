@@ -70,6 +70,28 @@ Now the `focus` setting has an effect only when a window opens. At each stop, th
 the keyboard back on macOS, on Windows and on Linux with X11. On Wayland, one program cannot
 give the keyboard to a different program, so you click in the console.
 
+**A halted processor now stays halted until `RESET`, as on a real front panel.** Before, the
+monitor moved the program counter of a halted processor. `RUN <addr>` and `EXAMINE` loaded the
+`PC`, and a bare `RUN` reported "1 instructions, 4 T-states" for a `HLT` that nothing could end.
+For example, on a Sol-20 a `RUN C000` after a `HLT` stopped at once with `HLT at C000`, and did
+not say why. A real panel does nothing for RUN, EXAMINE or DEPOSIT while the processor is
+halted. Now these commands do nothing, and they print the `PC` and *"RESET ends the halt."*
+A `HLT` that waits for an interrupt (`EI`, then `HLT`) still continues with a bare `RUN`
+or `STEP`. A `HLT` after `DI` now stops the run even if a board pulls the interrupt line.
+Before, that run went on until you pressed `Ctrl-E`. The `--mcp` tools `run`, `start` and `step`
+refuse in the same way. On the front-panel board, the HLTA lamp now stays lit until `RESET`. The
+ADDRESS and DATA lamps of a halted 8080 or 8085 show `FFFF` and `FF`, the floating bus, as on
+the real panel.
+
+**`DEPOSIT` now uses the program counter as its address, as the front panel does.** Before,
+`DEPOSIT <addr> <bytes>` wrote the bytes and did not change the `PC`. There was no DEPOSIT NEXT,
+and a value larger than a byte was cut to 8 bits without a message. Now `DEPOSIT <addr> <bytes>`
+is EXAMINE `<addr>`, DEPOSIT, and then DEPOSIT NEXT for each byte after the first, so the `PC`
+ends on the last byte written. `DEPOSIT NEXT <bytes>` adds 1 to the `PC` and writes, for each
+byte. `DEPOSIT <byte>` writes at the `PC` and does not move it. A value larger than `FF` is an
+error, and no byte is written. `DEPOSIT` now needs a processor, as `EXAMINE` does. On a machine
+with no processor, use `EDIT`, `FILL` or `LOAD`.
+
 **On a Mac with a Retina screen, the text in a video window no longer changes between normal
 and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
 to fit. That scaling made all of the text change between a normal look and a bold look. The

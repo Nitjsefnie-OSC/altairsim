@@ -36,6 +36,11 @@ public:
     void setPc(uint16_t v) override { pc_ = v; }
     bool halted() const override { return halted_; }
     bool interruptsEnabled() const override { return ie_; }
+    // Only INT, and only with INTE set. After DI only RESET ends a HLT.
+    bool haltCanEnd(bool pint, bool eventsQueued) const override {
+        return ie_ && (pint || eventsQueued);
+    }
+    bool haltFloatsBus() const override { return true; }
 
     // The flag byte, as PUSH PSW pushes it: S Z 0 AC 0 P 1 CY.
     uint8_t psw() const;

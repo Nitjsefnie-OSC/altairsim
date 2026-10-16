@@ -40,6 +40,16 @@ public:
     void setPc(uint16_t v) override { pc_ = v; }
     bool halted() const override { return halted_; }
     bool interruptsEnabled() const override { return iff1_; }
+    // INT with IFF1 set. NMI would end a HALT whatever IFF1 says, but NMI is not modeled
+    // anywhere in the tree; when it is, a pending NMI belongs here.
+    bool haltCanEnd(bool pint, bool eventsQueued) const override {
+        return iff1_ && (pint || eventsQueued);
+    }
+    // A halted Z80 keeps fetching and refreshing: "Each cycle in the HALT state is a normal
+    // M1 (fetch) cycle except that the data received from the memory is ignored" (Z80 CPU
+    // User Manual, reference/Zilog Z80.md). Its buses do not float, and a front panel's
+    // jammed JMP is ignored like any other fetched byte.
+    bool haltFloatsBus() const override { return false; }
 
     void serialize(StateWriter& w) const override;
     void deserialize(StateReader& r) override;

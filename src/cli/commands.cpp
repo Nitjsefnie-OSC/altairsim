@@ -45,7 +45,7 @@ static const std::vector<CommandDef> kCommands = {
     {"STEP", true, nullptr, "STEP [n]",
      "One instruction, with REAL bus cycles through the real decode. Prints one line\n"
      "per instruction; past 32 it runs quietly and reports. `n` is a count, so it is\n"
-     "decimal.\n"
+     "decimal. On a HLT that nothing can end, STEP does nothing. RESET ends the halt.\n"
      "\n"
      "A LINE IS THE STATE AFTER THE INSTRUCTION RAN -- the registers as they now\n"
      "stand, and the instruction the PC has reached next. So `S 3` prints three lines,\n"
@@ -74,7 +74,8 @@ static const std::vector<CommandDef> kCommands = {
      "STEP that does not descend. A CALL or RST runs to completion and stops at the\n"
      "return address instead of stepping into it; anything else is a plain single\n"
      "step. It is a temporary breakpoint at the return plus a RUN, so the callee is\n"
-     "LIVE -- it can use the console, and ^E (STOP) or ^C stops it.\n"
+     "LIVE -- it can use the console, and ^E (STOP) or ^C stops it. On a HLT that\n"
+     "nothing can end, NEXT does nothing. RESET ends the halt.\n"
      "\n"
      "  N  ; over the CALL/RST at PC (else single-step)"},
     // RUN is the front panel's switch. It REPLACED GO (Patrick, 2026-07-12) -- there
@@ -113,6 +114,11 @@ static const std::vector<CommandDef> kCommands = {
      "With no console connected there is no keyboard to hand over: it simply runs,\n"
      "^C stops it. Either way it stops on a breakpoint or on a HLT nothing can wake,\n"
      "and it ALWAYS says which.\n"
+     "\n"
+     "A HALTED PROCESSOR fetches nothing, so RUN does nothing until RESET. RUN <addr>\n"
+     "refuses any halt, because it cannot move the PC. A bare RUN refuses a HLT that\n"
+     "nothing can end. It continues a HLT that waits for an interrupt (EI, then HLT),\n"
+     "and the interrupt ends the halt.\n"
      "\n"
      "  RUN F800  ; boot the monitor PROM\n"
      "  RUN       ; carry on from wherever the PC is"},
@@ -387,11 +393,30 @@ static const std::vector<CommandDef> kCommands = {
      "  SHOW CLOCK          ; emulated time: T-states since POWER, and what they are in seconds\n"
      "  SHOW ROMS           ; the ROM images built into this binary, and where each came from\n"
      "  SHOW VERSION        ; which build this is, and the commit it was built from"},
-    {"DEPOSIT", true, nullptr, "DEPOSIT <addr> <bytes...>",  // DE
-     "The front-panel switch. Runs a REAL bus write, so if no board decodes the\n"
-     "address the byte is simply gone -- and DEPOSIT says so rather than lying.\n"
+    {"DEPOSIT", true, nullptr, "DEPOSIT <byte> | DEPOSIT NEXT <bytes...> | DEPOSIT <addr> <bytes...>",  // DE
+     "The front-panel switches DEPOSIT and DEPOSIT NEXT. The PC is the address, as\n"
+     "on the panel:\n"
      "\n"
-     "  DE 100 C3 00 F8"},
+     "  DEPOSIT <byte>             ; writes the byte at the PC. The PC does not move.\n"
+     "  DEPOSIT NEXT <bytes...>    ; for each byte, adds 1 to the PC, then writes.\n"
+     "  DEPOSIT <addr> <bytes...>  ; loads the PC with <addr>, as EXAMINE does,\n"
+     "                             ; writes the first byte, then does DEPOSIT NEXT\n"
+     "                             ; for each byte after it.\n"
+     "\n"
+     "The PC stops on the last byte written. To run what you wrote, give its start:\n"
+     "RUN <addr>, or EX <addr> and then RUN.\n"
+     "\n"
+     "Each write is a REAL bus write. If no board decodes the address, the byte is\n"
+     "gone, and DEPOSIT says so. A byte is 00-FF. A larger value is an error, and\n"
+     "DEPOSIT writes nothing.\n"
+     "\n"
+     "DEPOSIT needs a CPU, as the panel does. On a machine with no CPU, use EDIT,\n"
+     "FILL or LOAD. While the processor is halted, DEPOSIT does nothing. RESET ends\n"
+     "the halt.\n"
+     "\n"
+     "  DE 100 C3 00 F8  ; JMP F800 at 0100. The PC is now 0102\n"
+     "  DE NEXT 00       ; 00 at 0103\n"
+     "  DE 76            ; HLT at the PC (0103)"},
     // EXAMINE and DEPOSIT are the two switches on the front panel, and they belong
     // together -- DE and EX. EXAMINE is the quick look at ONE byte; bare EXAMINE
     // steps to the next, which is the panel's EXAMINE NEXT.
@@ -406,7 +431,11 @@ static const std::vector<CommandDef> kCommands = {
      "  altairsim> EX 100\n"
      "  0100  C3  .  11000011\n"
      "  A=00 ... PC=0100  JMP 0138\n"
-     "  altairsim> EX  ; and the next byte, and the next"},
+     "  altairsim> EX  ; and the next byte, and the next\n"
+     "\n"
+     "While the processor is halted, EXAMINE does nothing. The panel loads the PC by\n"
+     "giving the processor a JMP, and a halted processor does not fetch it. RESET\n"
+     "ends the halt. DUMP and DISASM still read memory while it is halted."},
     {"IN", true, nullptr, "IN <port>",  // I
      "Runs a REAL IN cycle, with real side effects: an IN from a UART's data port\n"
      "consumes the byte and the guest never sees it. To look without touching, use\n"
@@ -743,6 +772,7 @@ static const std::vector<CommandDef> kCommands = {
     // be no way left to type it: that is the one invariant, and test_cli.cpp guards it.
     {"RESET", true, nullptr, "RESET [CPU]",  // RES
      "A reset does NOT clear memory. Only removing power does that -- see POWER.\n"
+     "A reset ends a HLT: the PC goes to 0000, and the HLTA lamp goes out.\n"
      "RESET CPU is a debugging convenience, NOT a real signal: no wire on the\n"
      "backplane resets the processor and nothing else."},
     {"POWER", true, nullptr, "POWER",

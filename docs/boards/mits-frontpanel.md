@@ -186,6 +186,16 @@ transient session state deliberately not serialized into a snapshot. `INTE`, `HL
 `RUN` stay `0` and are deferred: `INTE` is the 8080's interrupt-enable flip-flop; `HLDA` is a
 halt-acknowledge pin.
 
+**`HLTA` and a halted processor (#770).** At every stop the monitor calls
+`Machine::setHalted(halted, busFloats)` from the processor's own state, so `HLTA` is lit whenever
+the processor is halted. That includes a stop by `Ctrl-E` while the guest waits in `EI`/`HLT`.
+`RESET` and `RESET CPU` turn it off, as a reset ends the halt. A RUN that starts also turns it off.
+The 8080 and the 8085 float the address and data buses while halted (Intel), so the ADDRESS and
+DATA lamps read the bus pull-ups: `FFFF` and `FF`. A real panel shows this. `addressLamps()` and
+`dataLamps()` return those values while `busFloats` is set, and the latch underneath is left
+alone. A halted Z80 keeps running NOP fetches, so its buses do not float. The monitor re-drives
+the M1 read at the `PC` for it, as at any other stop.
+
 **The lamps are honest about being a blur, and so was MITS.** From the Operator's Manual, on the
 indicator LEDs:
 

@@ -35,7 +35,8 @@ NEXT
 STEP that does not descend. A CALL or RST runs to completion and stops at the
 return address instead of stepping into it; anything else is a plain single
 step. It is a temporary breakpoint at the return plus a RUN, so the callee is
-LIVE -- it can use the console, and ^E (STOP) or ^C stops it.
+LIVE -- it can use the console, and ^E (STOP) or ^C stops it. On a HLT that
+nothing can end, NEXT does nothing. RESET ends the halt.
 
 ```
 N  ; over the CALL/RST at PC (else single-step)
@@ -102,6 +103,7 @@ real hardware it does not.
 RESET [CPU]
 ```
 A reset does NOT clear memory. Only removing power does that -- see POWER.
+A reset ends a HLT: the PC goes to 0000, and the HLTA lamp goes out.
 RESET CPU is a debugging convenience, NOT a real signal: no wire on the
 backplane resets the processor and nothing else.
 
@@ -137,6 +139,11 @@ With no console connected there is no keyboard to hand over: it simply runs,
 ^C stops it. Either way it stops on a breakpoint or on a HLT nothing can wake,
 and it ALWAYS says which.
 
+A HALTED PROCESSOR fetches nothing, so RUN does nothing until RESET. RUN <addr>
+refuses any halt, because it cannot move the PC. A bare RUN refuses a HLT that
+nothing can end. It continues a HLT that waits for an interrupt (EI, then HLT),
+and the interrupt ends the halt.
+
 ```
 RUN F800  ; boot the monitor PROM
 RUN       ; carry on from wherever the PC is
@@ -150,7 +157,7 @@ STEP [n]
 ```
 One instruction, with REAL bus cycles through the real decode. Prints one line
 per instruction; past 32 it runs quietly and reports. `n` is a count, so it is
-decimal.
+decimal. On a HLT that nothing can end, STEP does nothing. RESET ends the halt.
 
 A LINE IS THE STATE AFTER THE INSTRUCTION RAN -- the registers as they now
 stand, and the instruction the PC has reached next. So `S 3` prints three lines,
@@ -236,13 +243,34 @@ COMPARE FF00-FFFF E000  ; the boot PROM against a copy up at E000
 ### DEPOSIT — `DE[POSIT]`
 
 ```
-DEPOSIT <addr> <bytes...>
+DEPOSIT <byte> | DEPOSIT NEXT <bytes...> | DEPOSIT <addr> <bytes...>
 ```
-The front-panel switch. Runs a REAL bus write, so if no board decodes the
-address the byte is simply gone -- and DEPOSIT says so rather than lying.
+The front-panel switches DEPOSIT and DEPOSIT NEXT. The PC is the address, as
+on the panel:
 
 ```
-DE 100 C3 00 F8
+DEPOSIT <byte>             ; writes the byte at the PC. The PC does not move.
+DEPOSIT NEXT <bytes...>    ; for each byte, adds 1 to the PC, then writes.
+DEPOSIT <addr> <bytes...>  ; loads the PC with <addr>, as EXAMINE does,
+                           ; writes the first byte, then does DEPOSIT NEXT
+                           ; for each byte after it.
+```
+
+The PC stops on the last byte written. To run what you wrote, give its start:
+RUN <addr>, or EX <addr> and then RUN.
+
+Each write is a REAL bus write. If no board decodes the address, the byte is
+gone, and DEPOSIT says so. A byte is 00-FF. A larger value is an error, and
+DEPOSIT writes nothing.
+
+DEPOSIT needs a CPU, as the panel does. On a machine with no CPU, use EDIT,
+FILL or LOAD. While the processor is halted, DEPOSIT does nothing. RESET ends
+the halt.
+
+```
+DE 100 C3 00 F8  ; JMP F800 at 0100. The PC is now 0102
+DE NEXT 00       ; 00 at 0103
+DE 76            ; HLT at the PC (0103)
 ```
 
 
@@ -315,6 +343,10 @@ altairsim> EX 100
 A=00 ... PC=0100  JMP 0138
 altairsim> EX  ; and the next byte, and the next
 ```
+
+While the processor is halted, EXAMINE does nothing. The panel loads the PC by
+giving the processor a JMP, and a halted processor does not fetch it. RESET
+ends the halt. DUMP and DISASM still read memory while it is halted.
 
 
 ### FILL — `F[ILL]`
