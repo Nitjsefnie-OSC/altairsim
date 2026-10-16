@@ -182,7 +182,7 @@ bool parseValue(const std::string& text, Kind kind, Value& out, std::string& err
     return false;
 }
 
-bool validate(const Property& p, const Value& v, std::string& err) {
+bool validate(const Property& p, Value& v, std::string& err) {
     if (p.kind == Kind::Int && !(p.min == 0 && p.max == 0)) {
         if (v.i() < p.min || v.i() > p.max) {
             char buf[128];
@@ -197,7 +197,10 @@ bool validate(const Property& p, const Value& v, std::string& err) {
     }
     if (p.kind == Kind::Enum) {
         for (const auto& c : p.choices)
-            if (ieq(v.s(), c.c_str())) return true;
+            if (ieq(v.s(), c.c_str())) {
+                v = Value::ofStr(c);
+                return true;
+            }
         err = p.name + " must be one of:";
         for (const auto& c : p.choices) err += " " + c;
         err += " (got '" + v.s() + "')";

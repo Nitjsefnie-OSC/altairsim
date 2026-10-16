@@ -455,6 +455,9 @@ void test_mirror() {
         CHECK(rebaseEndpointPaths("in:tape.tap|cap.hex", rebase) ==
                   "in:/cfg/tape.tap|/cfg/cap.hex",
               "a FILE sink still rebases, as the tee always has");
+        CHECK(rebaseEndpointPaths("IN:Tape.tap|Cap.hex", rebase) ==
+                  "in:/cfg/Tape.tap|/cfg/Cap.hex",
+              "IN: is in: -- its path still rebases, and keeps its case");
     }
     if (platform::havePty()) {
     SECTION("mirror pty: `|pty:LINK` makes a pseudo-terminal and a link to it");

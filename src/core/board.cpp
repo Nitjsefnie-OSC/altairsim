@@ -312,7 +312,9 @@ bool Board::loadSubUnit(const std::string& table, const KeyValues& kv, std::stri
                 return false;
             }
 
-        canon.emplace_back(p->name, text);
+        // An Enum goes on in the schema's spelling, which validate() has just put in `v`:
+        // the board compares it exactly and CONFIG SAVE writes it back (#761).
+        canon.emplace_back(p->name, p->kind == Kind::Enum ? v.s() : text);
         written.push_back(k);
     }
 

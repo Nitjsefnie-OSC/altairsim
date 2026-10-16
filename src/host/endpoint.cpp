@@ -21,6 +21,7 @@
 #endif
 
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -28,6 +29,9 @@
 #include <vector>
 
 namespace altair {
+
+// Defined in board.cpp -- the one case-folding used for every operator-typed name.
+std::string lowerAscii(std::string s);
 
 // THE ONE PLACE THAT KNOWS THE GRAMMAR (DESIGN.md 7.7). No board may parse an
 // endpoint string, which is why `CONNECT sio0:a serial:/dev/tty.usbserial-AL009KFH`
@@ -116,8 +120,65 @@ std::string endpointHelp(bool all) {
     return s;
 }
 
+// A grammar word at the front of `s`, in any case: `w` ending in ':' is a prefix
+// (`socket:`); a bare word (`pty`, `null`) must end there or be followed by ':' or '?', so a
+// log file called `ptylog` is not the `pty` sink.
+static size_t schemeWord(const std::string& s, const char* w) {
+    const size_t n = std::strlen(w);
+    if (s.size() < n) return 0;
+    for (size_t k = 0; k < n; ++k)
+        if (std::tolower((unsigned char)s[k]) != (unsigned char)w[k]) return 0;
+    if (w[n - 1] != ':' && s.size() > n && s[n] != ':' && s[n] != '?') return 0;
+    return n;
+}
+
+std::string canonicalEndpoint(const std::string& spec) {
+    // The line (left of the first `|`) may be any endpoint. A sink right of a `|` is a
+    // mirror (socket:, pty, serial:) or a log FILE -- and a file's name is never folded.
+    static const char* const kLine[] = {"console", "null",    "loopback", "scripted",
+                                        "terminal", "pty",    "socket:",  "telnet:",
+                                        "serial:",  "in:",    "out:",     "printer:"};
+    static const char* const kSink[] = {"pty", "socket:", "serial:"};
+
+    std::string out;
+    bool        line = true;
+    for (size_t start = 0; start <= spec.size();) {
+        size_t      bar = spec.find('|', start);
+        std::string seg = spec.substr(start, bar == std::string::npos ? std::string::npos
+                                                                      : bar - start);
+        if (!line) out += '|';
+        // `in:a,out:b` is two parts; each has its own scheme and its own options.
+        for (size_t ps = 0; ps <= seg.size();) {
+            size_t      comma = seg.find(',', ps);
+            std::string part  = seg.substr(ps, comma == std::string::npos ? std::string::npos
+                                                                          : comma - ps);
+            if (ps) out += ',';
+            size_t q = part.find('?');
+            std::string head = part.substr(0, q);
+            size_t      n    = 0;
+            if (line) {
+                for (const char* w : kLine)
+                    if ((n = schemeWord(head, w)) != 0) break;
+            } else {
+                for (const char* w : kSink)
+                    if ((n = schemeWord(head, w)) != 0) break;
+            }
+            out += lowerAscii(head.substr(0, n)) + head.substr(n);
+            // Every option name and value is a word or a number, never a path.
+            if (q != std::string::npos) out += lowerAscii(part.substr(q));
+            if (comma == std::string::npos) break;
+            ps = comma + 1;
+        }
+        line = false;
+        if (bar == std::string::npos) break;
+        start = bar + 1;
+    }
+    return out;
+}
+
 std::string rebaseEndpointPaths(const std::string&                                    spec,
                                 const std::function<std::string(const std::string&)>& rebase) {
+    if (std::string c = canonicalEndpoint(spec); c != spec) return rebaseEndpointPaths(c, rebase);
     // A capture tap (ENDPOINT|FILE) carries a path on BOTH sides: the inner endpoint may
     // be an in:/out: file, and the log FILE itself is a path. Split on the `|` first,
     // rebase each independently, and rejoin -- otherwise a machine-file relative
@@ -283,6 +344,8 @@ static std::unique_ptr<TcpStream> makeTcpStream(const std::string& body,
 }
 
 std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string& err) {
+    if (std::string c = canonicalEndpoint(spec); c != spec) return resolveEndpoint(c, err);
+
     // ---- ENDPOINT|FILE -- a transparent HEX TAP on the line (host/tee_stream.h) ----
     //
     // Checked FIRST, before the prefix dispatch: a `|` appears nowhere else in the

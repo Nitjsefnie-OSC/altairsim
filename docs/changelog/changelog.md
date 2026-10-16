@@ -133,6 +133,19 @@ at `F5BC` where the monitor's printed listing has `LDAX D` (`1A`). The register 
 byte at the address in BC, which holds the register size and letter, not the address of the saved
 register in DE. The image had been built from an OCR'd copy of the listing. `X` now prints each
 register as the monitor saved it, the same value that `X<reg>` shows. Only that byte changed. The CRC32 of the image is now `27636BB0`.
+
+**A setting with a list of values now works in any case.** The program accepted `media =
+"8IN"` on a `dcdd` drive. The board then compared the text exactly with its format names, which
+are in lower case. `8IN` matched no format, so the drive used `fdc8mb`, the largest one, with no error. The same
+fault was in every setting that has a list of values. `SET mem0 fill=ZERO` printed
+`mem0: fill=ZERO` and left `fill` at `random`. On the `versafloppy`, `media = "8SD"` gave
+``unknown media `8SD` ``. The program now changes the value to the spelling in the list before
+the board gets it, and `CONFIG SAVE` writes that spelling.
+
+**Board types, endpoints and command-line options are not case-sensitive.** `BOARDS ADD 2SIO`
+gave `no board type '2SIO'`. `CONNECT sio0:a Loopback` and `SOCKET:2323` gave `no endpoint`.
+`--MCP` was an unknown option, and `--mirror PTY` was read as a port number. Each of these now
+works. A file name, a host name and a serial device keep their case.
 ## 1.3.3
 
 **1.3.3 adds the Cromemco Dazzler II, a mirror on a real serial port and a start-up file in your

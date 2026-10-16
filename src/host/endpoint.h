@@ -49,6 +49,12 @@ std::function<std::unique_ptr<ByteStream>(const std::string&, std::string&)> reb
 bool parsePort(const std::string& s, uint16_t& out);
 bool parseHostPort(const std::string& spec, std::string& host, uint16_t& port, std::string& err);
 
+// The spec with its grammar words in lower case: the scheme (`SOCKET:2323`, `Loopback`,
+// `IN:tape.tap`) and the `?key=value` options (`?FMT=Text`). A path, a host, a device and a
+// pty link keep their case -- they are the host's, not ours. resolveEndpoint() and
+// rebaseEndpointPaths() fold through this first, so every endpoint word is case-insensitive.
+std::string canonicalEndpoint(const std::string& spec);
+
 // Returns null and sets `err` on anything it does not understand. It never
 // guesses: `CONNECT sio:a consle` is an error with the list of what it could
 // have meant, not a silent NullStream that leaves you wondering why the terminal

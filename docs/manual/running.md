@@ -49,8 +49,10 @@ You can type a short form of a command. `HELP` shows each command with brackets,
 `D[UMP]`, `DE[POSIT]` and `RES[ET]`. The part before the bracket is the short form. You can type
 the short form, the full name, or any length between them.
 
-**Commands are not case-sensitive**, and the names of the boards in the machine are not
-case-sensitive. This manual writes commands in capitals because they are easier to read.
+**Commands are not case-sensitive.** Board names, board types, settings and their values are
+not case-sensitive either. The same is true for endpoints such as `socket:2323` and for
+command-line options such as `--mcp`. A file name, a host name and a serial device keep their
+case. This manual writes commands in capitals because they are easier to read.
 
 ## Which machine you get
 
