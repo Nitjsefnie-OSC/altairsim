@@ -24,6 +24,8 @@
 //   - THE MOTOR AND READY. A motor that is off stops the index pulse in the status register;
 //     it does not take READY away. An 8" drive keeps READY with its motor stopped (the
 //     HMXBIOS SOFTRDY comment says so); a 5.25" drive would lose it, and is not modeled.
+//   - J5 AND J12, both out as shipped. J5 holds the 5.25" READY on for unit 3; J12 lets the
+//     motor timer's first stage clear the Drive Select Register after about 2 s.
 
 #include "boards/compupro-disk.h"
 
@@ -65,7 +67,7 @@ private:
 
     // ---- straps ----
     bool sense_   = true;   // S3-1 ON = System Support 1 console
-    bool timeout_ = true;   // J11 installed
+    bool j11_     = true;   // J11 installed: bit 7 runs the 5.25" motors
 
     // ---- runtime (snapshot) ----
     uint8_t  dsr_   = 0;      // Drive Select Register

@@ -3,7 +3,9 @@
 Source: [CompuPro Disk 1 Manual.pdf](#) (© CompuPro/Godbout 1981, board 171F,
 Fourth Printing March 1983), with two facts from the 1982 printing (cited "1982 manual"),
 [CompuPro Disk 1A Manual.pdf](#) (© CompuPro 1984, board 203 Rev D, EPROM 1.4,
-Doc #12036, Second Edition November 1984)
+Doc #12036, Second Edition November 1984), and facts from the later Viasyn printing, cited
+"1985 manual" ([8261-0100_Viasyn_Disk_1A_Technical_Manual_203F_198505.pdf](#), © Viasyn 1985,
+board 203 Rev F, EPROM 1.6 Part #291B, Part No. 8261-0100, May 1985, with the full schematic)
 
 Two generations of one CompuPro (Godbout) S-100 floppy-disk controller, each a single board
 built around an **NEC µPD765A / Intel 8272** third-generation FDC, a **24-bit arbitrated DMA**
@@ -169,9 +171,18 @@ unit/head-load lines are used).
 Bit 7 controls **both** 8″ drive #3 and **all** minifloppies together (minifloppies have only
 one motor line) — they cannot be switched individually. The register has an **automatic
 ~15-second timeout**: all motors turn off ~15 s after the last controller access, and **any**
-access to the board restarts the timer. Jumper **J11** installed = timeout active; J11 removed =
-motors always on. ⚠ §5 note 2 gives the opposite reading. This reading is the one taken (§8). (On Disk 1 the equivalent boot-disable write is `D0 = 0` to the **serial**
+access to the board restarts the timer. Jumper **J11** is in the 5.25″ motor line only (1985
+manual p.22 and schematic p.31). U29 latches D4–D7 and drives the four 8″ motor lines directly.
+Only the bit 7 output goes through J11 to the 5.25″ MTR ON line (CONN 1 pin 16). With J11
+installed (as shipped), bit 7 runs the 5.25″ motors. With J11 removed, a pull-up holds the 5.25″
+motors on all the time. The 8″ motors still follow bits 4–7, and the timer still stops them.
+The timer is a 555 (U41, about 8 Hz) into a counter (U40). Its MTRCLR output clears U29 after
+about 128 ticks, about 15.8 s, unless a board access clears the counter first (1985 schematic
+p.30). (On Disk 1 the equivalent boot-disable write is `D0 = 0` to the **serial**
 port; on Disk 1A it is `D0 = 0` to this Motor Control Register — same bit, same port 3.)
+
+A reset clears both registers. INIT clears U6, the Drive Select Register, and U29, the motor
+latch (1985 schematic pp.30–31).
 
 ---
 
@@ -262,6 +273,14 @@ map: **S1 4–6** pick the processor and the console, with S1 1–3 ON. That is 
 map, and `291B_1.HEX` follows the 1.4 map. See
 [CompuPro CP/M 2.2 Technical Manual](CompuPro%20CPM-22%20Technical%20Manual.md) §5.1 and §8.
 
+The other S1 positions set the EPROM page size (1985 manual pp.2 and 18). **S1-1** is A13,
+**S1-6** is A8 from the switch, and **S1-7** brings A8 from the bus. For the standard 512-byte
+routines, S1-1 is OFF, S1-6 is OFF and S1-7 is ON. With S1-7 OFF, S1 1–6 pick one of the 256-byte
+routines. The `disk1a` board has the 512-byte setting only.
+
+The 1985 manual gives EPROM Version 1.6 as Part #291B. The tracked dump is `291B_1.HEX`. The
+routine map is the same in the 1.4 and the 1.6 manuals.
+
 Every routine ends by passing (2 + the sense-switch **S3-1** value) so the OS selects the
 console: **S3-1 ON** → System Support 1 console, **S3-1 OFF** → Interfacer 3/4 user 7.
 
@@ -300,10 +319,22 @@ Disk 1A: **J10** positions 0–7 → VI0–VI7). Use the highest-priority line s
 off. CompuPro software uses **VI4*** for the floppy interrupt. Both boards can instead run
 **polled** off Status-Register bit 7 (§2.1).
 
-Disk 1A default jumpers (as shipped, C0H / priority 15 / EPROM wait states on): J1–J2 pos 8
-(or "5" for 5.25″), J3–J4 pos 5 for 5.25″ / pos 8 for 8″, J5 removed, J6 A–C for all CompuPro
-drives, J7 B–C for 8″ (removed for CompuPro 5.25″ alone), J8/J9 B–C, J10 pos 4, J11 installed,
-J12/J13 removed.
+Disk 1A default jumpers (as shipped, C0H / priority 15 / EPROM wait states on): J1–J2 pos 5,
+J3–J4 pos 8, J5 removed, J6 A–C for all CompuPro drives, J7 B–C for 8″ (removed for CompuPro
+5.25″ alone), J8/J9 B–C, J10 pos 4, J11 installed, J12/J13 removed (1985 manual p.4).
+
+The 1985 schematic (p.31) gives the meaning of the jumpers that are not in the 1984 text:
+
+| Jumper | What it does |
+|---|---|
+| **J1–J4** | Send each drive select to one cable. **J4 is unit 0**, J3 is unit 1, J2 is unit 2 and J1 is unit 3. Position 8 is CONN 2 (8″) and position 5 is CONN 1 (5.25″). As shipped, units 0–1 are 8″ and units 2–3 are 5.25″, CompuPro's drive order |
+| **J5** | Holds the 5.25″ READY on when unit 3 is selected. For a 5.25″ drive that needs READY true all the time. Removed as shipped |
+| **J6** | The 5.25″ READY: A–C takes the drive's READY line, B–C makes READY follow the 5.25″ data-rate bit (§5). The board ORs the 8″ READY and the 5.25″ READY for the FDC and status bit 0. It ORs the two INDEX lines in the same way |
+| **J11** | The 5.25″ MTR ON line (§2.3) |
+| **J12** | "Drive select timeout option". When it is installed, the DSCLR output of the motor timer clears the Drive Select Register after about 2 s with no board access. Removed as shipped |
+
+The `disk1a` board does not model J5 or J12. Each drive of the board takes 8″ or 5.25″ media,
+which is the same as any setting of J1–J4.
 
 ---
 
@@ -323,7 +354,7 @@ carries full load continuously and the enclosure must cool for it.
 
 **5.25″ minifloppy programming notes (Disk 1A, §"Programming Considerations"):**
 1. Minifloppies use half the 8″ data rate → set Drive-Select-Reg bit 5 (5.25″), wait for the FDC to settle, and re-SPECIFY for the 4 MHz clock.
-2. Almost all minifloppies have a motor line → turn the motor on and wait for spin-up; the Motor Register times out in ~15 s (install **J11** to keep motors on, if desired). ⚠ The opposite of §2.3 (§8).
+2. Almost all minifloppies have a motor line → turn the motor on and wait for spin-up; the Motor Register times out in ~15 s. Install **J11** to control the motor line. With J11 removed, the motors are on all the time (1985 manual p.14, the same as §2.3).
 3. If the drive drives READY, connect **J6 A-C**; if not, connect **J6 B-C** so READY is forced whenever the 5.25″ bit is set (you then can't tell if the drive is truly ready).
 4. Minifloppies have no single/double-sided signal → set **Force Two Sided** (Drive-Select bit 3) for double-sided media, or the FDC won't access side 1.
 
@@ -360,7 +391,7 @@ For a `disk1` / `disk1a` board over a shared 8272/765A FDC core. The Disk 1A is 
 2. **DMA is the only data path.** The FDC's DRQ drives an onboard 24-bit counter that reads/writes host memory directly, incrementing across 64 K boundaries; there is no PIO data port. Model the transfer as DMA against the loaded 24-bit address.
 3. **Board Status bit 7 = FDC INT** (both boards) is the polled completion flag. Disk 1A adds ready/index/sense-switch in bits 0–2.
 4. **Disk 1 serial port (port 3, bit 7):** a bit-banged RS-232 line, MARKING/SPACING inverted onto D7 (D7=1 → space → logic 0). Rarely needed for guest software once a real console board exists. The `disk1` board models it as a `BitSerialLine` on its `serial` unit. Boot-disable = write D0=0. With S1-3 set for the motor, D7 = 0 is motor on (1982 manual).
-5. **Disk 1A Drive Select Register (port 0 OUT)** and **Motor Control Register (port 3 OUT):** unit/data-rate/F2S/head-load, and 5 motor bits with a ~15 s auto-off timer (reset on any access, defeated by removing J11). Boot-disable = write D0=0 to the motor register.
+5. **Disk 1A Drive Select Register (port 0 OUT)** and **Motor Control Register (port 3 OUT):** unit/data-rate/F2S/head-load, and 5 motor bits with a ~15 s auto-off timer (reset on any access). Removing J11 holds the 5.25″ motors on, and the 8″ motors still follow their bits.. Boot-disable = write D0=0 to the motor register.
 6. **Boot EPROM via `PHANTOM*`** at the reset address (256 B page Disk 1, 512 B Disk 1A); needs cooperating RAM that yields to `PHANTOM*`. Disabled by the D0=0 write, re-enabled by reset. The specific boot image is the thing that actually varies; the search/console-select behavior is in §3.
 7. **Config knobs that change guest-visible behavior:** base address, boot-routine number (console selection), DMA priority, wait-state count, and the VI-line the FDC interrupt drives (default VI4*). Everything else (data separator, precompensation) is timing the guest cannot read back — do not model it as hardware the guest can observe.
 8. **FDC internals defer to the µPD765A/8272 data sheet**: [NEC µPD765A FDC](NEC%20uPD765A%20FDC.md) (the Disk 1 manual also reprints Intel's 8272 sheet).
@@ -375,4 +406,5 @@ For a `disk1` / `disk1a` board over a shared 8272/765A FDC core. The Disk 1A is 
 - **DMA Address Register is MSB-first into a three-deep push-down stack** — three writes, high byte first, not a low/high pair.
 - **Disk 1 serial-line polarity is inverted onto D7** (SPACING/logic-0 = D7 high; MARKING/logic-1 = D7 low), and cleared to MARKING on reset — easy to get backwards.
 - **Motor bit 7 (Disk 1A) is shared** between 8″ drive #3 and *all* minifloppies; you cannot switch them independently.
-- ⚠ **J11 polarity: two readings.** §2.3 reads J11 installed = timeout active, removed = motors always on. §5 note 2 reads install J11 to keep the motors on. **§2.3 is taken:** the factory setting (§4) is J11 installed, which agrees with §2.3 and not with §5. Not confirmed on hardware. The `disk1a` board's `motor_timeout = on` is J11 installed.
+- **J11 is settled by the 1985 manual** (#747). An earlier version of this file read §5 note 2 as "install J11 to keep the motors on", the opposite of §2.3. The 1985 manual says the same thing on p.4, p.13, p.14 and p.22: J11 installed is software control of the 5.25″ motor, and J11 removed holds the 5.25″ motors on. The schematic (p.31) shows that J11 is in the 5.25″ MTR ON line only. The 8″ motors and the timer do not go through it. The `disk1a` board's `mini_motor_control = on` is J11 installed.
+- **J1–J4 count down.** J4 selects unit 0 and J1 selects unit 3 (1985 schematic p.31). An earlier version of §4, from the 1984 manual, put J1–J2 at position 8 for the 8″ drives. The 1985 manual puts J1–J2 at position 5 and J3–J4 at position 8, which makes units 0–1 the 8″ drives. The Rev D board was not checked against its own schematic.

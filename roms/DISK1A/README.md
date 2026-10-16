@@ -6,6 +6,9 @@ It holds sixteen boot routines of 512 bytes each.
 - **Run address:** `0000h`. The board shows one routine at `0000`–`01FF` until the guest
   turns the EPROM off.
 - **Decoded image:** `0000`–`1FFF`, 8192 bytes, CRC32 `93DBAEF4`.
+- **Part number:** the 1985 Viasyn *Disk 1A Technical Manual* (board 203 Rev F) gives EPROM
+  Version 1.6 as Part #291B. The name of this dump is `291B_1.HEX`. The image holds no version
+  string.
 
 ## The routines
 
