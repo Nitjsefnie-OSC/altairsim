@@ -7,6 +7,7 @@
 
 #include "boards/mits-2sio.h"
 #include "boards/mits-88virtc.h"
+#include "boards/mits-frontpanel.h"
 #include "boards/registry.h"
 #include "boards/s100-memory.h"
 #include "cli/commands.h"
@@ -38,6 +39,23 @@
 using namespace altair;
 
 namespace {
+
+// A board that pulls pINT (pin 73) and holds it, for the halted-processor tests. It drives
+// nothing in the acknowledge, so the bus floats FF: RST 7 on an 8080, the same on a Z80
+// in IM 0.
+class IrqLine : public Board {
+public:
+    std::string type() const override { return "test-irq"; }
+    bool assertsInt() const override { return raised_; }
+    void raise(bool on) {
+        raised_ = on;
+        intChanged();
+    }
+    std::vector<Property> properties() override { return {}; }
+
+private:
+    bool raised_ = false;
+};
 
 // Resolve `word` and return the command it names, or "" for unknown/ambiguous.
 std::string R(const char* word) {
@@ -541,19 +559,25 @@ void test_cli() {
         CHECK(e.str().find("no CPU") != std::string::npos,
               "EXAMINE with no CPU is an error: nothing drives the address lines");
 
-        // AND EVERY OTHER MEMORY COMMAND STILL WORKS WITHOUT ONE (Patrick,
-        // 2026-07-12): "we need to be able to debug the simulator without a CPU."
-        // EXAMINE is the sole exception, and only because it IS the CPU. DUMP is how
-        // you look at a machine with no processor in it -- it runs no cycle, so it
-        // needs nobody to drive one. (`EX 0 RAW mem0` was the old way round this, and
-        // it went with RAW: reading behind the bus bought nothing a ROM does not
-        // already give you through it.)
+        // DEPOSIT IS THE PANEL'S OTHER SWITCH, and it deposits through the processor
+        // just as EXAMINE reads through it (#772) -- no CPU, no DEPOSIT.
+        std::ostringstream d;
+        mb.exec("DEPOSIT 0 41 42", d);
+        CHECK(d.str().find("no CPU") != std::string::npos,
+              "DEPOSIT with no CPU is an error too: the panel deposits through the processor");
+
+        // EVERY MEMORY COMMAND THAT IS NOT A PANEL SWITCH STILL WORKS WITHOUT ONE
+        // (2026-07-12): the simulator must be debuggable without a CPU. DUMP is how you
+        // look at a machine with no processor in it -- it runs no cycle, so it needs
+        // nobody to drive one -- and FILL, EDIT and LOAD write to it. (`EX 0 RAW mem0`
+        // was the old way round this, and it went with RAW: reading behind the bus
+        // bought nothing a ROM does not already give you through it.)
         std::ostringstream w;
-        mb.exec("DEPOSIT 0 41 42", w);
+        mb.exec("FILL 0-1 41", w);
         mb.exec("FILL 2-3 5A", w);
         mb.exec("D 0-3", w);
-        CHECK(w.str().find("41 42 5A 5A") != std::string::npos,
-              "DEPOSIT, FILL and DUMP all work on a backplane with no processor");
+        CHECK(w.str().find("41 41 5A 5A") != std::string::npos,
+              "FILL and DUMP work on a backplane with no processor");
     }
 
     SECTION("SET CONSOLE base=octal -- the wire class reads and writes SPLIT octal");
@@ -681,12 +705,13 @@ void test_cli() {
     mon2.exec("SET mem0 fill=zero", s2);
     mon2.exec("REGION ADD mem0 type=ram at=0 size=64K", s2);
     mon2.exec("POWER ON", s2);
+    CpuCore* c = m2.cpu();
+    CHECK(c && c->pc() == 0x0000, "power-on leaves the PC at 0000");
+
     // 3C = INR A. One at FF00, one at 0100, so we can tell WHICH one ran.
     mon2.exec("DEPOSIT FF00 3C", s2);
     mon2.exec("DEPOSIT 0100 00", s2);
-
-    CpuCore* c = m2.cpu();
-    CHECK(c && c->pc() == 0x0000, "power-on leaves the PC at 0000");
+    CHECK(c->pc() == 0x0100, "DEPOSIT <addr> leaves the PC on the byte it wrote, as the panel does");
 
     std::ostringstream ex0;
     mon2.exec("EX FF00", ex0);
@@ -743,6 +768,158 @@ void test_cli() {
     // one -- it ran no bus cycle, so the CPU never saw an address -- and it went with
     // RAW (DESIGN.md 10.2). Every EXAMINE is the panel switch now, and the panel has
     // exactly one counter.
+
+    // -----------------------------------------------------------------------
+    // A HALTED PROCESSOR (#770). It fetches nothing, so on a real panel RUN, EXAMINE,
+    // EXAMINE NEXT, DEPOSIT and DEPOSIT NEXT all do nothing until RESET. The registers
+    // and flags are unaffected (Intel). The same rule holds for all three processors.
+    // -----------------------------------------------------------------------
+    SECTION("a halted processor: RUN, STEP, EXAMINE and DEPOSIT refuse until RESET");
+    for (const char* isa : {"8080", "8085", "z80"}) {
+        IrqLine irq;  // first, so it outlives the machine whose bus holds it
+        irq.id = "irq0";
+        Machine mh;
+        Monitor monH(mh);
+        std::ostringstream sh;
+        monH.exec(std::string("BOARDS ADD ") + isa + " cpu0", sh);
+        monH.exec("BOARDS ADD memory mem0", sh);
+        monH.exec("SET mem0 fill=zero", sh);
+        monH.exec("REGION ADD mem0 type=ram at=0 size=64K", sh);
+        monH.exec("BOARDS ADD fp fp0", sh);
+        monH.exec("POWER ON", sh);
+        CpuCore* ch = mh.cpu();
+        auto* fp = dynamic_cast<FrontPanelBoard*>(mh.find("fp0"));
+        const std::string who = std::string(" (") + isa + ")";
+        std::string       msg;  // CHECK takes a C string; this keeps one alive per check
+        auto W = [&](const std::string& text) { return (msg = text + who).c_str(); };
+
+        std::ostringstream ran;
+        monH.exec("DEPOSIT 100 76", ran);  // HLT
+        monH.exec("RUN 100", ran);
+        CHECK(ch->halted() && ch->pc() == 0x0101, W("set up: halted after the HLT at 0100"));
+        CHECK(ran.str().find("RESET ends the halt") != std::string::npos,
+              W("the stop line says RESET ends the halt"));
+        const bool floats = std::string(isa) != "z80";
+        CHECK(fp && fp->haltLamp(), W("HLTA is lit"));
+        CHECK(fp && (fp->addressLamps() == 0xFFFF && fp->dataLamps() == 0xFF) == floats,
+              W(floats ? "the ADDRESS and DATA lamps read the floating bus: FFFF and FF"
+                       : "a halted Z80 does not float its buses, so the lamps are not FFFF/FF"));
+
+        std::vector<uint32_t> before;
+        ch->captureRegs(before);
+        const uint8_t at200 = mh.bus.peek(0x200);
+        for (const char* cmd : {"RUN", "RUN 200", "EXAMINE 200", "EXAMINE", "STEP", "NEXT",
+                                "DEPOSIT 200 C3", "DEPOSIT C3", "DEPOSIT NEXT C3"}) {
+            std::ostringstream o;
+            monH.exec(cmd, o);
+            CHECK(o.str().find("processor halted at PC=0101 -- RESET ends the halt.") !=
+                      std::string::npos,
+                  W(std::string(cmd) + " on a halted processor refuses and says RESET"));
+            std::vector<uint32_t> now;
+            ch->captureRegs(now);
+            CHECK(now == before, W(std::string(cmd) + " leaves every register as it was"));
+        }
+        CHECK(mh.bus.peek(0x200) == at200 && mh.bus.peek(0x101) == 0x00,
+              W("and no DEPOSIT wrote anything"));
+        CHECK(fp && fp->haltLamp(), W("HLTA stays lit through all of them"));
+
+        std::ostringstream rs;
+        monH.exec("RESET", rs);
+        CHECK(!ch->halted() && ch->pc() == 0x0000, W("RESET ends the halt: PC=0000"));
+        CHECK(fp && !fp->haltLamp() && !(fp->addressLamps() == 0xFFFF && fp->dataLamps() == 0xFF),
+              W("and HLTA goes out, and the lamps stop reading the floating bus"));
+        std::ostringstream ex;
+        monH.exec("EXAMINE 200", ex);
+        CHECK(ch->pc() == 0x0200, W("after RESET, EXAMINE loads the PC again"));
+
+        // A HALT AN INTERRUPT CAN STILL END is waiting, not finished: STEP lets the time
+        // pass that the interrupt needs, and the interrupt ends the halt. Only the
+        // commands that move the PC or write refuse it.
+        std::ostringstream w;
+        monH.exec("DEPOSIT 300 FB 76", w);  // EI ; HLT
+        monH.exec("RUN 300", w);
+        CHECK(ch->halted() && ch->interruptsEnabled(), W("set up: EI ; HLT, halted"));
+        mh.bus.attach(&irq);
+        irq.raise(true);
+        std::ostringstream ra;
+        monH.exec("RUN 200", ra);
+        CHECK(ra.str().find("processor halted") != std::string::npos && ch->pc() == 0x0302,
+              W("RUN <addr> still refuses a halt that is waiting on an interrupt"));
+        std::ostringstream stp;
+        monH.exec("STEP", stp);
+        CHECK(stp.str().find("processor halted") == std::string::npos && !ch->halted(),
+              W("STEP does not refuse it, and the interrupt ends the halt"));
+        irq.raise(false);
+    }
+
+    // THE 8085's TRAP IS NON-MASKABLE: a pending TRAP ends a halt with interrupts off, so
+    // that halt is not final. "Interrupts are off" alone is not the test (haltCanEnd).
+    {
+        Machine m5;
+        Monitor mon5(m5);
+        std::ostringstream s5;
+        mon5.exec("BOARDS ADD 8085 cpu0", s5);
+        mon5.exec("BOARDS ADD memory mem0", s5);
+        mon5.exec("SET mem0 fill=zero", s5);
+        mon5.exec("REGION ADD mem0 type=ram at=0 size=64K", s5);
+        mon5.exec("POWER ON", s5);
+        mon5.exec("DEPOSIT 100 F3 76", s5);  // DI ; HLT
+        mon5.exec("RUN 100", s5);
+        CHECK(m5.cpu()->halted() && m5.debug.haltIsFinal(), "8085: DI ; HLT is final");
+        mon5.exec("SET REG TRAP=1", s5);
+        CHECK(!m5.debug.haltIsFinal(), "8085: a pending TRAP ends it, whatever INTE says");
+        std::ostringstream stp;
+        mon5.exec("STEP", stp);
+        CHECK(!m5.cpu()->halted() && m5.cpu()->pc() == 0x0024,
+              "and STEP takes the TRAP to 0024");
+    }
+
+    // -----------------------------------------------------------------------
+    // DEPOSIT, AS THE PANEL DOES IT (#772). The PC is the panel's address.
+    // -----------------------------------------------------------------------
+    SECTION("DEPOSIT <addr>, DEPOSIT NEXT and DEPOSIT <byte> move the PC as the panel does");
+    {
+        Machine md;
+        Monitor monD(md);
+        std::ostringstream sd;
+        monD.exec("BOARDS ADD 8080 cpu0", sd);
+        monD.exec("BOARDS ADD memory mem0", sd);
+        monD.exec("SET mem0 fill=zero", sd);
+        monD.exec("REGION ADD mem0 type=ram at=0 size=64K", sd);
+        monD.exec("POWER ON", sd);
+        CpuCore* cd = md.cpu();
+
+        monD.exec("DEPOSIT 200 11 22 33", sd);
+        CHECK(md.bus.peek(0x200) == 0x11 && md.bus.peek(0x201) == 0x22 &&
+                  md.bus.peek(0x202) == 0x33,
+              "DEPOSIT <addr> b0 b1 b2 writes them in order");
+        CHECK(cd->pc() == 0x0202, "and the PC ends on the last byte written");
+
+        monD.exec("DEPOSIT NEXT 44 55", sd);
+        CHECK(md.bus.peek(0x203) == 0x44 && md.bus.peek(0x204) == 0x55 && cd->pc() == 0x0204,
+              "DEPOSIT NEXT steps the PC, then writes, per byte");
+
+        monD.exec("DEPOSIT 66", sd);
+        CHECK(md.bus.peek(0x204) == 0x66 && cd->pc() == 0x0204,
+              "DEPOSIT <byte> writes at the PC and leaves it there");
+
+        std::ostringstream big;
+        monD.exec("DEPOSIT 300", big);
+        CHECK(big.str().find("byte is 8 bits") != std::string::npos && cd->pc() == 0x0204 &&
+                  md.bus.peek(0x204) == 0x66,
+              "DEPOSIT 300 (an address with its byte forgotten) is an error, and writes nothing");
+
+        std::ostringstream bad;
+        monD.exec("DEPOSIT 400 01 02 1FF", bad);
+        CHECK(bad.str().find("byte is 8 bits") != std::string::npos && md.bus.peek(0x400) == 0 &&
+                  cd->pc() == 0x0204,
+              "a bad byte anywhere in the list writes none of them");
+
+        std::ostringstream nn;
+        monD.exec("DEPOSIT NEXT", nn);
+        CHECK(nn.str().find("usage: DEPOSIT NEXT") != std::string::npos,
+              "DEPOSIT NEXT needs a byte");
+    }
 
     // -----------------------------------------------------------------------
     // NEXT -- STEP that runs OVER a CALL/RST instead of into it. It is a temporary
@@ -2798,6 +2975,7 @@ void test_achieved_hz() {
         // wholesale, and it can do it with the window still open -- so a name captured
         // once would leave the window claiming to be a machine that no longer exists.
         mt.name = "cuter";
+        monT.exec("RESET", st);  // the HLT holds until RESET (#770)
         monT.exec("EX 0100", st);
         monT.exec("RUN", st);
         CHECK(disp.title == "cuter", "and the next run re-publishes it, so a swap is caught");
@@ -2837,6 +3015,7 @@ void test_achieved_hz() {
 
         // EVERY stop of a RUN, not just the close box: a breakpoint and a HLT leave you
         // at the same prompt with the same window in front of it, and this one was a HLT.
+        monF.exec("RESET", sf);  // the HLT holds until RESET (#770)
         monF.exec("EX 0100", sf);
         monF.exec("RUN", sf);
         CHECK(disp.yields == 2, "and again on the next stop -- it is not a once-per-session thing");
@@ -2845,6 +3024,7 @@ void test_achieved_hz() {
         // run loop -- it drives the debugger an instruction at a time and never takes
         // the terminal, pumps a board or polls the window -- so there is no moment at
         // which the window could have taken the keyboard for it to be given back.
+        monF.exec("RESET", sf);
         monF.exec("STEP", sf);
         CHECK(disp.yields == 2, "a STEP does not run the guest, so it has nothing to give back");
 
@@ -2852,6 +3032,7 @@ void test_achieved_hz() {
         // on every stop; what changes is the answer the display gives, which is where
         // the policy belongs -- the run loop has no business knowing about windows.
         Display::setFocusPolicy(true);
+        monF.exec("RESET", sf);
         monF.exec("EX 0100", sf);
         monF.exec("RUN", sf);
         CHECK(disp.yields == 3, "the run loop asks regardless -- the display decides");
@@ -3753,6 +3934,7 @@ void test_achieved_hz() {
         bmon.exec("CONNECT sio0:a null", setup);
         {
             std::ostringstream out;
+            bmon.exec("RESET", out);  // the first RUN left it halted; only RESET ends that (#770)
             bmon.exec("EX 0", out);
             bmon.exec("RUN", out);
             CHECK(out.str().find("(no console connected)") != std::string::npos,

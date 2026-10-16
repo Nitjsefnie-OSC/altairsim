@@ -1004,6 +1004,17 @@ bool sliceStops(StopReason w) {
     }
 }
 
+// A HALTED PROCESSOR (#770), as the monitor's RUN and STEP treat it: `from` would move a
+// PC that the front panel cannot move, and a run of a halt that nothing can end would only
+// count idle T-states. Returns the refusal, or empty when the call may go on.
+std::string haltRefusal(Machine& m, CpuCore* cpu, bool movesPc) {
+    if (!cpu->halted()) return {};
+    if (!movesPc && !m.debug.haltIsFinal()) return {};
+    char at[8];
+    std::snprintf(at, sizeof at, "%04X", (unsigned)cpu->pc());
+    return Debugger::haltedRefusal(at);
+}
+
 // The monitor's stop line for SET BUS UNCLAIMED=HALT, so the text says WHICH port.
 std::string unclaimedLine(const RunResult& r) {
     char b[96];
@@ -1477,6 +1488,8 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         std::string     err;
         ScriptedStream* con = console(m, sess, err);
         if (args.has("input") && !con) return textResult(err, true);
+        if (std::string h = haltRefusal(m, cpu, args.has("from")); !h.empty())
+            return textResult(h, true);
 
         if (args.has("from")) cpu->setPc((uint16_t)args.at("from").integer());
         if (args.has("input")) con->feed(args.at("input").str());
@@ -1547,6 +1560,8 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         if (!con) return textResult(err, true);
         CpuCore* cpu = m.cpu();
         if (!cpu) return textResult("no CPU in this machine", true);
+        if (std::string h = haltRefusal(m, cpu, args.has("from")); !h.empty())
+            return textResult(h, true);
 
         if (args.has("from")) cpu->setPc((uint16_t)args.at("from").integer());
         if (args.has("input")) con->feed(args.at("input").str());
@@ -1787,6 +1802,7 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
     if (name == "step") {
         CpuCore* c = m.cpu();
         if (!c) return textResult("no CPU in this machine", true);
+        if (std::string h = haltRefusal(m, c, false); !h.empty()) return textResult(h, true);
         uint64_t n = args.has("count") ? (uint64_t)args.at("count").integer() : 1;
         if (n == 0) n = 1;
 

@@ -15,7 +15,8 @@
 #
 # WITH NO DISK MOUNTED IT HALTS, which is the honest default (an interface shipped with a
 # cable, not with your floppy): the PROM issues its read, the drive reports NOT READY, and
-# the PROM's `JZ` falls through to `HLT`. Mount a disk and RUN 0 again.
+# the PROM's `JZ` falls through to `HLT`. Mount a disk, then RESET and RUN 0: only RESET
+# ends a HLT, and it re-arms the PROM at 0000.
 
 [machine]
 name    = "tarbell"

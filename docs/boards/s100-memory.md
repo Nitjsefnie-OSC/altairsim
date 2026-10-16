@@ -327,7 +327,7 @@ And the trap in the other direction: *"my program vanished when I hit reset"* re
 
 ## Verification
 
-These run in a machine with no CPU card in it, where **the monitor is the bus master** — `DEPOSIT` and `DUMP` originate real bus cycles with nothing else in the machine, exactly as the Altair front panel did. That is not a workaround; it is a free early test of the `BusMaster` abstraction (§3).
+These run in a machine with no CPU card in it, where **the monitor is the bus master** — `FILL` and `DUMP` originate real bus cycles with nothing else in the machine. (`DEPOSIT` is the front panel's switch, and like the panel it deposits through the processor, so step 6 adds a CPU board.) That is not a workaround; it is a free early test of the `BusMaster` abstraction (§3).
 
 **RAM and the floating bus**
 
@@ -339,7 +339,7 @@ These run in a machine with no CPU card in it, where **the monitor is the bus ma
 **ROM regions**
 
 5. A `rom` region at FF00 from a 256-byte file decodes **FF00–FFFF and nothing else**; `DUMP FF00` shows the image.
-6. `DEPOSIT FF00 41` (a bus write) is **not decoded** — `DUMP FF00` is unchanged, and the monitor **says so** rather than silently succeeding.
+6. With a CPU board added, `DEPOSIT FF00 41` (a bus write) is **not decoded** — `DUMP FF00` is unchanged, and the monitor **says so** rather than silently succeeding.
 7. `LOAD other.hex RAW mem0` **does** change it. The operator has a PROM burner; the guest does not.
 8. An **empty socket** between two ROM regions (F800–FEFF above) reads `FF`, exactly like unpopulated RAM. One mechanism.
 9. A short image decodes a short range: a 2048-byte file at F000 owns F000–F7FF, and F800 is not this board's problem.

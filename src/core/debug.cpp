@@ -21,6 +21,16 @@ void Debugger::requestStop() { g_stopRequest.store(true); }
 void Debugger::clearStopRequest() { g_stopRequest.store(false); }
 bool Debugger::stopRequested() { return g_stopRequest.load(); }
 
+bool Debugger::haltIsFinal() {
+    CpuCore* cpu = m_.cpu();
+    if (!cpu || !cpu->halted()) return false;
+    return !cpu->haltCanEnd(m_.bus.intPending(), m_.clock.queued() != 0);
+}
+
+std::string Debugger::haltedRefusal(const std::string& at) {
+    return "processor halted at PC=" + at + " -- RESET ends the halt.";
+}
+
 // See SigintGuard in debug.h for the whole reasoning, including why the second ^C
 // has to kill. `g_prevSigint` is read only by the handler and written only when a
 // guard is constructed or destroyed, which never happens while one is in flight.
@@ -817,7 +827,13 @@ RunResult Debugger::run(uint64_t maxSteps, bool clearPending) {
         // The clock knows better: if anything at all is still scheduled, this
         // machine has a future. And it terminates -- a queue with nothing in it is
         // the honest definition of a machine that will never do anything again.
-        if (s.status == RunStatus::Halted && !m_.bus.intPending() && m_.clock.queued() == 0) {
+        //
+        // The queue is drained even after DI, when no interrupt can end the halt: the
+        // boards still have work in flight -- a UART's last characters, a disk command
+        // finishing -- and stopping now would freeze it half done. Once it is empty, the
+        // halt is final when the processor will take nothing: interrupts off (even with a
+        // board pulling pINT), or nobody pulling it (haltIsFinal, the core's haltCanEnd).
+        if (s.status == RunStatus::Halted && m_.clock.queued() == 0 && haltIsFinal()) {
             r.why = StopReason::Halted;
             break;
         }

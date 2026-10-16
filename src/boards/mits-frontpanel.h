@@ -145,12 +145,18 @@ public:
     // Any RUN clears the halt latch: HLTA cannot outlive the halt it acknowledged.
     void setRunning(bool running) override {
         running_ = running;
-        if (running) halted_ = false;
+        if (running) halted_ = floated_ = false;
     }
 
     // THE HLTA LAMP. The CPU stopped on a HLT; remember it so pump() can light the panel's
     // halt-acknowledge indicator. Fanned from Machine::setHalted, cleared by any RUN above.
-    void setHalted(bool halted) override { halted_ = halted; }
+    // While an 8080 is halted its buses float, and the ADDRESS and DATA lamps read the bus
+    // pull-ups: all lit (tested on a real panel, #770). The latch below is left alone, so
+    // the next real cycle shows again.
+    void setHalted(bool halted, bool busFloats) override {
+        halted_  = halted;
+        floated_ = halted && busFloats;
+    }
 
     // ---- THE GRAPHICAL PANEL BRIDGE -- one serial-style connector, "gui". --------
     //
@@ -209,8 +215,10 @@ public:
     uint8_t sense() const { return (uint8_t)(sw_ >> 8); }
     void setSense(uint8_t v) { sw_ = (uint16_t)((sw_ & 0x00FF) | ((uint16_t)v << 8)); }
 
-    uint16_t addressLamps() const { return addrLeds_; }
-    uint8_t dataLamps() const { return dataLeds_; }
+    // The last cycle latched -- or, while a halted 8080 floats the buses, the pull-ups.
+    uint16_t addressLamps() const { return floated_ ? 0xFFFF : addrLeds_; }
+    uint8_t dataLamps() const { return floated_ ? 0xFF : dataLeds_; }
+    bool haltLamp() const { return halted_; }  // HLTA
 
     // The 8080 status word off the last bus cycle (Status8080 in bus.h), forwarded
     // verbatim -- NOT lamp bits. The graphical bridge renders it to the status LEDs
@@ -253,6 +261,8 @@ private:
     // True = the CPU stopped on a HLT = HLTA lit; cleared by any RUN (setRunning true).
     // Transient SESSION state like running_, deliberately NOT serialized.
     bool halted_ = false;
+    // Halted with the buses floating (setHalted): the ADDRESS and DATA lamps read FFFF/FF.
+    bool floated_ = false;
 
     // ---- The line to the graphical panel bridge. -------------------------------
     //

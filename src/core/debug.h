@@ -328,6 +328,18 @@ public:
     // pace a clock.
     static bool stopRequested();
 
+    // HALTED FOR GOOD: the processor executed a HLT and nothing but RESET can end it --
+    // no interrupt it would take is pending, and none can arrive (interrupts are off, or
+    // no board is pulling pINT and the clock has nothing scheduled). The run loop stops
+    // here once the clock queue has drained, and the monitor's RUN, NEXT and STEP refuse:
+    // a run would only count idle T-states. False when there is no CPU or it is not halted.
+    bool haltIsFinal();
+
+    // The one line every panel command prints when it refuses a halted processor (#770):
+    // the front panel's RUN, EXAMINE and DEPOSIT all do nothing while it is halted. `at`
+    // is the PC, already formatted by the caller.
+    static std::string haltedRefusal(const std::string& at);
+
 private:
     bool armObserver();
     void disarmObserver();

@@ -102,8 +102,9 @@ grace is why `EI / RET` at the end of a handler is safe.
 
 `HLT` parks the processor but **time keeps passing**, because the board that will
 wake it is clocked by those very T-states. `RUN` stops on a `HLT` only when nothing
-is pulling `pINT` — a halted machine with a live interrupt source is *waiting*,
-not finished, and it says so.
+can end it: interrupts are off, or nothing is pulling `pINT` and no board has an
+event scheduled. A halted machine with a live interrupt source is *waiting*, not
+finished, and it says so. After `DI`, only RESET ends a `HLT`.
 
 ## T-states are load-bearing
 

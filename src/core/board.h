@@ -610,7 +610,14 @@ public:
     // operator-level machine-control signal, NOT a bus cycle: the emulator runs HLT
     // atomically, so no snooped cycle carries HLTA. Cleared when a RUN starts (setRunning
     // true). Most boards have no such lamp and ignore it.
-    virtual void setHalted(bool halted) { (void)halted; }
+    //
+    // `busFloats`: the processor floats the address and data buses while halted (the 8080
+    // and the 8085 do; CpuCore::haltFloatsBus), so a board with lamps on the bus reads its
+    // pull-ups -- every lamp lit -- rather than the last cycle it latched.
+    virtual void setHalted(bool halted, bool busFloats) {
+        (void)halted;
+        (void)busFloats;
+    }
 
     // THE STREAM ON ONE OF THIS CARD'S SERIAL UNITS, or null for a card that has no
     // such line (which is most of them). It is the connector on the back panel: the

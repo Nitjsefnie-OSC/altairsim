@@ -126,6 +126,19 @@ public:
     virtual bool halted() const = 0;
     virtual bool interruptsEnabled() const = 0;
 
+    // CAN AN INTERRUPT STILL END THIS HALT? Asked only while halted(). A halted processor
+    // fetches nothing, so the front panel's RUN, EXAMINE and DEPOSIT do nothing; only an
+    // interrupt the processor will take, or RESET, ends it. `pint` is the bus's interrupt
+    // line now; `eventsQueued` says a board still has something scheduled, which may raise
+    // it later. Each core answers for its own interrupt system -- the 8085's TRAP is taken
+    // whatever INTE says, so "interrupts are off" alone is not the answer.
+    virtual bool haltCanEnd(bool pint, bool eventsQueued) const = 0;
+
+    // Does this processor float the address and data buses while halted? The 8080 and the
+    // 8085 do (Intel's manuals), so a front panel reads its pull-ups: every lamp lit. A
+    // halted Z80 keeps running NOP M1 cycles and refresh, so its buses do not float.
+    virtual bool haltFloatsBus() const = 0;
+
     // SNAPSHOT/RESTORE (DESIGN.md 13). Every architectural register AND the hidden
     // micro-state that registers() does not expose -- the EI-after-next latch, the
     // mid-INTA fetch flag, and on a Z80 the WZ/MEMPTR latch, IFF2, the interrupt

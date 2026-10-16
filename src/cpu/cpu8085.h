@@ -67,6 +67,15 @@ public:
     void setPc(uint16_t v) override { pc_ = v; }
     bool halted() const override { return halted_; }
     bool interruptsEnabled() const override { return ie_; }
+    // TRAP is non-maskable, so a pending TRAP ends the halt with INTE off. INTR and an
+    // unmasked, pending RST n.5 need INTE. (The TRAP and RST n.5 pins are not wired to
+    // boards yet -- #347 -- so only their latches can be pending.)
+    bool haltCanEnd(bool pint, bool eventsQueued) const override {
+        if (ptrap_) return true;
+        return ie_ && (pint || eventsQueued || (p75_ && !m75_) || (p65_ && !m65_) ||
+                       (p55_ && !m55_));
+    }
+    bool haltFloatsBus() const override { return true; }
 
     // The flag byte, as PUSH PSW pushes it: S Z K AC 0 P V CY. The 8085 puts its two
     // computed condition bits K (bit 5) and V (bit 1) where the 8080 keeps constants.

@@ -268,15 +268,52 @@ register line and the instruction at the new `PC`. That instruction is the one t
 An `EXAMINE` with no address shows the next byte, without the register line. This
 is EXAMINE NEXT on the front panel.
 
+`DEPOSIT` is the DEPOSIT and DEPOSIT NEXT switches. The program counter is its address, as on
+the front panel:
+
+- `DEPOSIT <byte>` writes the byte at the `PC`. The `PC` does not change.
+- `DEPOSIT NEXT <bytes>` adds 1 to the `PC` and then writes, for each byte.
+- `DEPOSIT <addr> <bytes>` puts `<addr>` in the `PC`, as `EXAMINE` does, and writes the first
+  byte. It then does a `DEPOSIT NEXT` for each byte after the first.
+
+After a `DEPOSIT`, the `PC` is on the last byte written. To run the bytes, give the start
+address: `RUN <addr>`, or `EXAMINE <addr>` and then `RUN`.
+
 `DEPOSIT` runs a **real bus write**. If no board decodes the address, `DEPOSIT` tells you so.
-It does not tell you that it stored the byte when no board stored it.
+It does not tell you that it stored the byte when no board stored it. A byte is `00`-`FF`. If a
+value is larger, `DEPOSIT` writes none of the bytes. For example, `DEPOSIT 100` with no byte is
+an error, because `100` is too large for a byte.
+
+`EXAMINE` and `DEPOSIT` need a processor, as the switches do. On a machine with no processor,
+use `DUMP` to read memory, and `EDIT`, `FILL` or `LOAD` to write it.
 
 ```
-EXAMINE 2C00      one byte in hex, ASCII and bits, then the register line
-                  and the instruction at the new PC, ready for STEP
-EXAMINE           the next byte, without the register line (EXAMINE NEXT)
-DEPOSIT 100 C3 00 2C
+EXAMINE 2C00          one byte in hex, ASCII and bits, then the register line
+                      and the instruction at the new PC, ready for STEP
+EXAMINE               the next byte, without the register line (EXAMINE NEXT)
+DEPOSIT 100 C3 00 2C  JMP 2C00 at 0100; the PC is now 0102
+DEPOSIT NEXT 76       HLT at 0103; the PC is now 0103
 ```
+
+### A halted processor
+
+A processor that runs a `HLT` stops fetching instructions. Only an interrupt that the processor
+accepts, or a reset, ends the halt. On a real front panel, RUN, EXAMINE, EXAMINE NEXT, DEPOSIT
+and DEPOSIT NEXT do nothing while the processor is halted. The monitor does the same, and it
+tells you why:
+
+```
+altairsim> RUN 200
+processor halted at PC=0101 -- RESET ends the halt.
+```
+
+- `RUN <addr>`, `EXAMINE` and `DEPOSIT` refuse while the processor is halted.
+- `RUN`, `STEP` and `NEXT` refuse a `HLT` that nothing can end. If interrupts are on and a board
+  can still interrupt (for example, the guest ran `EI` and then `HLT`), they continue. The
+  interrupt ends the halt.
+- `RESET` ends the halt. The `PC` goes to `0000`.
+- The registers and flags do not change while the processor is halted.
+- `DUMP` and `DISASM` read memory at any time, and do not end the halt.
 
 `EDIT` is an interactive `DEPOSIT`. Use it to change a series of bytes, without typing the
 address for each byte. The prompt shows an address and the byte at that address. At the prompt,

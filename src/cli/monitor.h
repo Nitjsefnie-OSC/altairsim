@@ -173,6 +173,17 @@ private:
     // starts here, and none of them assume the machine has a processor -- because
     // a backplane without one is a machine you can build and the one 1a ran.
     CpuCore* needCpu(std::ostream& err);
+
+    // A HALTED PROCESSOR FETCHES NOTHING (#770), so the front panel's RUN, EXAMINE and
+    // DEPOSIT do nothing until RESET. True -- with the refusal printed and the command
+    // failed -- when the panel command must not act. `finalOnly`: refuse only a halt that
+    // nothing can end (a bare RUN, NEXT or STEP still waits on an EI/HLT for its
+    // interrupt); otherwise refuse any halt (a command that moves the PC or writes).
+    bool refuseHalted(CpuCore* cpu, std::ostream& out, bool finalOnly);
+    // The processor's interrupts are off -- for the stop line of a final HLT.
+    bool intsOff();
+    // After RESET or RESET CPU: HLTA out, and the bus lamps no longer floating.
+    void panelAfterReset();
     void showRegs(std::ostream& out);
 
     // The "C0Z0... A=00 BC=0000 ... PC=0000  <insn>" status line -- flags clustered, then

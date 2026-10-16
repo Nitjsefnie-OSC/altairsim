@@ -47,7 +47,7 @@ accumulator with its flags.
 | IX | 16 | Index register (base for `(IX+d)` indexed addressing) |
 | IY | 16 | Index register (base for `(IY+d)` indexed addressing) |
 | I  | 8 | Interrupt vector page — high 8 bits of the Mode 2 vector address |
-| R  | 8 | Memory refresh counter — low 7 bits auto-increment after each opcode fetch; bit 7 holds its programmed value. Programmer may load/read it (`LD R,A` / `LD A,R`) but it is normally left to hardware |
+| R  | 8 | Memory refresh counter — low 7 bits auto-increment after each opcode fetch; bit 7 holds its programmed value. Programmer may load/read it (`LD R,A` / `LD A,R`) but it is normally left to hardware. During refresh (T3–T4 of every M1 cycle) R goes out on the low half of the address bus and **I on the high eight bits**, with RFSH active |
 
 ### Bank-swap semantics
 
@@ -491,6 +491,39 @@ pushes PC, sets IFF1=0 (IFF2 preserved), and jumps to fixed address **0066h**.
 
 `EI` delays the enable by one instruction; a pending INT is not accepted until
 after the instruction following `EI` (important so `EI; RET` completes the RET).
+
+### HALT
+
+From the manual's HALT section:
+
+> When a software HALT instruction is executed, the CPU executes NOPs until an interrupt
+> is received (either a nonmaskable or a maskable interrupt while the interrupt flip-flop is
+> enabled). The two interrupt lines are sampled with the rising clock edge during each T4
+> state as depicted in Figure 11. If a nonmaskable interrupt is received or a maskable
+> interrupt is received and the interrupt enable flip-flop is set, then the HALT state is
+> exited on the next rising clock edge. The following cycle is an interrupt acknowledge
+> cycle corresponding to the type of interrupt that was received. If both are received at
+> this time, then the nonmaskable interrupt is acknowledged because it is the highest
+> priority. The purpose of executing NOP instructions while in the HALT state is to keep
+> the memory refresh signals active. Each cycle in the HALT state is a normal M1 (fetch)
+> cycle except that the data received from the memory is ignored and an NOP instruction is
+> forced internally to the CPU. The HALT acknowledge signal is active during this time
+> indicating that the processor is in the HALT state.
+
+So, unlike the 8080 and 8085, a halted Z80 does **not** float its buses: it keeps running M1
+cycles, ignores the byte it fetches, and keeps refresh (and R) going. Only NMI, INT with IFF1
+set, or RESET ends the halt.
+
+The bus during a halt follows from the M1 cycle, because every halt cycle is one. The M1 timing
+figure puts the **PC** on A15–A0 in T1–T2 and the **refresh address** in T3–T4: the lower seven
+bits of the address bus carry R, and "the contents of the I Register are placed on the upper
+eight bits of the address bus" (R register description). The data bus is sampled on the rising
+edge of T3, and no RD is generated in the refresh period. So the address bus never floats while
+halted.
+
+Which PC value the halt's fetch puts out is not stated outright. Figure 11 (HALT Exit) carries
+the note: "The HALT instruction is repeated during the memory cycle shown in Figure 11." An
+interrupt returns to the instruction after the HALT.
 
 ## Reset Behavior
 
