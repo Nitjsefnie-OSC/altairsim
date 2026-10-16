@@ -124,7 +124,9 @@ std::vector<BoardType> boardTypes() {
     };
 }
 
-std::unique_ptr<Board> makeBoard(const std::string& type) {
+std::unique_ptr<Board> makeBoard(const std::string& typeName) {
+    // A board type is a name the operator typed, so `2SIO` is `2sio` (core/board.h).
+    const std::string type = lowerAscii(typeName);
     if (type == "memory") return std::make_unique<MemoryBoard>();
     if (type == "bankmem") return std::make_unique<MemBankBoard>();
     if (type == "8080") return std::make_unique<Cpu8080Board>();

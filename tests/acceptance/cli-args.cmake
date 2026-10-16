@@ -54,3 +54,27 @@ run_in("${work}/spaced" rc out err "my machine.toml" -x "SHOW MACHINE")
 if(NOT rc EQUAL 0 OR NOT out MATCHES "name[ \t]+spaced")
   fail("the quoted name did not load the file" "${out}" "${err}")
 endif()
+
+# ---- 4. An option name and an option's word are not case-sensitive. ----
+run_in("${work}/plain" rc out err --VERSION)
+if(NOT rc EQUAL 0 OR NOT out MATCHES "^AltairSim ")
+  fail("--VERSION is not --version" "${out}" "${err}")
+endif()
+run_in("${work}/plain" rc out err -X "SHOW MACHINE" DEFAULT)
+if(NOT rc EQUAL 0 OR NOT out MATCHES "name[ \t]+default")
+  fail("-X is not -x, or DEFAULT is not the built-in default" "${out}" "${err}")
+endif()
+# --mirror PTY is the pty sink, not a port number. With an empty stdin the MCP session ends
+# at once; on Windows the pty is refused by name. Either way nothing reads PTY as a port.
+file(WRITE "${work}/empty.jsonl" "")
+execute_process(
+  COMMAND           "${SIM}" --Mirror PTY --MCP
+  WORKING_DIRECTORY "${work}/plain"
+  INPUT_FILE        "${work}/empty.jsonl"
+  RESULT_VARIABLE   rc
+  OUTPUT_VARIABLE   out
+  ERROR_VARIABLE    err
+  TIMEOUT           30)
+if(err MATCHES "TCP port" OR NOT err MATCHES "pty|/tmp/altairsim")
+  fail("--Mirror PTY was not read as --mirror pty" "${out}" "${err}")
+endif()

@@ -512,6 +512,11 @@ void test_versafloppy() {
         out(b, CMD, 0x88);  // Read Sector on side B of drive 1
         for (int i = 0; i < 128; ++i) in(b, DAT);
         CHECK((in(b, CMD) & 0x10) == 0, "media=8sd-ds (f1, two sides): side B reads, no RNF");
+
+        // ...in any case (#761). `8SD-DS` passed the schema and then failed the mount with
+        // "unknown media", because the board looked the name up exactly.
+        KeyValues kvUp = {{"unit", "2"}, {"media", "8SD-DS"}, {"mount", "ramp.dsk"}};
+        CHECK(b.loadSubUnit("drive", kvUp, err), ("media=8SD-DS mounts: " + err).c_str());
     }
 
     // ---- THE WRONG DENSITY IS RECORD NOT FOUND (issue #691) ----

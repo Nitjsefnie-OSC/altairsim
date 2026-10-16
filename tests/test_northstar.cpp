@@ -841,6 +841,11 @@ void test_northstar() {
         CHECK(g.err.find("media") != std::string::npos && g.err.find("179200") != std::string::npos,
               "and the error names the sizes and the `media` key");
 
+        // `media` in any case forces the format (#761): `DD` once matched no name by exact
+        // compare, so the probe fell back to the size and refused the same 1000 bytes.
+        CHECK(g.b->loadSubUnit("drive", {{"unit", "0"}, {"media", "DD"}, {"mount", "a.nsi"}}, g.err),
+              "media = \"DD\" forces dd on an image whose size says nothing");
+
         CHECK(g.mount("drive0", image(kDD), /*ro=*/true), "a write-protected diskette mounts");
         ddReady(g);
         CHECK((ddB(g) & DBWP) != 0, "and WP is in B-status");

@@ -198,6 +198,10 @@ Two details worth stealing:
   in this codebase, on the memory board, until this manual went looking.
 - **We never call `decodeChanged()`** in the `port` setter. The property layer calls it for us
   after any successful set, precisely so that a board author cannot forget.
+- **An `Enum` value reaches you in the schema's own spelling.** The operator may type
+  `media = "8IN"`; `validate()` (`src/core/value.cpp`) matches it in any case and replaces it
+  with the choice as you wrote it, `8in`, before your setter or `addSubUnit()` sees it. Compare
+  with `==` against your own choice strings, and `CONFIG SAVE` writes them back unchanged.
 
 ### What it tells the operator
 

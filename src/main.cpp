@@ -179,7 +179,10 @@ int main(int argc, char** argv) {
     };
 
     for (size_t i = 0; i < a.size(); ++i) {
-        const std::string& s = a[i];
+        // An option name is a word the operator typed, so `--MCP` is `--mcp`. `s` itself
+        // stays as given: a machine name or a file path is not ours to fold.
+        const std::string& given = a[i];
+        const std::string  s     = given.size() > 1 && given[0] == '-' ? lowerAscii(given) : given;
         if (s == "-h" || s == "--help") {
             usage(std::cout);
             return 0;
@@ -197,9 +200,10 @@ int main(int argc, char** argv) {
             // Accept a bare port for convenience: `--mirror 2323` is `socket:2323`.
             // `pty` and `pty:LINK` name the pseudo-terminal sink, and `serial:DEVICE` a real
             // port (issue #683).
-            const bool named = a[i].rfind("socket:", 0) == 0 || a[i].rfind("pty", 0) == 0 ||
-                               a[i].rfind("serial:", 0) == 0;
-            mirror = named ? a[i] : "socket:" + a[i];
+            const std::string m     = canonicalEndpoint(a[i]);
+            const bool        named = m.rfind("socket:", 0) == 0 || m.rfind("pty", 0) == 0 ||
+                               m.rfind("serial:", 0) == 0;
+            mirror = named ? m : "socket:" + m;
         } else if (s == "--log") {
             if (!need(i, "a file (--log session.log)")) return 2;
             log = a[i];
@@ -223,7 +227,7 @@ int main(int argc, char** argv) {
             if (!need(i, "a setting (--set \"cpu0 clock_hz=2000000\")")) return 2;
             sets.push_back(a[i]);
         } else if (s.size() > 1 && s[0] == '-') {
-            std::cerr << "unknown option " << s << "\nTry: altairsim --help\n";
+            std::cerr << "unknown option " << given << "\nTry: altairsim --help\n";
             return 2;
         } else {
             if (!positional.empty()) {

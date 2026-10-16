@@ -660,6 +660,18 @@ void test_dcdd() {
         CHECK(b2.loadSubUnit("drive", kv, err), "and it loads straight back into a fresh board");
         CHECK(b2.units()[0].state == "m.dsk", "with the same disk in the same drive");
 
+        // ANY CASE, STORED IN THE SCHEMA'S SPELLING (#761). `8IN` passed the schema, was
+        // kept as typed, matched no format by exact compare, and the drive got fdc8mb.
+        DcddBoard b3;
+        b3.attachClock(&c);
+        CHECK(b3.loadSubUnit("drive", {{"unit", "0"}, {"mount", "m.dsk"}, {"media", "FDC8MB"}}, err),
+              "media = \"FDC8MB\" loads");
+        bool saved = false;
+        for (const auto& t : b3.subUnits())
+            for (const auto& f : t.fields)
+                if (f.key == "media") saved = f.text == "fdc8mb";
+        CHECK(saved, "and the drive holds `fdc8mb`, the format's own name, for CONFIG SAVE");
+
         setMediaResolver(openHostFile);  // put the real filesystem back
     }
 

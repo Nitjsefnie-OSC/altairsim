@@ -131,6 +131,8 @@ struct Property {
 
 // Generic validation, used identically by SET, the TOML loader, and MCP.
 // This is why those three cannot disagree about what is legal.
-bool validate(const Property& p, const Value& v, std::string& err);
+// An Enum value is matched in any case and REPLACED by the schema's own spelling, so a
+// setter, a board's sub-unit table and CONFIG SAVE only ever see `8in`, never `8IN` (#761).
+bool validate(const Property& p, Value& v, std::string& err);
 
 } // namespace altair

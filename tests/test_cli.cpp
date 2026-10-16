@@ -605,6 +605,36 @@ void test_cli() {
         CHECK(runOct("EX 40").compare(0, 6, "0040  ") == 0, "base=hex restores four-hex-digit addresses");
     }
 
+    SECTION("cli: a value, a board type and an endpoint are words in any case (#761)");
+    {
+        // An enum value was matched in any case and then compared exactly by the board:
+        // `fill=ZERO` was accepted, echoed, and left the board on `random`.
+        Machine mc;
+        Monitor monc(mc);
+        std::ostringstream sc;
+        monc.exec("BOARDS ADD Memory mem0", sc);
+        CHECK(mc.find("mem0") && mc.find("mem0")->type() == "memory",
+              "BOARDS ADD Memory fits a `memory` board");
+        monc.exec("SET mem0 fill=ZERO", sc);
+        std::ostringstream show;
+        monc.exec("SHOW mem0", show);
+        const std::string t = show.str();
+        const size_t      f = t.find("  fill ");
+        CHECK(f != std::string::npos &&
+                  t.substr(f, t.find('\n', f) - f).find(" zero ") != std::string::npos,
+              "SET mem0 fill=ZERO sets fill to zero");
+
+        monc.exec("BOARDS ADD 2SIO sio0", sc);
+        Board* sio = mc.find("sio0");
+        CHECK(sio && sio->type() == "2sio", "BOARDS ADD 2SIO fits a `2sio` board");
+        monc.exec("CONNECT sio0:a LoopBack", sc);
+        bool loop = false;
+        if (sio)
+            for (const auto& u : sio->units())
+                if (u.name == "a") loop = u.state == "loopback";
+        CHECK(loop, "CONNECT sio0:a LoopBack connects the loopback");
+    }
+
     SECTION("a hex operand that starts with 0B is hex; % is the binary marker (#730)");
     {
         Machine mh;

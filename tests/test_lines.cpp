@@ -472,6 +472,24 @@ void test_lines() {
 
         CHECK(resolveEndpoint("loopback", err) != nullptr, "loopback still resolves");
 
+        // ANY CASE for the grammar's own words; never for a path, host or device.
+        CHECK(resolveEndpoint("LoopBack", err) != nullptr, "LoopBack is loopback");
+        CHECK(canonicalEndpoint("IN:Tape.TAP?CPS=300,Out:Punch.TAP") ==
+                  "in:Tape.TAP?cps=300,out:Punch.TAP",
+              "in:/out: and their options fold; the two paths keep their case");
+        CHECK(canonicalEndpoint("Scripted|Cap.LOG?FMT=Text") == "scripted|Cap.LOG?fmt=text",
+              "a log file sink keeps its name; its options fold");
+        CHECK(canonicalEndpoint("null|PTY:/tmp/Link") == "null|pty:/tmp/Link",
+              "a pty mirror sink folds its word, not its link");
+        CHECK(canonicalEndpoint("null|Console") == "null|Console",
+              "a log file called Console is a file, not the console");
+        CHECK(canonicalEndpoint("Ptylog") == "Ptylog", "a word that only STARTS like pty is not pty");
+        CHECK(canonicalEndpoint("SERIAL:/dev/tty.USB0") == "serial:/dev/tty.USB0",
+              "a serial device keeps its case");
+        CHECK(canonicalEndpoint("Telnet:Bbs.Example:23?Banner=Off") ==
+                  "telnet:Bbs.Example:23?banner=off",
+              "a host keeps its case");
+
         CHECK(resolveEndpoint("socket:", err) == nullptr, "socket: with no port is an error");
         CHECK(!err.empty(), "...and it says so");
 
@@ -494,6 +512,12 @@ void test_lines() {
         if (s)
             CHECK(s->describe() == "socket:" + std::to_string(free),
                   "and describes itself as what was typed");
+        s.reset();
+        s = resolveEndpoint("SOCKET:" + std::to_string(free), err);
+        CHECK(s != nullptr, ("SOCKET:PORT binds too: " + err).c_str());
+        if (s)
+            CHECK(s->describe() == "socket:" + std::to_string(free),
+                  "and describes itself in the grammar's own spelling");
     }
 
     SECTION("rxBytes -- the chip counts bytes it HANDS THE GUEST, and only those");
