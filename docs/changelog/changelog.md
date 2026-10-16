@@ -60,6 +60,16 @@ lines. While CP/M was at `A>`, the file had 91 of them. Thus `tail -f` showed th
 the lines before a hang or a crash were lost. Now `tail -f` in a second window shows each line
 as the guest makes it.
 
+**When the machine stops, the console now gets the keyboard back on Windows and Linux, and
+with `focus = true`.** Before, only macOS gave the keyboard back, and only with `focus = false`.
+On Linux and Windows the program did nothing at a stop. For example, on a Sol-20 you typed in
+the video window and then clicked its close box. The keys that you typed at `altairsim>` then
+went to the video window. The Sol-20 sets `focus = true`, so this also happened on macOS. A
+breakpoint or a `HLT` did the same.
+Now the `focus` setting has an effect only when a window opens. At each stop, the console gets
+the keyboard back on macOS, on Windows and on Linux with X11. On Wayland, one program cannot
+give the keyboard to a different program, so you click in the console.
+
 **On a Mac with a Retina screen, the text in a video window no longer changes between normal
 and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
 to fit. That scaling made all of the text change between a normal look and a bold look. The

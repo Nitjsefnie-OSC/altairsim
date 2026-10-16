@@ -339,23 +339,29 @@ public:
     // FOCUS ONLY. The window is not closed, hidden or moved: the machine is still
     // powered, the last frame is still worth looking at, and RUN resumes into it.
     //
+    // EVERY STOP, WHATEVER focusPolicy() SAYS. That setting is about the window as it
+    // opens; at a stop the next thing to type is a monitor command (issue #766).
+    //
     // The run loop calls it wherever it hands the terminal back, on every host. The
-    // base does nothing, so headless builds and tests never notice -- and on X11,
-    // Wayland and Windows the platform layer does nothing either, because there is no
-    // application-wide foreground to give up (platform/foreground.h).
+    // base does nothing, so headless builds and tests never notice. The SDL host works
+    // on macOS, Windows and X11; on Wayland one program cannot give the keyboard to
+    // another's window, so it does nothing there (platform/foreground.h).
     virtual void yieldFocus() {}
 
     // ---- WHICH WINDOW THE OPERATOR IS EXPECTED TO BE TYPING IN ----
     //
-    // Off by default: the terminal keeps the keyboard, the video window opens behind
-    // whatever you were doing, and the guest handing back control hands the keyboard
-    // back with it. That is right for the machine you drive from the altairsim>
+    // Off by default: the terminal keeps the keyboard and the video window opens behind
+    // whatever you were doing. That is right for the machine you drive from the altairsim>
     // prompt, which is most of them -- a window that grabs focus the moment a board
     // draws a frame takes the keyboard out of a sentence you were in the middle of.
     //
-    // On, the video window is the terminal: it comes to the front when it opens and
-    // keeps the keyboard when the guest stops. That is right for a Sol-20, where the
-    // window IS the machine's console and the host terminal is the back door.
+    // On, the video window is the terminal: it comes to the front and takes the
+    // keyboard when it opens. That is right for a Sol-20, where the window IS the
+    // machine's console and the host terminal is the back door.
+    //
+    // WHEN IT OPENS, AND NOT AFTER. A stop gives the keyboard back to the terminal
+    // whatever this says (yieldFocus): the window is frozen until RUN, and the next
+    // thing to type is a monitor command.
     //
     // ONE SETTING FOR THE WHOLE SESSION, hence static. It is not per-board -- a board
     // has no opinion about window managers, and a machine with two video boards still
@@ -364,8 +370,8 @@ public:
     // first frame, long after a machine file has said what it wants (config/toml.cpp,
     // [display]).
     //
-    // Read at the moment it matters rather than cached -- when a window is created,
-    // and at every stop. So setting it mid-session takes effect from there on; it
+    // Read at the moment it matters rather than cached -- when a window is created.
+    // So setting it mid-session takes effect from there on; it
     // does not retitle or re-focus a window that is already open, because the setting
     // says what should happen NEXT, not what should have happened.
     static bool focusPolicy() { return focusPolicy_; }
@@ -499,8 +505,8 @@ inline std::vector<Property> Display::properties() {
         Property x;
         x.name = "focus";
         x.help = "Whether a window comes to the front and takes the keyboard when it opens. "
-                 "Off: it opens behind the console, and on macOS the console gets the "
-                 "keyboard back each time the guest stops. On: the window keeps the keyboard";
+                 "Off: it opens behind the console. Either way, the console gets the "
+                 "keyboard back each time the guest stops (not on Wayland)";
         x.kind = Kind::Bool;
         x.get  = [] { return Value::ofBool(focusPolicy_); };
         x.set  = [](const Value& v, std::string&) {

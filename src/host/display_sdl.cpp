@@ -121,6 +121,11 @@ bool SdlDisplay::ensureWindow(Window& win, int w, int h, int targetWidthPx) {
     const bool wantsFocus = Display::focusPolicy();
 
     if (!inited_) {
+        // Note who has the keyboard now -- the terminal -- so that every stop can hand it
+        // back (yieldFocus). Before SDL_Init, so no window of ours can be the answer, and
+        // whatever `focus` says: that setting is about the window as it OPENS.
+        platform::rememberForeground();
+
         // Do not come to the front just because a board drew a frame. This must be set
         // BEFORE SDL_Init -- it is read while the backend registers the application,
         // and setting it afterwards is too late. It suppresses the activation, and it
@@ -451,19 +456,17 @@ void SdlDisplay::applyTitle(Window& win) {
 }
 
 // Hand the keyboard back to the terminal when the guest stops (host/display.h). SDL
-// wraps no such call, so it goes through the platform seam, which knows that this is a
-// macOS question and answers it nowhere else.
+// wraps no such call, so it goes through the platform seam, which knows how each host
+// does it.
 //
 // Guarded on there being a window at all: the run loop asks on every stop of every
 // machine, and most machines never open one.
 //
-// And declined outright when the window is the console (host/display.h). Handing the
-// keyboard back at every stop is the right answer for a machine you drive from the
-// altairsim> prompt and the wrong one for a Sol-20, where it would take the keyboard
-// out of the window at each breakpoint and each close of the guest -- undoing, once a
-// stop, exactly what the setting asked for.
+// NOT guarded on `focus`. That setting decides which window has the keyboard when a
+// window opens. Once the guest stops, the window shows a frozen picture and the next
+// thing to type is a monitor command, so the terminal gets the keyboard back either way
+// -- a Sol-20 included (issue #766).
 void SdlDisplay::yieldFocus() {
-    if (Display::focusPolicy()) return;
     for (auto& [owner, win] : windows_)
         if (win.window) { platform::yieldForeground(); return; }
 }
