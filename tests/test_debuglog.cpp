@@ -125,6 +125,20 @@ void test_debuglog() {
     const std::string cleared = capture([&] { dbg::line(ch) << "x\n"; });
     CHECK(cleared.rfind("----  mds0: x", 0) == 0, "no provider also yields dashes");
 
+    SECTION("the File sink writes each line as it is made, not when the file closes (#765)");
+
+    {
+        const fs::path p = fs::temp_directory_path() / "altair_debuglog_live.log";
+        std::error_code ec;
+        fs::remove(p, ec);
+        CHECK(dbg::setSink(dbg::Sink::File, p.string(), err), "the File sink opens");
+        dbg::line(ch) << "live\n";
+        // Read while the sink is still open: `tail -f` sees only what has been flushed.
+        CHECK(readFile(p) == "----  mds0: live\n", "the line is in the file before it closes");
+        dbg::setSink(dbg::Sink::Stderr, "", err);
+        fs::remove(p, ec);
+    }
+
     SECTION("the File sink reports an unopenable path and keeps the prior sink");
 
     err.clear();

@@ -747,8 +747,8 @@ RAM             what you DEPOSITed is gone. LOAD/SAVE <file> <range> is for
                 memory, and it is a separate file for a reason.
 the registers   PC included, so a LOADed machine has not started.
 breakpoints     nor tracepoints, nor where TRACE was pointed.
-CONSOLE         stop and the transforms are the HOST's terminal, not a board
-                in the backplane. They survive CONFIG LOAD untouched.
+CONSOLE         stop and the transforms are the console's, not a board's in
+                the backplane. They survive CONFIG LOAD untouched.
 ```
 
 A SAVE IS A READ: it asks every property for its value and writes to nothing.
@@ -778,7 +778,7 @@ PLUG IN THE OTHER END OF THE CABLE. A unit is a socket on the back of a board --
 one of the 2SIO's two ports, say; an ENDPOINT is the thing at the far end of the
 cable, on the HOST side of the machine. It is not a board, it has no address, and
 the guest cannot see it: the 6850 clocks bytes the same way whether the wire ends
-at your terminal, a telnet session, a real RS-232 port, or nothing at all. No board
+at the console, a telnet session, a real RS-232 port, or nothing at all. No board
 in the machine knows what any of these words mean.
 
 Endpoints: console | null | loopback | scripted | socket:PORT[?banner] | socket:HOST:PORT |
@@ -788,7 +788,7 @@ in:PATH | out:PATH | terminal[?emulation=vt100&size=80x24] | printer:QUEUE |
 <endpoint>|serial:DEVICE[?baud=N]
 
 ```
-console     the host's terminal -- the keyboard and screen you are typing at
+console     the window you started altairsim in, where the monitor runs
 null        a cable to nowhere: writes vanish, reads never yield a byte
 loopback    the unit's own transmit wired back to its receive, for testing
 scripted    a terminal with a caller in place of a human -- what the MCP tools
@@ -872,11 +872,17 @@ DISCONNECT takes the cable out again; SHOW CONSOLE says which unit holds it.
 ```
 CONSOLE [<k>=<v>...]
 ```
-The host's terminal -- your keyboard and screen -- and the knobs that shape
-how bytes cross it. Bare CONSOLE prints those settings (and which board unit
-is wired to the terminal); CONSOLE k=v changes one. It is pure shorthand:
-CONSOLE alone does what SHOW CONSOLE does, and CONSOLE k=v does what SET
-CONSOLE k=v does -- the same two commands, spelled short.
+A shortcut for SET CONSOLE. CONSOLE k=v is SET CONSOLE k=v, and CONSOLE alone
+is SHOW CONSOLE. The help for SET CONSOLE follows.
+
+```
+CONSOLE                        ; the settings, and which board unit holds the console
+CONSOLE upper=on strip7out=on  ; the same as SET CONSOLE upper=on strip7out=on
+```
+
+The console is the window you started altairsim in. These settings shape how
+bytes cross it. SHOW CONSOLE lists them with their values, and which board unit
+holds the console. CONSOLE is a shortcut for both.
 
 The keys k, and the value v each takes:
 
@@ -895,25 +901,25 @@ log        a host file to copy the whole session to -- guest output and the
            keys you type both; off (or an empty path) stops it
 ```
 
-These are the TERMINAL's, not a board's; a board's own line coding (baud,
-data_bits) is SHOW sio0. SHOW CONSOLE lists these with their current values.
+These are the console's, not a board's. A board's own line coding (baud,
+data_bits) is SHOW sio0.
 
-SET CONSOLE DEBUG=<sink> is not one of these: it aims where the machine's
-diagnostic channels print (SHOW DEBUG), not the terminal, so SHOW CONSOLE does
-not list it. See SET ... DEBUG.
+DEBUG=<sink> is not one of these. It sets where the machine's diagnostic
+channels print (stderr, stdout or a file), so SHOW CONSOLE does not list it.
+SHOW DEBUG lists the channels and how to turn them on.
 
 STOP is the key that takes the keyboard BACK from a running guest. The host
 intercepts it before the guest is ever offered the byte, so the guest cannot
 disable it -- and that is why it must not be a key the guest needs.
 
 ```
-CONSOLE                        ; the settings, and which board unit is wired to the terminal
-CONSOLE stop=1D                ; make it ^]  (hex: it is a byte on the wire; attn= also works)
-CONSOLE upper=on strip7out=on  ; two at once, the classic MITS BASIC pair
+SET CONSOLE stop=1D                ; make it ^]  (hex: it is a byte on the wire; attn= also works)
+SET CONSOLE upper=on strip7out=on  ; two at once, the classic MITS BASIC pair
+SET CONSOLE DEBUG=dbg.log          ; the diagnostic channels print to dbg.log
 ```
 
-This command does NOT choose which board is the console -- CONNECT does that
-(CONNECT <id>:<unit> console); bare CONSOLE only reports the one now wired.
+This does NOT choose which board is the console -- CONNECT does that
+(CONNECT <id>:<unit> console).
 
 
 ### DISCONNECT — `DISC[ONNECT]`
@@ -921,6 +927,8 @@ This command does NOT choose which board is the console -- CONNECT does that
 ```
 DISCONNECT <id>:<u>
 ```
+A shortcut for CONNECT <id>:<u> null.
+
 The line then goes nowhere. NOT an error: an unconnected 6850 sits there with
 TDRE set forever, and a program that writes to it works fine and talks to
 nobody -- which is exactly what the card does with no cable in it.
@@ -1071,9 +1079,10 @@ A UNIT HAS PROPERTIES OF ITS OWN, and <id>:<unit> is how you reach them: the
 tape in the recorder rather than the recorder, the disk in the drive rather
 than the controller. SHOW <id> prints both tables, the board's and each unit's.
 
-CONSOLE and DISPLAY are the HOST's terminal and video window rather than
-boards, and they take settings the same way. REG is a CPU register (see REGS),
-and BUS is the backplane's own diagnostics rather than anything plugged into it.
+CONSOLE is the window you started altairsim in, and DISPLAY is every window
+altairsim opens. Neither is a board, and both take settings the same way.
+REG is a CPU register (see REGS), and BUS is the backplane's own diagnostics
+rather than anything plugged into it.
 MACHINE is the machine itself: its name is what SHOW MACHINE prints, the video
 window's title, and what CONFIG SAVE saves.
 
@@ -1085,15 +1094,61 @@ SET mem0 fill=zero
 SET mem0 phantom=read
 SET acr0:tape mode=record  ; the tape in the recorder, not the recorder
 SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)
-SET CONSOLE upper=on       ; change the letters you type to uppercase. SHOW CONSOLE lists the keys.
+SET CONSOLE upper=on       ; change the letters you type to uppercase. HELP SET CONSOLE lists the keys.
 SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.
-SET DISPLAY focus=on       ; the video window takes the keyboard, not the terminal
+SET DISPLAY focus=on       ; a window comes to the front when it opens. SHOW DISPLAY lists the keys.
 SET DISPLAY crt=on         ; paint the window like the period tube: soft phosphor and 4:3
 SET MACHINE name=mybox     ; what CONFIG SAVE calls the machine
 SET REG A=3F               ; a register in the CPU that is in the socket
 SET BUS UNCLAIMED=WARN     ; warn on a cycle no board answered
                            ; (also CONTENTION=WARN|ERROR|SILENT, UNCLAIMED=WARN|HALT|SILENT)
 ```
+
+#### SET CONSOLE
+
+```
+SET CONSOLE <k>=<v>...
+```
+The console is the window you started altairsim in. These settings shape how
+bytes cross it. SHOW CONSOLE lists them with their values, and which board unit
+holds the console. CONSOLE is a shortcut for both.
+
+The keys k, and the value v each takes:
+
+```
+stop       a control byte 01-1F (HEX): the key that returns to the monitor (alias: attn)
+base       hex | octal -- the operator's number base for what it PRINTS
+history    lines saved in .altairsim_history in the launch dir (default 50; 0 = off)
+upper      on|off: fold typed input to uppercase (much period software insists)
+strip7in   on|off: mask the high bit on input
+strip7out  on|off: mask the high bit on output (MITS BASIC's end-of-message)
+crlf       on|off: add LF after every CR the guest prints -- usually WRONG
+echo       on|off: local echo, for half-duplex hardware
+bell       on|off: pass 07 through to the host bell
+bsdel      off | bs (fold DEL->BS) | del (fold BS->DEL)
+log        a host file to copy the whole session to -- guest output and the
+           keys you type both; off (or an empty path) stops it
+```
+
+These are the console's, not a board's. A board's own line coding (baud,
+data_bits) is SHOW sio0.
+
+DEBUG=<sink> is not one of these. It sets where the machine's diagnostic
+channels print (stderr, stdout or a file), so SHOW CONSOLE does not list it.
+SHOW DEBUG lists the channels and how to turn them on.
+
+STOP is the key that takes the keyboard BACK from a running guest. The host
+intercepts it before the guest is ever offered the byte, so the guest cannot
+disable it -- and that is why it must not be a key the guest needs.
+
+```
+SET CONSOLE stop=1D                ; make it ^]  (hex: it is a byte on the wire; attn= also works)
+SET CONSOLE upper=on strip7out=on  ; two at once, the classic MITS BASIC pair
+SET CONSOLE DEBUG=dbg.log          ; the diagnostic channels print to dbg.log
+```
+
+This does NOT choose which board is the console -- CONNECT does that
+(CONNECT <id>:<unit> console).
 
 
 ### SHOW — `SH[OW]`
@@ -1116,7 +1171,7 @@ SHOW BUS CONTENTION ; two boards that answer the same address or port
 SHOW MOUNTS         ; every disk, tape and ROM in the machine, and what is in it
 SHOW PATHS          ; what a path resolves against -- and there is more than one answer
 SHOW CONSOLE        ; which unit holds the keyboard, and its transforms
-SHOW DISPLAY        ; the host video window: keyboard focus, and the CRT look
+SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look
 SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)
 SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)
 SHOW DEBUG          ; the diagnostic channels and their flags, and where they print

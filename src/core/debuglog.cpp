@@ -165,6 +165,9 @@ bool setSink(Sink s, const std::string& path, std::string& err) {
         std::ofstream f(path, std::ios::out | std::ios::app | std::ios::binary);
         if (!f) { err = "cannot open debug file: " + path; return false; }
         fileStream() = std::move(f);
+        // Each line in the file as it is made: `tail -f` follows it, and the lines
+        // before a hang or a crash are not left in the buffer (#765).
+        fileStream().setf(std::ios::unitbuf);
         filePath()   = path;
     } else {
         fileStream().close();

@@ -498,8 +498,9 @@ inline std::vector<Property> Display::properties() {
     {
         Property x;
         x.name = "focus";
-        x.help = "Whether the video window takes the keyboard. Off: the terminal keeps "
-                 "it and gets it back when the guest stops. On: the window is the console";
+        x.help = "Whether a window comes to the front and takes the keyboard when it opens. "
+                 "Off: it opens behind the console, and on macOS the console gets the "
+                 "keyboard back each time the guest stops. On: the window keeps the keyboard";
         x.kind = Kind::Bool;
         x.get  = [] { return Value::ofBool(focusPolicy_); };
         x.set  = [](const Value& v, std::string&) {
@@ -511,9 +512,9 @@ inline std::vector<Property> Display::properties() {
     {
         Property x;
         x.name    = "keyboard";
-        x.help    = "Where the video window's keystrokes go: 'console' (the window is a "
-                    "keyboard, like a Sol-20) or 'none' (display-only, like a Dazzler -- keys "
-                    "drive a joystick and Ctrl-E stops the guest)";
+        x.help    = "Where keys typed in a window go: 'console' (to the guest, like a Sol-20) "
+                    "or 'none' (display-only, like a Dazzler -- keys drive a joystick and "
+                    "Ctrl-E stops the guest)";
         x.kind    = Kind::Enum;
         x.choices = {"console", "none"};
         x.get     = [] { return Value::ofStr(keyboardToConsole_ ? "console" : "none"); };
@@ -526,7 +527,7 @@ inline std::vector<Property> Display::properties() {
     {
         Property x;
         x.name = "crt";
-        x.help = "Paint the video window like the original monitor: the raster stretched to a "
+        x.help = "Paint each window like the original monitor: the raster stretched to a "
                  "~4:3 tube face with scan lines between the rows. Off (default) is today's "
                  "crisp integer scaling. Takes effect live on an open window";
         x.kind = Kind::Bool;

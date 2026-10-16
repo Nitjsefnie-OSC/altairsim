@@ -276,8 +276,8 @@ const char* commandSummary(const std::string& n) {
     if (n == "DISASM") return "Disassemble memory into instructions.";
     if (n == "SYMBOLS") return "Load or clear a symbol table for disassembly.";
     if (n == "UNMOUNT") return "Take a disk or tape out of a drive.";
-    if (n == "DISCONNECT") return "Unplug the endpoint from a serial unit.";
-    if (n == "CONSOLE") return "Show or set the host console's properties.";
+    if (n == "DISCONNECT") return "Shortcut for CONNECT <id>:<u> null: unplug the endpoint.";
+    if (n == "CONSOLE") return "Shortcut for SHOW CONSOLE and SET CONSOLE.";
     if (n == "CONNECT") return "Attach a serial unit to an endpoint (console, socket, file, ...).";
     if (n == "RESET") return "Reset the machine, keeping RAM (RESET CPU resets just the processor).";
     if (n == "POWER") return "Power-cycle the machine -- the only thing that clears RAM.";
@@ -411,10 +411,8 @@ void detailBlock(std::ostream& o, const char* detail) {
     // the manual shows the real grammar instead of the literal token. all=true forces the
     // full, platform-independent list -- see endpointHelp() -- so this file stays byte-
     // identical across builds and the docs-reference check cannot break on the printer flag.
-    std::string text = detail;
-    const std::string tok = "{endpoints}";
-    for (size_t at = text.find(tok); at != std::string::npos; at = text.find(tok, at))
-        text.replace(at, tok.size(), endpointHelp(true));
+    // {topic:...} too: a shortcut (CONSOLE) prints its primary's text (SET CONSOLE).
+    std::string text = expandHelp(detail, endpointHelp(true));
 
     std::istringstream in(text);
     std::string line;
@@ -510,6 +508,14 @@ void commandsDoc(const std::string& dir) {
             o << "```\n" << c->usage << "\n```\n";
             detailBlock(o, c->detail);
             o << "\n";
+            // A form with a full help of its own (`HELP SET CONSOLE`), under its command.
+            for (const HelpTopic& t : helpTopics())
+                if (std::string(t.verb) == c->name) {
+                    o << "#### " << t.verb << " " << t.word << "\n\n";
+                    o << "```\n" << t.usage << "\n```\n";
+                    detailBlock(o, t.detail);
+                    o << "\n";
+                }
         }
     }
 }
@@ -671,7 +677,7 @@ void cheatsheet(const std::string& dir) {
          "  unit  = 0\n"
          "  mount = \"cpm.dsk\"        # relative to THIS FILE\n"
          "\n"
-         "[console]                  # the HOST's terminal -- not a board\n"
+         "[console]                  # the window you started altairsim in -- not a board\n"
          "strip7out = true\n"
          "base      = octal          # read/print the wire class in split octal (MITS style)\n"
          "```\n\n"

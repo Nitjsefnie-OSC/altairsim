@@ -402,7 +402,7 @@ std::vector<Property> Console::properties() {
     {
         Property x;
         x.name    = "log";
-        x.help    = "Tee the terminal session (guest output + echoed keys) to a file; empty/off closes it";
+        x.help    = "Copy the console session (guest output + echoed keys) to a file; empty/off closes it";
         x.kind    = Kind::Str;
         x.get     = [this] { return Value::ofStr(logPath_); };
         x.set     = [this](const Value& v, std::string& err) {

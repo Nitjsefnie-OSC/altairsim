@@ -14,7 +14,7 @@ later without a manual. These rules are enough to read every example in this cha
 - **Quotes are for text.** A string has quotes (`name = "cpm22"`). A number, `true` or `false`
   has no quotes (`size = 256`, `idle = true`).
 - **A `[table]`, with single brackets, is a thing that the machine has one of.** `[machine]` is
-  the machine, and `[console]` is your terminal. You write it one time.
+  the machine, and `[console]` is the window you started altairsim in. You write it one time.
 - **A `[[table]]`, with double brackets, is a thing that the machine has many of.** Each
   `[[board]]` starts one more board, and each `[[board.drive]]` one more drive. The double
   brackets mean "add one more to the list". Write `[[board]]` for each board.
@@ -121,8 +121,8 @@ Each key must be below a table. A key above the first table is an error.
 | `[board.unit.<name>]` | one unit *on* the board above it, for example a serial channel or a tape deck |
 | `[[board.region]]` | a memory region on a `memory` board |
 | `[[board.drive]]` | a drive on a disk controller |
-| `[console]` | **your terminal.** It is not a board |
-| `[display]` | **your video window.** It is not a board |
+| `[console]` | **the window you started altairsim in.** It is not a board |
+| `[display]` | **the windows that altairsim opens.** It is not a board |
 | `[terminal]` | the built-in terminal window. The serial chapter describes it |
 
 ## `[machine]`: three keys
@@ -464,7 +464,7 @@ To read and print in octal, set `base = "octal"` in `[console]`. This changes th
 rule. `SHOW` prints a port in hex with a `0x` marker, for example `port 0x20`, whatever form you
 wrote.
 
-## `[console]`: your terminal, which is not a board
+## `[console]`: the console, which is not a board
 
 ```toml
 [console]
@@ -479,9 +479,9 @@ bell      = true
 bsdel     = "bs"
 ```
 
-`[console]` is **not a `[[board]]`**, and it is not in the backplane. It describes *the terminal
-where you type*, which is on your desk, at the other end of the connection. The Altair knows
-nothing about it.
+`[console]` is **not a `[[board]]`**, and it is not in the backplane. It describes *the
+console*, the window you started altairsim in. The monitor runs there. The Altair knows nothing
+about it.
 
 | Key | |
 |---|---|
@@ -494,7 +494,7 @@ nothing about it.
 | `strip7out` | clear bit 7 of every byte that the guest sends |
 | `crlf` | change line endings |
 | `echo` | show typed characters locally |
-| `bell` | let the guest ring the bell of your terminal |
+| `bell` | let the guest ring the bell of the console |
 | `bsdel` | `off`, `bs` or `del`: what your Backspace key sends |
 
 **These settings are the only part of the program that changes a byte.** They belong to the
@@ -508,7 +508,7 @@ Examples are `CONNECT sio0:a socket:2323` and a real serial port. The other end 
 as the guest wrote them, with all eight bits. The serial chapter tells you why, and what to set
 instead.
 
-## `[display]`: your video window, which is not a board
+## `[display]`: the windows that altairsim opens, which are not boards
 
 ```toml
 [display]
@@ -518,31 +518,33 @@ crt   = true
 
 `[display]` is like `[console]`. It describes *the window on your screen*, not the board that
 draws into it. A machine with two video boards still has one operator with one keyboard, so
-these settings are in one place, not on each board. The settings apply to every video window of
-the machine.
+these settings are in one place, not on each board. The settings apply to every window that
+altairsim opens: the window of each video board, and each terminal window.
 
 The size of a window is different. Each video board opens its own window, so its size is the
 `width` property of that board. The boards chapter describes `width`.
 
 | Key | |
 |---|---|
-| `focus` | whether the video window comes to the front and gets the keyboard when it opens. Default `false` |
-| `keyboard` | whether the keys that you type in the window go to the machine's console: `console` (default) or `none` (display only) |
+| `focus` | whether a window comes to the front and gets the keyboard when it opens. Default `false` |
+| `keyboard` | whether the keys that you type in a window go to the guest: `console` (default) or `none` (display only) |
 | `crt` | show the picture as on the original monitor, with a soft glow and a 4:3 shape, and not as sharp square pixels. Default `false` |
 
-**`focus`.** With `focus = false`, the default, the terminal keeps the keyboard. The window
-opens behind your other windows, and when the machine stops, you can type at `altairsim>` at
-once. You can also click in the window and type there. Your keys then go to the same console as
-the keys of the terminal. With `focus = true`, the window comes to the front when it opens, and
-it keeps the keyboard when the machine stops. Use this for a **Sol-20**, where the window *is*
-the console.
+**`focus`.** With `focus = false`, the default, a window opens behind your other windows, and the
+console keeps the keyboard. You can click in the window and type there. On macOS, the console
+gets the keyboard back each time the machine stops, so you can type at `altairsim>` at once. On
+Linux and Windows, if you typed in the window, click in the console before you type at
+`altairsim>`. With `focus = true`, a window comes to the front when it opens, and it keeps the
+keyboard when the machine stops. Use this for a **Sol-20**, where the video window is the
+keyboard and screen of the machine.
 
-**`keyboard`** decides whether a video window is a keyboard at all. With `console`, the default,
-the keys that you type in the window go to the console. This is correct for a **Sol-20**. Set
-`none` for a board that only shows a picture, such as a **Dazzler**. The window still shows the
-picture and still comes to the front, but its keys do **not** go to the console. They control a
-joystick, if the machine has a `d7a`. Only `Ctrl-E` works in the window, to stop the machine and
-give you the monitor.
+**`keyboard`** decides whether a window is a keyboard at all. With `console`, the default, the
+keys that you type in a window go to the guest. If the machine has a terminal window, the keys go
+to the unit that the terminal window is connected to. If not, they go to the unit that holds the
+console. This is correct for a **Sol-20**. Set `none` for a board that only shows a picture, such
+as a **Dazzler**. The window still shows the picture and still comes to the front, but its keys
+do **not** go to the guest. They control a joystick, if the machine has a `d7a`. Only `Ctrl-E`
+works in the window, to stop the machine and give you the monitor.
 
 **`crt`** changes how the window shows the picture. It does not change what the machine draws.
 With `crt = false`, the default, each pixel is a sharp square, scaled by a whole number. With

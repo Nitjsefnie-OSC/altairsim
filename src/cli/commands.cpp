@@ -276,8 +276,8 @@ static const std::vector<CommandDef> kCommands = {
      "                  memory, and it is a separate file for a reason.\n"
      "  the registers   PC included, so a LOADed machine has not started.\n"
      "  breakpoints     nor tracepoints, nor where TRACE was pointed.\n"
-     "  CONSOLE         stop and the transforms are the HOST's terminal, not a board\n"
-     "                  in the backplane. They survive CONFIG LOAD untouched.\n"
+     "  CONSOLE         stop and the transforms are the console's, not a board's in\n"
+     "                  the backplane. They survive CONFIG LOAD untouched.\n"
      "A SAVE IS A READ: it asks every property for its value and writes to nothing.\n"
      "\n"
      "LOAD IS THE WHOLE MACHINE, so it REPLACES the one you have: the boards you had\n"
@@ -341,9 +341,10 @@ static const std::vector<CommandDef> kCommands = {
      "tape in the recorder rather than the recorder, the disk in the drive rather\n"
      "than the controller. SHOW <id> prints both tables, the board's and each unit's.\n"
      "\n"
-     "CONSOLE and DISPLAY are the HOST's terminal and video window rather than\n"
-     "boards, and they take settings the same way. REG is a CPU register (see REGS),\n"
-     "and BUS is the backplane's own diagnostics rather than anything plugged into it.\n"
+     "CONSOLE is the window you started altairsim in, and DISPLAY is every window\n"
+     "altairsim opens. Neither is a board, and both take settings the same way.\n"
+     "REG is a CPU register (see REGS), and BUS is the backplane's own diagnostics\n"
+     "rather than anything plugged into it.\n"
      "MACHINE is the machine itself: its name is what SHOW MACHINE prints, the video\n"
      "window's title, and what CONFIG SAVE saves.\n"
      "\n"
@@ -354,9 +355,9 @@ static const std::vector<CommandDef> kCommands = {
      "  SET mem0 phantom=read\n"
      "  SET acr0:tape mode=record  ; the tape in the recorder, not the recorder\n"
      "  SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)\n"
-     "  SET CONSOLE upper=on       ; change the letters you type to uppercase. SHOW CONSOLE lists the keys.\n"
+     "  SET CONSOLE upper=on       ; change the letters you type to uppercase. HELP SET CONSOLE lists the keys.\n"
      "  SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.\n"
-     "  SET DISPLAY focus=on       ; the video window takes the keyboard, not the terminal\n"
+     "  SET DISPLAY focus=on       ; a window comes to the front when it opens. SHOW DISPLAY lists the keys.\n"
      "  SET DISPLAY crt=on         ; paint the window like the period tube: soft phosphor and 4:3\n"
      "  SET MACHINE name=mybox     ; what CONFIG SAVE calls the machine\n"
      "  SET REG A=3F               ; a register in the CPU that is in the socket\n"
@@ -378,7 +379,7 @@ static const std::vector<CommandDef> kCommands = {
      "  SHOW MOUNTS         ; every disk, tape and ROM in the machine, and what is in it\n"
      "  SHOW PATHS          ; what a path resolves against -- and there is more than one answer\n"
      "  SHOW CONSOLE        ; which unit holds the keyboard, and its transforms\n"
-     "  SHOW DISPLAY        ; the host video window: keyboard focus, and the CRT look\n"
+     "  SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look\n"
      "  SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, cr, bsdel, ...)\n"
      "  SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)\n"
      "  SHOW DEBUG          ; the diagnostic channels and their flags, and where they print\n"
@@ -621,6 +622,8 @@ static const std::vector<CommandDef> kCommands = {
      "\n"
      "  U dsk0:drive0"},
     {"DISCONNECT", true, nullptr, "DISCONNECT <id>:<u>",  // DISC
+     "A shortcut for CONNECT <id>:<u> null.\n"
+     "\n"
      "The line then goes nowhere. NOT an error: an unconnected 6850 sits there with\n"
      "TDRE set forever, and a program that writes to it works fine and talks to\n"
      "nobody -- which is exactly what the card does with no cable in it.\n"
@@ -630,42 +633,13 @@ static const std::vector<CommandDef> kCommands = {
     // 2026-07-12) -- RUN runs the machine, and a command that quietly started the
     // CPU because you asked to look at a setting is a trap.
     {"CONSOLE", true, nullptr, "CONSOLE [<k>=<v>...]",  // CONS
-     "The host's terminal -- your keyboard and screen -- and the knobs that shape\n"
-     "how bytes cross it. Bare CONSOLE prints those settings (and which board unit\n"
-     "is wired to the terminal); CONSOLE k=v changes one. It is pure shorthand:\n"
-     "CONSOLE alone does what SHOW CONSOLE does, and CONSOLE k=v does what SET\n"
-     "CONSOLE k=v does -- the same two commands, spelled short.\n"
+     "A shortcut for SET CONSOLE. CONSOLE k=v is SET CONSOLE k=v, and CONSOLE alone\n"
+     "is SHOW CONSOLE. The help for SET CONSOLE follows.\n"
      "\n"
-     "The keys k, and the value v each takes:\n"
-     "  stop       a control byte 01-1F (HEX): the key that returns to the monitor (alias: attn)\n"
-     "  base       hex | octal -- the operator's number base for what it PRINTS\n"
-     "  history    lines saved in .altairsim_history in the launch dir (default 50; 0 = off)\n"
-     "  upper      on|off: fold typed input to uppercase (much period software insists)\n"
-     "  strip7in   on|off: mask the high bit on input\n"
-     "  strip7out  on|off: mask the high bit on output (MITS BASIC's end-of-message)\n"
-     "  crlf       on|off: add LF after every CR the guest prints -- usually WRONG\n"
-     "  echo       on|off: local echo, for half-duplex hardware\n"
-     "  bell       on|off: pass 07 through to the host bell\n"
-     "  bsdel      off | bs (fold DEL->BS) | del (fold BS->DEL)\n"
-     "  log        a host file to copy the whole session to -- guest output and the\n"
-     "             keys you type both; off (or an empty path) stops it\n"
-     "These are the TERMINAL's, not a board's; a board's own line coding (baud,\n"
-     "data_bits) is SHOW sio0. SHOW CONSOLE lists these with their current values.\n"
+     "  CONSOLE                        ; the settings, and which board unit holds the console\n"
+     "  CONSOLE upper=on strip7out=on  ; the same as SET CONSOLE upper=on strip7out=on\n"
      "\n"
-     "SET CONSOLE DEBUG=<sink> is not one of these: it aims where the machine's\n"
-     "diagnostic channels print (SHOW DEBUG), not the terminal, so SHOW CONSOLE does\n"
-     "not list it. See SET ... DEBUG.\n"
-     "\n"
-     "STOP is the key that takes the keyboard BACK from a running guest. The host\n"
-     "intercepts it before the guest is ever offered the byte, so the guest cannot\n"
-     "disable it -- and that is why it must not be a key the guest needs.\n"
-     "\n"
-     "  CONSOLE                        ; the settings, and which board unit is wired to the terminal\n"
-     "  CONSOLE stop=1D                ; make it ^]  (hex: it is a byte on the wire; attn= also works)\n"
-     "  CONSOLE upper=on strip7out=on  ; two at once, the classic MITS BASIC pair\n"
-     "\n"
-     "This command does NOT choose which board is the console -- CONNECT does that\n"
-     "(CONNECT <id>:<unit> console); bare CONSOLE only reports the one now wired."},
+     "{topic:SET CONSOLE}"},
     // `{endpoints}` is expanded by the HELP printer from endpointHelp(), which is the
     // one place the grammar lives (host/endpoint.cpp). It is a token and not a list
     // because the list WAS spelled out here, and it rotted: it went on saying "socket:
@@ -684,12 +658,12 @@ static const std::vector<CommandDef> kCommands = {
      "one of the 2SIO's two ports, say; an ENDPOINT is the thing at the far end of the\n"
      "cable, on the HOST side of the machine. It is not a board, it has no address, and\n"
      "the guest cannot see it: the 6850 clocks bytes the same way whether the wire ends\n"
-     "at your terminal, a telnet session, a real RS-232 port, or nothing at all. No board\n"
+     "at the console, a telnet session, a real RS-232 port, or nothing at all. No board\n"
      "in the machine knows what any of these words mean.\n"
      "\n"
      "Endpoints: {endpoints}\n"
      "\n"
-     "  console     the host's terminal -- the keyboard and screen you are typing at\n"
+     "  console     the window you started altairsim in, where the monitor runs\n"
      "  null        a cable to nowhere: writes vanish, reads never yield a byte\n"
      "  loopback    the unit's own transmit wired back to its receive, for testing\n"
      "  scripted    a terminal with a caller in place of a human -- what the MCP tools\n"
@@ -890,6 +864,90 @@ static const std::vector<CommandDef> kCommands = {
 };
 
 const std::vector<CommandDef>& commands() { return kCommands; }
+
+// The forms of a command that own a full help text -- see the header. SET CONSOLE is
+// the primary spelling of the console settings (SET is the one settings grammar, and
+// --set takes SET's text), so the text is here and CONSOLE's help pulls it in.
+static const std::vector<HelpTopic> kHelpTopics = {
+    {"SET", "CONSOLE", "SET CONSOLE <k>=<v>...",
+     "The console is the window you started altairsim in. These settings shape how\n"
+     "bytes cross it. SHOW CONSOLE lists them with their values, and which board unit\n"
+     "holds the console. CONSOLE is a shortcut for both.\n"
+     "\n"
+     "The keys k, and the value v each takes:\n"
+     "  stop       a control byte 01-1F (HEX): the key that returns to the monitor (alias: attn)\n"
+     "  base       hex | octal -- the operator's number base for what it PRINTS\n"
+     "  history    lines saved in .altairsim_history in the launch dir (default 50; 0 = off)\n"
+     "  upper      on|off: fold typed input to uppercase (much period software insists)\n"
+     "  strip7in   on|off: mask the high bit on input\n"
+     "  strip7out  on|off: mask the high bit on output (MITS BASIC's end-of-message)\n"
+     "  crlf       on|off: add LF after every CR the guest prints -- usually WRONG\n"
+     "  echo       on|off: local echo, for half-duplex hardware\n"
+     "  bell       on|off: pass 07 through to the host bell\n"
+     "  bsdel      off | bs (fold DEL->BS) | del (fold BS->DEL)\n"
+     "  log        a host file to copy the whole session to -- guest output and the\n"
+     "             keys you type both; off (or an empty path) stops it\n"
+     "These are the console's, not a board's. A board's own line coding (baud,\n"
+     "data_bits) is SHOW sio0.\n"
+     "\n"
+     "DEBUG=<sink> is not one of these. It sets where the machine's diagnostic\n"
+     "channels print (stderr, stdout or a file), so SHOW CONSOLE does not list it.\n"
+     "SHOW DEBUG lists the channels and how to turn them on.\n"
+     "\n"
+     "STOP is the key that takes the keyboard BACK from a running guest. The host\n"
+     "intercepts it before the guest is ever offered the byte, so the guest cannot\n"
+     "disable it -- and that is why it must not be a key the guest needs.\n"
+     "\n"
+     "  SET CONSOLE stop=1D                ; make it ^]  (hex: it is a byte on the wire; attn= also works)\n"
+     "  SET CONSOLE upper=on strip7out=on  ; two at once, the classic MITS BASIC pair\n"
+     "  SET CONSOLE DEBUG=dbg.log          ; the diagnostic channels print to dbg.log\n"
+     "\n"
+     "This does NOT choose which board is the console -- CONNECT does that\n"
+     "(CONNECT <id>:<unit> console)."},
+};
+
+const std::vector<HelpTopic>& helpTopics() { return kHelpTopics; }
+
+static std::string upperCopy(const std::string& s) {
+    std::string u;
+    for (char ch : s) u += (char)std::toupper((unsigned char)ch);
+    return u;
+}
+
+const HelpTopic* findHelpTopic(const std::string& verb, const std::string& typed) {
+    if (typed.empty()) return nullptr;
+    const std::string v = upperCopy(verb), w = upperCopy(typed);
+    for (const HelpTopic& t : kHelpTopics)
+        if (v == t.verb && std::string(t.word).compare(0, w.size(), w) == 0) return &t;
+    return nullptr;
+}
+
+std::string expandHelp(const std::string& detail, const std::string& endpoints) {
+    std::string d = detail;
+    const std::string ep = "{endpoints}";
+    for (size_t at = d.find(ep); at != std::string::npos; at = d.find(ep, at + endpoints.size()))
+        d.replace(at, ep.size(), endpoints);
+
+    // {topic:VERB WORD}. A name that matches no topic is left as written, so a typo
+    // shows in the output (and in the reference) instead of vanishing.
+    const std::string open = "{topic:";
+    for (size_t at = d.find(open); at != std::string::npos;) {
+        size_t close = d.find('}', at);
+        if (close == std::string::npos) break;
+        std::string name = d.substr(at + open.size(), close - at - open.size());
+        size_t      sp   = name.find(' ');
+        const HelpTopic* t =
+            sp == std::string::npos ? nullptr
+                                    : findHelpTopic(name.substr(0, sp), name.substr(sp + 1));
+        if (!t || upperCopy(name.substr(sp + 1)) != t->word) {
+            at = d.find(open, close);
+            continue;
+        }
+        d.replace(at, close + 1 - at, t->detail);
+        at = d.find(open, at + std::string(t->detail).size());
+    }
+    return d;
+}
 
 std::string abbreviation(const CommandDef& c) {
     std::string full = c.name;

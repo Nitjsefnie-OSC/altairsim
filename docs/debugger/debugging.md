@@ -805,6 +805,9 @@ SET CONSOLE DEBUG=stdout
 SET CONSOLE DEBUG=trace.log    add to the end of a file
 ```
 
+altairsim writes each line to the file when the line is made. To see the lines while the
+machine runs, type `tail -f trace.log` in a second window.
+
 `Tab` completes each part of these commands:
 
 - the channel name after `SET`

@@ -213,6 +213,9 @@ private:
     // real stop (ATTN, ^C, HLT, a user breakpoint in the callee) is reported.
     void runMachine(std::ostream& out, bool stepOver = false);
     void showConsole(std::ostream& out);
+    // SET CONSOLE k=v, and CONSOLE k=v, which is the same command spelled short:
+    // one key, DEBUG= included. False (and failed_) on a bad key or value.
+    bool setConsoleKey(const std::string& k, const std::string& v, std::ostream& out);
     void showDisplay(std::ostream& out);
     void showTerminal(std::ostream& out);  // the [terminal] transform chain (issue #244)
     void showJoysticks(std::ostream& out);  // the host game controllers (SDL builds)
