@@ -295,13 +295,13 @@ private:
     mutable uint64_t hungry_ = 0;
 };
 
-// ONE LINE, SEVERAL CONNECTORS. A handle to a stream that more than one unit is plugged
-// into at once -- the --mcp console, where every unit wired to `console` shares the one
-// scripted line the assistant reads (issue #756), the way two units on `console` share
-// one keyboard and one screen at a terminal. Like ConsoleRef, it lets a unit's
-// FilterStream own a handle rather than the line; unlike ConsoleRef, the line is not a
-// singleton, so the handle keeps it alive until the last unit lets go. Re-wiring one unit
-// can then never destroy the line under another.
+// A LINE THE OWNER KEEPS, A HANDLE THE UNIT HOLDS. The --mcp console: the session owns the
+// scripted line the assistant reads, and the one unit that holds the console has this handle
+// to it. When the console moves to another unit (issue #759), the old unit lets go and the new
+// one takes a handle -- the line itself, a --mirror watcher on it and the output nobody has
+// read yet all survive the move. Like ConsoleRef, it lets a unit's FilterStream own a handle
+// rather than the line; unlike ConsoleRef, the line is not a singleton, so the handle shares
+// ownership of it.
 class SharedStream : public ByteStream {
 public:
     explicit SharedStream(std::shared_ptr<ByteStream> line) : line_(std::move(line)) {}

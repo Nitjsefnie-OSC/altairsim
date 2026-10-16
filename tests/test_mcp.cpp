@@ -154,8 +154,8 @@ bool waitFor(Fn ready, int ms = 2000) {
 
 // The MirrorStream now wrapping the console unit (and its inner ScriptedStream), if any.
 // After runMcp with --mirror the console's line is Filter(Shared(Mirror(scripted))) -- the
-// console transform filter is outermost (always), the SharedStream every console unit holds
-// under it (#756), the mirror under that, the assistant drives the inner scripted. Peel the
+// console transform filter is outermost (always), the SharedStream the console unit holds
+// under it (#759), the mirror under that, the assistant drives the inner scripted. Peel the
 // filter and the shared handle to reach the mirror.
 MirrorStream* consoleMirror(Machine& m, ScriptedStream** innerOut = nullptr) {
     for (const auto& b : m.boards())
@@ -498,16 +498,22 @@ void test_mcp() {
               "the guest executed the TYPEd command -- its dump reached the scripted console");
     }
 
-    SECTION("MCP: every unit connected to console shares the scripted line (issue #756)");
+    SECTION("MCP: connecting a unit to console takes the console from its holder (#756, #759)");
     {
-        // Only the FIRST unit on `console` was moved to the scripted line. A second one kept
-        // the host console, which under --mcp is the JSON-RPC stdout: the guest's text landed
-        // between the JSON lines, and `run` never saw it. Each case wires sio0:b to `console`
-        // beside sio0:a and runs a program that writes 'Z' out of port B, then 'Y' out of A.
+        // One unit holds the console, under --mcp as in the CLI. The holder shows `scripted`,
+        // not `console`, so the monitor's CONNECT could not see it to take the console from
+        // it: the new unit first went to the host console -- our JSON-RPC stdout (#756) --
+        // and then joined the holder on the scripted line (#759). Each case wires one sio0
+        // port to `console` and runs a program that writes 'Z' out of port B, then 'Y' out
+        // of port A. Only the port that holds the console may reach the assistant.
         const std::string prog =
             R"({"name":"monitor","arguments":{"command":"DEPOSIT 100 3E 03 D3 12 3E 11 D3 12 )"
             R"(3E 5A D3 13 3E 03 D3 10 3E 11 D3 10 3E 59 D3 11 76"}})";
         const std::string run = R"({"name":"run","arguments":{"from":256,"timeout_ms":4000}})";
+        auto connectB = [](const char* unit) {
+            return std::string(R"({"name":"monitor","arguments":{"command":"CONNECT sio0:)") + unit +
+                   R"( console"}})";
+        };
 
         // The scripted line at the bottom of a unit's stack (Filter -> Shared -> Scripted).
         auto scriptedOf = [](Machine& mm, const char* unit) -> ScriptedStream* {
@@ -517,93 +523,77 @@ void test_mcp() {
             if (auto* sh = dynamic_cast<SharedStream*>(st)) st = sh->inner();
             return dynamic_cast<ScriptedStream*>(st);
         };
-
-        struct Case {
-            const char* how;
-            std::string wire;  // the request that wires sio0:b to console
+        auto stateOf = [](Machine& mm, const char* unit) -> std::string {
+            if (Board* b = mm.find("sio0"))
+                for (const auto& u : b->units())
+                    if (u.name == unit) return u.state;
+            return std::string();
         };
-        const Case cases[] = {
-            {"the monitor tool's CONNECT",
-             R"({"name":"monitor","arguments":{"command":"CONNECT sio0:b console"}})"},
-            {"the connect tool",
-             R"({"name":"connect","arguments":{"id":"sio0","unit":"b","endpoint":"console"}})"},
+        auto textOf = [](std::map<int, Json>& rep, int n) {
+            return rep[n].at("result").at("content").items().at(0).at("text").str();
         };
-        for (const Case& c : cases) {
-            Machine m;
-            if (!loadAltmon(m)) return;
+        auto script = [](const std::vector<std::string>& calls) {
             std::ostringstream s;
             int id = 0;
-            auto req = [&](const char* method, const std::string& params) {
-                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
-                  << R"(","params":)" << params << "}\n";
-            };
-            req("initialize", "{}");
-            req("tools/call", prog);
-            req("tools/call", c.wire);
-            req("tools/call", run);
-            auto rep = runScript(m, s.str());
+            s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":"initialize","params":{}})" << "\n";
+            for (const auto& c : calls)
+                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":"tools/call","params":)"
+                  << c << "}\n";
+            return s.str();
+        };
 
-            std::printf("  via %s\n", c.how);
-            CHECK(!rep[3].at("result").has("isError"), "the request wires sio0:b to console");
-            const std::string out =
-                rep[4].at("result").at("structuredContent").at("output").str();
-            CHECK(out.find('Z') != std::string::npos, "port B's output reaches run's output");
-            CHECK(out.find('Y') != std::string::npos, "and port A's output still does");
-            ScriptedStream* a = scriptedOf(m, "a");
-            CHECK(a != nullptr && a == scriptedOf(m, "b"),
-                  "both units reach the same scripted line");
-        }
-
-        // The connect tool adopts the unit AT ONCE, not at the next run: a `step` right after
-        // it must not write port B's byte onto stdout.
+        // The monitor tool's CONNECT: the CLI's "taken" line, then the CLI's own reply.
         {
             Machine m;
             if (!loadAltmon(m)) return;
-            std::ostringstream s;
-            int id = 0;
-            auto req = [&](const char* method, const std::string& params) {
-                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
-                  << R"(","params":)" << params << "}\n";
-            };
-            req("initialize", "{}");
-            req("tools/call", prog);
-            // RUN first: the monitor tool adopts console units itself after each command.
-            req("tools/call", R"({"name":"monitor","arguments":{"command":"RUN 100"}})");
-            req("tools/call", cases[1].wire);
-            req("tools/call", R"({"name":"step","arguments":{"count":13}})");
-            req("tools/call", R"({"name":"recv","arguments":{}})");
-            auto rep = runScript(m, s.str());
-
-            const std::string out =
-                rep[6].at("result").at("structuredContent").at("output").str();
-            CHECK(out.find('Z') != std::string::npos,
-                  "after the connect tool, a step's port B output reaches recv");
+            auto rep = runScript(m, script({prog, connectB("b"), run}));
+            const std::string said = textOf(rep, 3);
+            CHECK(said.rfind("console taken from sio0:a\n", 0) == 0,
+                  "CONNECT says first who it took the console from, as the CLI does");
+            CHECK(said.find("sio0:b: connected to console") != std::string::npos,
+                  "and then that sio0:b is connected");
+            const std::string out = rep[4].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Z') != std::string::npos, "port B, which holds the console, reaches run");
+            CHECK(out.find('Y') == std::string::npos, "port A, which lost it, does not");
+            CHECK(stateOf(m, "a") == "null", "sio0:a is on null");
+            CHECK(scriptedOf(m, "b") != nullptr, "sio0:b holds the scripted line");
         }
 
-        // Re-wiring the first unit away leaves the line alive under the second: the session
-        // shares it with every unit, so no unit owns it.
+        // The connect tool takes the console AT ONCE, not at the next run: a `step` right
+        // after it must not write port B's byte onto stdout. RUN first, because the monitor
+        // tool would move the console itself.
         {
             Machine m;
             if (!loadAltmon(m)) return;
-            std::ostringstream s;
-            int id = 0;
-            auto req = [&](const char* method, const std::string& params) {
-                s << R"({"jsonrpc":"2.0","id":)" << ++id << R"(,"method":")" << method
-                  << R"(","params":)" << params << "}\n";
-            };
-            req("initialize", "{}");
-            req("tools/call", prog);
-            req("tools/call", cases[0].wire);
-            req("tools/call", R"({"name":"monitor","arguments":{"command":"CONNECT sio0:a null"}})");
-            req("tools/call", run);
-            auto rep = runScript(m, s.str());
+            auto rep = runScript(
+                m, script({prog, R"({"name":"monitor","arguments":{"command":"RUN 100"}})",
+                           R"({"name":"connect","arguments":{"id":"sio0","unit":"b","endpoint":"console"}})",
+                           R"({"name":"step","arguments":{"count":13}})",
+                           R"({"name":"recv","arguments":{}})"}));
+            CHECK(textOf(rep, 4).find("console taken from sio0:a") != std::string::npos,
+                  "the connect tool says who it took the console from");
+            const std::string out = rep[6].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Z') != std::string::npos, "a step's port B output reaches recv");
+            CHECK(out.find('Y') == std::string::npos, "and port A's does not");
+            CHECK(stateOf(m, "a") == "null", "sio0:a is on null");
+        }
 
-            const std::string out =
-                rep[5].at("result").at("structuredContent").at("output").str();
-            CHECK(out.find('Z') != std::string::npos,
-                  "with sio0:a unplugged, port B still reaches run's output");
-            CHECK(out.find('Y') == std::string::npos, "and port A, on null, does not");
-            CHECK(scriptedOf(m, "b") != nullptr, "sio0:b is still on the scripted line");
+        // And back: the line moves again, and the unit that held it goes to null.
+        {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            auto rep = runScript(
+                m, script({prog, connectB("b"), connectB("a"), run,
+                           R"({"name":"monitor","arguments":{"command":"SHOW CONSOLE"}})"}));
+            CHECK(textOf(rep, 4).rfind("console taken from sio0:b\n", 0) == 0,
+                  "the second CONNECT takes the console back from sio0:b");
+            const std::string out = rep[5].at("result").at("structuredContent").at("output").str();
+            CHECK(out.find('Y') != std::string::npos, "port A holds the console again");
+            CHECK(out.find('Z') == std::string::npos, "and port B, on null, does not reach run");
+            CHECK(stateOf(m, "b") == "null", "sio0:b is on null");
+            const std::string show = textOf(rep, 6);
+            CHECK(show.find("held by  sio0:a (--mcp)\n") != std::string::npos,
+                  "SHOW CONSOLE names one holder, sio0:a");
         }
     }
 
