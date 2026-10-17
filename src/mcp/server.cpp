@@ -394,10 +394,12 @@ Json toolList() {
         Json p = Json::obj();
         p["id"]       = strSchema("Board id.");
         p["unit"]     = strSchema("Which serial unit on the board.");
-        p["endpoint"] = strSchema("The endpoint to wire it to, e.g. loopback, tcp:HOST:PORT, "
-                                  "file:PATH, printer:QUEUE. (Under --mcp, the unit "
-                                  "connected to console holds the scripted stream; connecting "
-                                  "another takes it.)");
+        // The grammar comes from endpointHelp(), the list HELP CONNECT prints: a hand-typed
+        // example here named tcp: and file:, which this program does not take (#784).
+        p["endpoint"] = strSchema(("The endpoint to wire it to, one of:\n" + endpointHelp() +
+                                   "\n(Under --mcp, the unit connected to console holds the "
+                                   "scripted stream; connecting another takes it.)")
+                                      .c_str());
         list.push(tool("connect",
                        "Wire a board's serial unit to a host endpoint -- the same schemes CONNECT "
                        "accepts at the prompt.",

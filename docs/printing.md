@@ -16,7 +16,7 @@ boundary** (§2.1).
 
 The want: a guest program prints, and paper comes out of a printer attached to
 this host. Before this, the only destinations for printed bytes were `file:PATH` and
-`null` — a capture, not a printout.
+`null` — a capture, not a printout. (`out:PATH` later replaced `file:PATH`.)
 
 ---
 
