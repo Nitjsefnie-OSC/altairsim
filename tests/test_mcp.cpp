@@ -5,6 +5,7 @@
 #include "core/machine.h"
 #include "core/machines.h"
 #include "host/console.h"
+#include "host/endpoint.h"
 #include "host/filter.h"
 #include "host/media.h"
 #include "host/mirror_stream.h"
@@ -1162,6 +1163,20 @@ void test_mcp() {
                               "breakpoints", "snapshot", "restore", "bus_irq", "bus_trace",
                               "mount", "connect"})
             CHECK(seen[n], (std::string("tools/list carries ") + n).c_str());
+    }
+
+    SECTION("MCP: connect lists the endpoints CONNECT takes (#784)");
+    {
+        Machine m;
+        if (!loadAltmon(m)) return;
+        auto rep = runScript(m,
+            R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})""\n");
+        std::string desc;
+        for (const auto& t : rep[1].at("result").at("tools").items())
+            if (t.at("name").str() == "connect")
+                desc = t.at("inputSchema").at("properties").at("endpoint").at("description").str();
+        CHECK(desc.find(endpointHelp()) != std::string::npos,
+              ("the endpoint description carries the CONNECT grammar: " + desc).c_str());
     }
 
     SECTION("MCP: disasm decodes through a non-invasive peek, with no CPU running");

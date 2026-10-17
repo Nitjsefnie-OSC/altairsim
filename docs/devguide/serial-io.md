@@ -91,10 +91,13 @@ Two more streams are worth knowing because they are how you test:
 std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string& err);
 ```
 
-`src/host/endpoint.cpp` is the **only** file in the program that knows the endpoint grammar —
-`console`, `socket:PORT`, `socket:HOST:PORT`, `serial:DEVICE`, `pty`, `null`, `loopback`, `in:PATH`,
-`out:PATH`, `file:PATH`, `printer:QUEUE`. `CONNECT` and `MOUNT` are generic monitor commands, not
-per-board ones (DESIGN.md §7.7): the monitor opens the endpoint, the board decides what the bytes
+`src/host/endpoint.cpp` is the **only** file in the program that knows the endpoint grammar.
+`endpointHelp()` prints the full list. `HELP CONNECT`, the "no endpoint" error, the MCP
+`connect` tool and the generated reference all show that list. Do not copy the list by hand.
+A hand-typed copy in this page and in the MCP schema kept `file:PATH` after `in:` and `out:`
+replaced it (#784). Examples: `socket:2323`, `serial:/dev/ttyUSB0`, `out:printout.txt`.
+
+`CONNECT` and `MOUNT` are generic monitor commands, not per-board ones (DESIGN.md §7.7): the monitor opens the endpoint, the board decides what the bytes
 mean. That division is why a serial card gets every backend the day it lands without one line
 changing in the monitor.
 

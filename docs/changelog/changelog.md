@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The MCP `connect` tool now lists the endpoints that `CONNECT` takes.** The description of
+its `endpoint` argument gave `tcp:HOST:PORT` and `file:PATH` as examples. The simulator has no
+`tcp:` endpoint, and `out:PATH` replaced `file:PATH` before the first release. An assistant that
+used the examples got `no endpoint` on its first call. The description now holds the same list
+as `HELP CONNECT`, for example `socket:HOST:PORT` and `out:PATH`.
+
 **A terminal window now sends its keys when `[display] keyboard = none`.** The
 setting is for the window of a video board that only shows a picture, such as a Dazzler. The
 simulator applied it to every window, the terminal window too. On a Dazzler machine with a unit

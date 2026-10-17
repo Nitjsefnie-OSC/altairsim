@@ -381,7 +381,7 @@ easy to *forget*, and the forgetting fails in a way that does not point back her
 ### A board that talks to an endpoint wires its resolver in two places
 
 A board with a real line — a serial port, a printer, a socket — does not open that line itself.
-It hands a *spec* like `socket:2323` or `file:printout.txt` to a resolver and gets back a
+It hands a *spec* like `socket:2323` or `out:printout.txt` to a resolver and gets back a
 `ByteStream`. **The endpoint grammar lives in exactly one file, `src/host/endpoint.cpp`
 (`resolveEndpoint`), and a board must not know it** — that separation is what lets `CONNECT`,
 tab completion and the MCP schema all speak the same vocabulary without any board learning what
@@ -489,7 +489,7 @@ Our board answers a cycle. A more interesting one **asks for something**:
   computation over state, and it is what a deterministic replay would be built on. The
   **88-C700 printer** (`src/boards/mits-88c700.{h,cpp}`, `docs/boards/mits-88c700.md`) is the
   smallest shipped board that does this for real: a bare latch that sinks its data port to a
-  `ByteStream`, so `CONNECT lpt0:prn file:printout.txt` captures the printout and the board never
+  `ByteStream`, so `CONNECT lpt0:prn out:printout.txt` captures the printout and the board never
   learns what a file is. It is a good next read after this lamp.
 - **Sub-units.** A board with a *list* of things — regions on a memory board, drives on a
   controller — declares `subUnitTables()` and gets `[[board.region]]` / `[[board.drive]]` in
