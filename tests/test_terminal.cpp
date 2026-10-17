@@ -11,6 +11,7 @@
 #include "host/terminal/vt52.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace altair;
@@ -357,15 +358,16 @@ void test_terminal() {
         CHECK(d != nullptr, "tests/main.cpp injected a display");
         int videoBoard = 0;  // any other drawer's owner handle
         Display::setKeyboardToConsole(false);
-        const void* gone = nullptr;
-        {
-            TerminalStream ts("terminal", 24, 80, std::make_unique<Vt100Emulator>());
-            gone = &ts;
-            ts.pump();
-            CHECK(d->keysToGuest(&ts), "keyboard=none: the terminal window still sends its keys");
-            CHECK(!d->keysToGuest(&videoBoard), "keyboard=none: a video window sends nothing");
-        }
-        CHECK(!d->keysToGuest(gone), "a destroyed terminal leaves no claim behind");
+        // An optional keeps the storage in scope after reset(), so the address checked below
+        // still names live memory (GCC's -Wdangling-pointer flags a block-scoped local).
+        std::optional<TerminalStream> ts;
+        ts.emplace("terminal", 24, 80, std::make_unique<Vt100Emulator>());
+        const void* owner = &*ts;
+        ts->pump();
+        CHECK(d->keysToGuest(owner), "keyboard=none: the terminal window still sends its keys");
+        CHECK(!d->keysToGuest(&videoBoard), "keyboard=none: a video window sends nothing");
+        ts.reset();
+        CHECK(!d->keysToGuest(owner), "a destroyed terminal leaves no claim behind");
         Display::setKeyboardToConsole(true);
         CHECK(d->keysToGuest(&videoBoard), "keyboard=console: every window sends its keys");
     }
