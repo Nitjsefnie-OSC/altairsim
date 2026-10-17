@@ -126,6 +126,9 @@ public:
     std::vector<UnitDef> units() const override;
     bool mount(const std::string& unit, const std::string& path, bool ro, std::string& err) override;
     bool unmount(const std::string& unit, std::string& err) override;
+    std::vector<Property> mountKeys(const std::string& unit) const override;
+    bool mountWith(const std::string& unit, const std::string& path, bool ro, const KeyValues& keys,
+                   std::string& err) override;
 
     std::vector<std::string> subUnitTables() const override { return {"drive"}; }
     std::vector<Property>    subUnitProperties(const std::string& table) const override;
@@ -145,6 +148,7 @@ public:
 
 protected:
     bool addSubUnit(const std::string& table, const KeyValues& kv, std::string& err) override;
+    Property mediaKey() const;  // `media`: a [[board.drive]] key and a MOUNT option
 
     // One drive and whatever is in it. The Spindle is PER DRIVE, and the reason is not the
     // one this comment used to give ("a minidisk turns 16 sectors past the head where an 8"

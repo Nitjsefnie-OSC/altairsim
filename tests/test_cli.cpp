@@ -1715,6 +1715,101 @@ void test_cli() {
         std::filesystem::remove(tmp, ec);
     }
 
+    // `media` AT MOUNT GOES IN WITH THE DISK (#777). It was applied after the mount, as a unit
+    // property no disk has: "has no property 'media'", and the disk went in without it. A
+    // blank that needs it was then refused, with an error that said to set the `media` the
+    // command had just given.
+    SECTION("cli: MOUNT ... media= shapes the disk before it goes in");
+    {
+        setMediaResolver(openHostFile);
+        const auto dir = std::filesystem::temp_directory_path() / "altairsim-mount-media-777";
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        std::filesystem::create_directories(dir, ec);
+        const std::string five = (dir / "five.dsk").string(), none = (dir / "none.dsk").string(),
+                          vf   = (dir / "vf.dsk").string();
+
+        Machine            m777;
+        Monitor            mon777(m777);
+        std::ostringstream sink777;
+        mon777.exec("BOARDS ADD disk1a fd0", sink777);
+        mon777.exec("BOARDS ADD versafloppy vf0", sink777);
+        Board* fd = m777.find("fd0");
+        CHECK(fd != nullptr, "a disk1a to mount on");
+
+        std::ostringstream oa;
+        mon777.exec("MOUNT fd0:drive2 \"" + five + "\" CREATE media=5DS", oa);
+        CHECK(oa.str().find("mounted") != std::string::npos &&
+                  oa.str().find("no property") == std::string::npos,
+              ("a blank with media=5DS mounts: " + oa.str()).c_str());
+        bool saved = false;
+        for (const auto& su : fd->subUnits())
+            for (const auto& f : su.fields)
+                if (f.key == "media" && f.text == "5ds") saved = true;
+        CHECK(saved, "...and the drive keeps media = 5ds, in the schema's spelling");
+
+        std::ostringstream ob;
+        mon777.exec("MOUNT fd0:drive1 \"" + none + "\" CREATE", ob);
+        CHECK(ob.str().find("set `media`") != std::string::npos && !std::filesystem::exists(none, ec),
+              "a blank with no media is refused, and the file CREATE made is removed");
+
+        std::ostringstream oc;
+        mon777.exec("MOUNT fd0:drive1 \"" + none + "\" CREATE media=bogus", oc);
+        CHECK(oc.str().find("must be one of") != std::string::npos && !std::filesystem::exists(none, ec),
+              "a media that is not one is refused before CREATE makes a file");
+
+        std::ostringstream od;
+        mon777.exec("MOUNT fd0:drive1 \"" + none + "\" CREATE nosuch=1", od);
+        CHECK(od.str().find("has no MOUNT option `nosuch`") != std::string::npos &&
+                  od.str().find("media") != std::string::npos && od.str().find("mounted") == std::string::npos &&
+                  !std::filesystem::exists(none, ec),
+              "an unknown option is refused before anything is made or mounted, with the options");
+
+        std::ostringstream oe;
+        mon777.exec("MOUNT vf0:drive1 \"" + vf + "\" CREATE media=8sd", oe);
+        CHECK(oe.str().find("mounted") != std::string::npos,
+              ("the VersaFloppy's documented MOUNT ... CREATE media= mounts a blank: " + oe.str()).c_str());
+
+        std::string uerr;
+        fd->unmount("drive2", uerr);
+        Board* vb = m777.find("vf0");
+        if (vb) vb->unmount("drive1", uerr);
+
+        // A refused MOUNT leaves the drive's media as it was, on every board that takes one.
+        // A board with one media starts with none, so the refused mount still changes it.
+        const std::string missing = (dir / "missing.dsk").string();
+        for (const char* type : {"dcdd", "mds", "versafloppy", "disk1a"}) {
+            Machine            mk;
+            Monitor            monk(mk);
+            std::ostringstream sk;
+            monk.exec(std::string("BOARDS ADD ") + type + " kb0", sk);
+            Board* kb = mk.find("kb0");
+            CHECK(kb != nullptr, (std::string(type) + ": added").c_str());
+            if (!kb) continue;
+            const auto keys = kb->mountKeys("drive0");
+            CHECK(keys.size() == 1 && !keys[0].choices.empty(),
+                  (std::string(type) + ": drive0 takes a media").c_str());
+            if (keys.size() != 1 || keys[0].choices.empty()) continue;
+            const auto&       ch    = keys[0].choices;
+            const std::string first = ch.size() > 1 ? ch.front() : "", second = ch.back();
+            const std::string blank = (dir / (std::string(type) + ".dsk")).string();
+            std::ofstream{blank, std::ios::binary};
+            std::string kerr;
+            CHECK(kb->mountWith("drive0", blank, false, {{"media", first}}, kerr),
+                  (std::string(type) + ": a blank with media = " + first + " mounts: " + kerr).c_str());
+            CHECK(!kb->mountWith("drive0", missing, false, {{"media", second}}, kerr),
+                  (std::string(type) + ": a missing file is refused").c_str());
+            std::string kept;
+            for (const auto& su : kb->subUnits())
+                for (const auto& f : su.fields)
+                    if (f.key == "media") kept = f.text;
+            CHECK(kept == first,
+                  (std::string(type) + ": the refused mount leaves media = " + first + ", not " + kept).c_str());
+            kb->unmount("drive0", kerr);
+        }
+        std::filesystem::remove_all(dir, ec);
+    }
+
     // -----------------------------------------------------------------------
     // THE MOUNT AND UNMOUNT MESSAGES SAY WHAT IS TRUE OF THE UNIT (#574, #577).
     //

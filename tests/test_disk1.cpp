@@ -222,7 +222,10 @@ void test_disk1() {
         withRampDisk(0);
         Rig k;
         std::string err;
-        CHECK(drive(k, "0", nullptr, err) && !ts(k, 0), "a blank with no media reads one-sided");
+        CHECK(!drive(k, "0", nullptr, err) && err.find("set `media`") != std::string::npos &&
+                  err.find("8ss, 8ds)") != std::string::npos,
+              "a blank with no media is refused, and the error names the 8\" media (#777)");
+        CHECK(drive(k, "0", "8ss", err) && !ts(k, 0), "media = 8ss: a blank reads one-sided");
         CHECK(drive(k, "1", "8ds", err) && ts(k, 1), "media = 8ds: a blank reads two-sided at once");
         CHECK(drive(k, "2", "8SS", err) && !ts(k, 2), "media = 8ss (any case): a blank reads one-sided");
         CHECK(!drive(k, "3", "5ds", err) && err.find("8ds") != std::string::npos,
@@ -268,7 +271,8 @@ void test_disk1() {
                                            {"create", "true"}}, err) &&
                   std::filesystem::exists(fresh),
               ("create makes an empty file and mounts it: " + err).c_str());
-        CHECK(k.fdc->loadSubUnit("drive", {{"unit", "1"}, {"mount", old}, {"create", "on"}}, err) &&
+        CHECK(k.fdc->loadSubUnit("drive", {{"unit", "1"}, {"mount", old}, {"media", "8ss"},
+                                           {"create", "on"}}, err) &&
                   std::filesystem::file_size(old) == 1,
               "create does not write over a file that is there");
         CHECK(!k.fdc->loadSubUnit("drive", {{"unit", "2"}, {"mount", (dir / "none.dsk").string()}}, err),
@@ -482,7 +486,8 @@ void test_disk1() {
         CHECK(!k.fdc->mount("drive1", "b.dsk", false, err) && err.find("8\"") != std::string::npos,
               "a 5.25\" SSDD 5 x 1024 disk is refused: the board is built for 8\" drives");
         withRampDisk(0);
-        CHECK(k.fdc->mount("drive2", "blank.dsk", false, err), "a blank mounts");
+        CHECK(k.fdc->mountWith("drive2", "blank.dsk", false, {{"media", "8ds"}}, err),
+              "a blank mounts with its media");
         k.fdc->reset(Reset::Bus);
         CHECK(k.fdc->chip().fdcClockHz == 8000000, "...and a reset keeps the 8 MHz clock");
         CHECK(!setProperty(*k.fdc, "size", "5.25", err), "there is no size property");

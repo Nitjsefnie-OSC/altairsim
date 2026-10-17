@@ -331,8 +331,8 @@ CompuPro Disk 1 (1981), the Disk 1A's predecessor: an NEC uPD765A floppy control
 | `unit` | int | `0` .. `3` | Which drive (0..3) |
 | `mount` | string | text | The disk image to put in it. Relative to THIS FILE. |
 | `readonly` | bool | `on` \| `off` | Write-protect the disk. The drive senses it, so the guest is never told *(also `writeprotect`)* |
-| `media` | enum | `8ss` \| `8ss-sd` \| `8ss-dd256` \| `8ss-dd512` \| `8ss-dd1024` \| `8ds` \| `8ds-sd` \| `8ds-dd256` \| `8ds-dd512` \| `8ds-dd1024` | The diskette: its size and sides, such as 8ds, or a whole format, such as 8ds-dd1024. A blank disk takes its sides from it. Without it, the size of the image decides |
-| `create` | bool | `on` \| `off` | Make an empty disk file if it is not there, then mount it as a blank disk. Set `media` to give the blank its sides |
+| `media` | enum | `8ss` \| `8ss-sd` \| `8ss-dd256` \| `8ss-dd512` \| `8ss-dd1024` \| `8ds` \| `8ds-sd` \| `8ds-dd256` \| `8ds-dd512` \| `8ds-dd1024` | The diskette: its size and sides, such as 8ds, or a whole format, such as 8ds-dd1024. A blank disk needs it. Without it, the size of the image decides |
+| `create` | bool | `on` \| `off` | Make an empty disk file if it is not there, then mount it as a blank disk. A blank needs `media` |
 
 #### Board properties
 
@@ -366,8 +366,8 @@ CompuPro Disk 1A: an NEC uPD765A floppy controller for 8" and 5.25" drives, sing
 | `unit` | int | `0` .. `3` | Which drive (0..3) |
 | `mount` | string | text | The disk image to put in it. Relative to THIS FILE. |
 | `readonly` | bool | `on` \| `off` | Write-protect the disk. The drive senses it, so the guest is never told *(also `writeprotect`)* |
-| `media` | enum | `8ss` \| `8ss-sd` \| `8ss-dd256` \| `8ss-dd512` \| `8ss-dd1024` \| `8ds` \| `8ds-sd` \| `8ds-dd256` \| `8ds-dd512` \| `8ds-dd1024` \| `5ss` \| `5ss-sd` \| `5ss-dd256` \| `5ss-dd512` \| `5ss-dd1024` \| `5ds` \| `5ds-sd` \| `5ds-dd256` \| `5ds-dd512` \| `5ds-dd1024` | The diskette: its size and sides, such as 8ds, or a whole format, such as 8ds-dd1024. A blank disk takes its sides from it. Without it, the size of the image decides |
-| `create` | bool | `on` \| `off` | Make an empty disk file if it is not there, then mount it as a blank disk. Set `media` to give the blank its sides |
+| `media` | enum | `8ss` \| `8ss-sd` \| `8ss-dd256` \| `8ss-dd512` \| `8ss-dd1024` \| `8ds` \| `8ds-sd` \| `8ds-dd256` \| `8ds-dd512` \| `8ds-dd1024` \| `5ss` \| `5ss-sd` \| `5ss-dd256` \| `5ss-dd512` \| `5ss-dd1024` \| `5ds` \| `5ds-sd` \| `5ds-dd256` \| `5ds-dd512` \| `5ds-dd1024` | The diskette: its size and sides, such as 8ds, or a whole format, such as 8ds-dd1024. A blank disk needs it. Without it, the size of the image decides |
+| `create` | bool | `on` \| `off` | Make an empty disk file if it is not there, then mount it as a blank disk. A blank needs `media` |
 
 #### Board properties
 

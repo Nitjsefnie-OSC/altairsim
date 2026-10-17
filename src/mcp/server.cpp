@@ -382,6 +382,9 @@ Json toolList() {
         p["write_protect"]  = boolSchema("Mount read-only (a write-protect tab / a ROM socket).");
         p["create"]         = boolSchema("Create an empty file first if it does not exist -- for "
                                          "a blank disk you are about to FORMAT, or a fresh tape.");
+        p["media"]          = strSchema("The diskette, on a floppy controller that takes it "
+                                        "(SHOW <id> lists the values): its size and sides, or a "
+                                        "format. A blank disk on some controllers needs it.");
         list.push(tool("mount",
                        "Mount a host file into a board's unit (a disk into a drive, a tape into a "
                        "deck, an image into a ROM socket). The board decides what it can take.",
@@ -2148,6 +2151,16 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         std::string path = args.at("path").str();
         bool wp = args.has("write_protect") && args.at("write_protect").boolean();
 
+        // `media` goes in WITH the disk, checked before a file is made (issue #777), as at
+        // MOUNT. splitMountOptions refuses it on a unit that does not take it.
+        KeyValues pre, post;
+        if (UnitDef ud; b->findUnit(unit, ud)) unit = ud.name;  // the board's spelling
+        if (args.has("media")) {
+            std::string serr;
+            if (!splitMountOptions(*b, unit, {{"media", args.at("media").str()}}, pre, post, serr))
+                return textResult(serr, true);
+        }
+
         // Root the mount at the machine's own directory, the one base a typed MOUNT uses
         // too (Monitor::inputBase). MCP does not run a startup list, so the board is left
         // at whatever the loader stamped; set it here so `mount` and the `monitor` tool's
@@ -2163,7 +2176,7 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
             }
         }
         std::string err;
-        if (!b->mount(unit, path, wp, err)) return textResult(err, true);
+        if (!b->mountWith(unit, path, wp, pre, err)) return textResult(err, true);
         Json d = Json::obj();
         d["id"] = Json(b->id);
         d["unit"] = Json(unit);

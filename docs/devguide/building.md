@@ -237,9 +237,29 @@ on a local port, serving a copy of the image. It runs when `de-tnfsd` is on `PAT
 skips (77) otherwise. On Windows it is not registered at all: `de-tnfsd` is POSIX-only.
 `tests/test_tnfs.cpp`, in `unit`, covers the same client against a fake server on every push.
 
+## Every Windows executable has an 8 MB stack
+
+The `if(MSVC)` block of `CMakeLists.txt` links every executable with `/STACK:8388608`. That is
+the main-thread stack of Linux and macOS. The Windows default is 1 MB. MSVC gives
+`Monitor::exec` a frame of about 49 KB, because it does not let the locals of separate blocks
+share stack space. `DO` nests `exec`, so a nested-`DO` test overflowed 1 MB twice while it was
+green on the other platforms (commit 4644401f, and PR #780). Do not lower the value or remove
+it.
+
+For a crash on Windows only, check the stack first. Give a copy of the executable a bigger
+stack and run the same suite:
+
+```bat
+editbin /STACK:33554432 altair_tests_copy.exe
+altair_tests_copy.exe cli
+```
+
+If the copy passes, the cause is the stack. `dumpbin /disasm` of the object file shows a
+function's frame: the `mov eax,N` before its `call __chkstk`.
+
 ## Catching memory bugs: `-DSANITIZE=on`
 
-A crash on one platform only — typically Windows CI red, macOS and Linux green — is usually a
+A crash on one platform only, with the stack ruled out, is usually a
 use-after-free or use-after-scope that one allocator tolerates and another does not. No compiler
 warning fires for it.
 

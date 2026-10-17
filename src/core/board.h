@@ -827,6 +827,26 @@ public:
         err = type() + " has nothing to mount";
         return false;
     }
+
+    // THE KEYS THAT SHAPE A DISK BEFORE IT GOES IN -- `media` on a floppy controller. A blank
+    // disk has no size to probe, so its size and sides must reach the board before mount()
+    // probes it, not after, as a unit property would (issue #777). MOUNT and the MCP `mount`
+    // tool split their key=value options on this list and on unitProperties(): these go into
+    // mountWith(), the rest are set after the disk is in. Described like a sub-unit key (no
+    // get, no set), and validated against it before mountWith() sees it.
+    virtual std::vector<Property> mountKeys(const std::string& unit) const {
+        (void)unit;
+        return {};
+    }
+
+    // mount() with mountKeys() values. A refused mount leaves the old disk and the old values.
+    // Only keys that mountKeys(unit) names are passed, so the default has none to apply.
+    virtual bool mountWith(const std::string& unit, const std::string& path, bool readOnly,
+                           const KeyValues& keys, std::string& err) {
+        (void)keys;
+        return mount(unit, path, readOnly, err);
+    }
+
     virtual bool unmount(const std::string& unit, std::string& err) {
         (void)unit;
         err = type() + " has nothing to unmount";
@@ -1069,6 +1089,14 @@ bool setProperty(Board& b, const std::string& key, const std::string& text, std:
 // The same path for a UNIT's properties -- `SET sio0:a BAUD=9600`.
 bool setUnitProperty(Board& b, const std::string& unit, const std::string& key,
                      const std::string& text, std::string& err);
+
+// MOUNT's key=value options, split and checked BEFORE anything is created or mounted (#777).
+// A key of Board::mountKeys() goes into `pre`, for mountWith(), in the schema's own spelling.
+// A key of unitProperties() goes into `post`, set after the disk is in (setUnitProperty). A
+// value that does not fit its key, or a key in neither list, is refused, and the refusal
+// names the keys the unit takes. MOUNT and the MCP `mount` tool both come through here.
+bool splitMountOptions(Board& b, const std::string& unit, const KeyValues& opts, KeyValues& pre,
+                       KeyValues& post, std::string& err);
 
 // ...and for anything else with properties that is not a board at all. The host
 // console has properties (ATTN) and must obey the same rules about them; making

@@ -4268,9 +4268,9 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 extract = true;
                 continue;
             }
-            // ANY key=value is a unit property set, applied once the tape is in (below), so
-            // `counter=off`/`stop=2:05` need no per-key code here and a new unit property
-            // works at MOUNT the day it exists. WP/RO stay bare flags -- the read-only fence
+            // ANY key=value is collected here and split below: a mount key (`media`) goes in
+            // with the disk, a unit property (`counter=off`, `stop=2:05`) is set once it is
+            // in. Neither needs per-key code here. WP/RO stay bare flags -- the read-only fence
             // is the board's own argument to mount(), not a property.
             size_t eq = a[i].find('=');
             if (eq != std::string::npos && eq > 0) {
@@ -4296,10 +4296,25 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 continue;
             }
             out << "MOUNT: '" << a[i] << "': options are WP (RO), CREATE, extract[=<base>], or "
-                << "key=value (e.g. counter=off, stop=2:05). usage: MOUNT <id>:<unit> <file> "
+                << "key=value (e.g. media=8ds, counter=off, stop=2:05). usage: MOUNT <id>:<unit> <file> "
                 << "[WP] [CREATE] [extract[=<base>]] [key=value ...]\n";
             failed_ = true;
             return true;
+        }
+
+        // THE OPTIONS ARE CHECKED NOW, BEFORE ANY FILE IS MADE OR MOUNTED (#777). A key that
+        // shapes the disk (`media`) goes in WITH it: a blank has no size to probe, so set
+        // after the mount it came too late, and the disk went in without it. A unit property
+        // (`counter=off`) is set once the disk is in. A typo is refused here, not reported
+        // under a disk that was mounted anyway.
+        KeyValues pre, post;
+        {
+            std::string serr;
+            if (!splitMountOptions(*b, u.name, opts, pre, post, serr)) {
+                out << serr << "\n";
+                failed_ = true;
+                return true;
+            }
         }
 
         // WHAT WE MOUNT. Normally the file as typed; for an ImageDisk (`.IMD`) it is the raw
@@ -4436,7 +4451,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         }
 
         std::string err;
-        if (!b->mount(u.name, mountPath, readOnly, err)) {
+        if (!b->mountWith(u.name, mountPath, readOnly, pre, err)) {
             // A CREATE whose mount is then refused must NOT leave its zero-byte file behind:
             // the operator asked to mount a disk, not to litter one. Unlink exactly the file
             // WE made this call (`created`), never one that was already on disk. It also keeps
@@ -4479,10 +4494,9 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             else if (createdCard)
                 out << b->id << ":" << u.name << ": created card "
                     << resolveInput(mountPath) << " (blank, unformatted)\n";
-            // The trailing key=value options are applied as unit properties now the tape is
-            // in -- so `counter=off`/`stop=2:05` at MOUNT and SET later are the one mechanism.
-            // A unit with no such property (a disk, a ROM) says so rather than ignoring it.
-            for (const auto& kv : opts) {
+            // The unit properties among the options are set now the tape is in -- so
+            // `counter=off`/`stop=2:05` at MOUNT and SET later are the one mechanism.
+            for (const auto& kv : post) {
                 std::string perr;
                 if (!setUnitProperty(*b, u.name, kv.first, kv.second, perr)) {
                     out << b->id << ":" << u.name << ": " << perr << "\n";

@@ -63,6 +63,9 @@ public:
     std::vector<UnitDef> units() const override;
     bool mount(const std::string& unit, const std::string& path, bool ro, std::string& err) override;
     bool unmount(const std::string& unit, std::string& err) override;
+    std::vector<Property> mountKeys(const std::string& unit) const override;
+    bool mountWith(const std::string& unit, const std::string& path, bool ro, const KeyValues& keys,
+                   std::string& err) override;
 
     // No disksInterleaved() override: the VersaFloppy lays disks cylinder-major (head-minor),
     // which is Board's default, so a converted IMD is emitted that way too (host/imd.h). The
@@ -84,6 +87,7 @@ public:
 
 protected:
     bool addSubUnit(const std::string& table, const KeyValues& kv, std::string& err) override;
+    Property mediaKey() const;  // `media`: a [[board.drive]] key and a MOUNT option
 
 private:
     enum class Variant { Vf1, Vf2 };
