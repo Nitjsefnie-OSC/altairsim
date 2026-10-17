@@ -27,6 +27,7 @@ TerminalStream::~TerminalStream() {
     // line is constructed (claiming the target) before the old one is destroyed, so a
     // blind clear here would strand the new terminal (see [[altairsim-config-load-replaces]]).
     if (s_keyTarget == this) s_keyTarget = nullptr;
+    if (s_display) s_display->releaseKeyboard(this);
 }
 
 bool TerminalStream::hasWindow() { return s_display && s_display->isWindowed(); }
@@ -149,6 +150,8 @@ void TerminalStream::setPhosphor(Phosphor p) {
 void TerminalStream::pump() {
     Display* d = s_display;
     if (!d) return;
+    // The terminal's window is a keyboard whatever `[display] keyboard` says (issue #767).
+    d->claimKeyboard(this);
     if (!renderer_.frameChanged(screen_, d)) return;
     if (!d->wantsFrame()) return;
     // `this` keys this terminal's own window (issue #234), distinct from any video board's;

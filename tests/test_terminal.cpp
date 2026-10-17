@@ -348,6 +348,28 @@ void test_terminal() {
         CHECK(!TerminalStream::hasWindow(), "the test display is not windowed");
     }
 
+    SECTION("terminal stream -- its window is a keyboard even with keyboard=none (#767)");
+    {
+        // `[display] keyboard = none` makes a VIDEO window display-only (a Dazzler's). The
+        // terminal's own window still sends its keys: pump() claims the keyboard for it, and
+        // the back end asks keysToGuest() per window as each key arrives.
+        Display* d = TerminalStream::display();
+        CHECK(d != nullptr, "tests/main.cpp injected a display");
+        int videoBoard = 0;  // any other drawer's owner handle
+        Display::setKeyboardToConsole(false);
+        const void* gone = nullptr;
+        {
+            TerminalStream ts("terminal", 24, 80, std::make_unique<Vt100Emulator>());
+            gone = &ts;
+            ts.pump();
+            CHECK(d->keysToGuest(&ts), "keyboard=none: the terminal window still sends its keys");
+            CHECK(!d->keysToGuest(&videoBoard), "keyboard=none: a video window sends nothing");
+        }
+        CHECK(!d->keysToGuest(gone), "a destroyed terminal leaves no claim behind");
+        Display::setKeyboardToConsole(true);
+        CHECK(d->keysToGuest(&videoBoard), "keyboard=console: every window sends its keys");
+    }
+
     // ---- The host keyboard -> the line (issue #244, Task 4, single-window scope) ----
     SECTION("terminal stream -- the host keyboard reaches the line, encoded by the dialect");
     {

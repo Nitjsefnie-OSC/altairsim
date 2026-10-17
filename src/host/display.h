@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
@@ -416,6 +417,16 @@ public:
     static bool keyboardToConsole() { return keyboardToConsole_; }
     static void setKeyboardToConsole(bool on) { keyboardToConsole_ = on; }
 
+    // A WINDOW THAT IS ALWAYS A KEYBOARD. `keyboard = none` is about a VIDEO board's window.
+    // A built-in terminal's window is a keyboard by nature -- the keys typed there are the
+    // ones its line sends -- so its drawer claims the keyboard for its own window, and
+    // `none` does not reach it (issue #767). keysToGuest() is the per-window answer the back
+    // end asks as each keystroke arrives. The drawer releases its claim when it goes, so a
+    // later drawer that lands on the same address starts without one.
+    void claimKeyboard(Owner o) { keyOwners_.insert(o); }
+    void releaseKeyboard(Owner o) { keyOwners_.erase(o); }
+    bool keysToGuest(Owner o) const { return keyboardToConsole_ || keyOwners_.count(o) != 0; }
+
     // ---- CRT PRESENTATION: paint the window like the original monitor, or crisp? ----
     //
     // Off (default) -- today's look: the board's pixels drawn as crisp squares at a whole-number
@@ -470,6 +481,9 @@ private:
     KeySink        keySink_;
     SpecialKeySink specialKeySink_;
 
+    // The owners whose windows are always a keyboard; see claimKeyboard().
+    std::set<Owner> keyOwners_;
+
     // Sol-20 Table 7-4: up 97, down 9A, left 81, right 93, HOME CURSOR 8E, MODE SELECT 80,
     // CLEAR 8B, LOAD 8C. The last three have no key on a modern keyboard and no ASCII code,
     // so a windowed host reaches them through function keys (see display_sdl.cpp); issue #59.
@@ -520,7 +534,7 @@ inline std::vector<Property> Display::properties() {
         x.name    = "keyboard";
         x.help    = "Where keys typed in a window go: 'console' (to the guest, like a Sol-20) "
                     "or 'none' (display-only, like a Dazzler -- keys drive a joystick and "
-                    "Ctrl-E stops the guest)";
+                    "Ctrl-E stops the guest). A terminal window always sends its keys to its unit";
         x.kind    = Kind::Enum;
         x.choices = {"console", "none"};
         x.get     = [] { return Value::ofStr(keyboardToConsole_ ? "console" : "none"); };

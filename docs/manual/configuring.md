@@ -527,7 +527,7 @@ The size of a window is different. Each video board opens its own window, so its
 | Key | |
 |---|---|
 | `focus` | whether a window comes to the front and gets the keyboard when it opens. Default `false` |
-| `keyboard` | whether the keys that you type in a window go to the guest: `console` (default) or `none` (display only) |
+| `keyboard` | whether the keys that you type in the window of a video board go to the guest: `console` (default) or `none` (display only) |
 | `crt` | show the picture as on the original monitor, with a soft glow and a 4:3 shape, and not as sharp square pixels. Default `false` |
 
 **`focus`.** With `focus = false`, the default, a window opens behind your other windows, and the
@@ -546,7 +546,8 @@ to the unit that the terminal window is connected to. If not, they go to the uni
 console. This is correct for a **Sol-20**. Set `none` for a board that only shows a picture, such
 as a **Dazzler**. The window still shows the picture and still comes to the front, but its keys
 do **not** go to the guest. They control a joystick, if the machine has a `d7a`. Only `Ctrl-E`
-works in the window, to stop the machine and give you the monitor.
+works in the window, to stop the machine and give you the monitor. The `keyboard` setting applies
+only to the windows of video boards. A terminal window always sends its keys to its unit.
 
 **`crt`** changes how the window shows the picture. It does not change what the machine draws.
 With `crt = false`, the default, each pixel is a sharp square, scaled by a whole number. With
