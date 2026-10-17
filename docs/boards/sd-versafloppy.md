@@ -102,7 +102,7 @@ double-sided reading. The VF-I (`vfi`, FD1771) supports the four FM codes (0–3
 The `Z` command formats a diskette by streaming a whole track image through the FD177x **Write
 Track** command; the emulated controller lays each track's geometry down as it arrives
 (`DiskImage::setTrackFormat`), and the recorded density comes from the chip's data rate at that
-moment (the D6 density bit). A **blank** disk — `MOUNT drive0 blank.dsk CREATE media=NAME` — mounts
+moment (the D6 density bit). A **blank** disk — `MOUNT vf0:drive0 blank.dsk CREATE media=NAME` — mounts
 unformatted (every read is Record Not Found) and **grows** into a valid image as the guest formats
 it, one track at a time, capped at the named format's size. A full disk **reformats** in place at
 the same size. Double-sided formats record both sides of a cylinder before stepping (the DDBIOS

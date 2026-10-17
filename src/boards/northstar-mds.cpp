@@ -783,14 +783,7 @@ std::vector<Property> NorthStarFdc::subUnitProperties(const std::string& table) 
         x.aliases = {"writeprotect"};  // the operator's word for it; `readonly` is written back
         p.push_back(std::move(x));
     }
-    {
-        Property x;
-        x.name = "media";
-        x.help = "Force the format instead of probing the image's size";
-        x.kind = Kind::Enum;
-        for (const auto& f : formats()) x.choices.push_back(f.name);
-        p.push_back(std::move(x));
-    }
+    p.push_back(mediaKey());
     {
         Property x;
         x.name = "create";
@@ -800,6 +793,35 @@ std::vector<Property> NorthStarFdc::subUnitProperties(const std::string& table) 
         p.push_back(std::move(x));
     }
     return p;
+}
+
+// `media`: a [[board.drive]] key, and a MOUNT option that reaches the probe (mountKeys).
+Property NorthStarFdc::mediaKey() const {
+    Property x;
+    x.name = "media";
+    x.help = "Force the format instead of probing the image's size";
+    x.kind = Kind::Enum;
+    for (const auto& f : formats()) x.choices.push_back(f.name);
+    return x;
+}
+
+std::vector<Property> NorthStarFdc::mountKeys(const std::string& unit) const {
+    if (driveIndex(unit, drives_) < 0) return {};
+    return {mediaKey()};
+}
+
+// The media goes with the disk: a mount that is refused leaves the old disk and its media.
+bool NorthStarFdc::mountWith(const std::string& unit, const std::string& path, bool ro,
+                      const KeyValues& keys, std::string& err) {
+    const int i = driveIndex(unit, drives_);
+    if (i < 0) return mount(unit, path, ro, err);  // mount() names the units
+    std::string& forced = drive_[(size_t)i].forced;
+    const std::string was = forced;
+    for (const auto& [k, v] : keys)
+        if (k == "media") forced = v;
+    if (mount(unit, path, ro, err)) return true;
+    forced = was;
+    return false;
 }
 
 bool NorthStarFdc::addSubUnit(const std::string& table, const KeyValues& kv, std::string& err) {
@@ -828,8 +850,10 @@ bool NorthStarFdc::addSubUnit(const std::string& table, const KeyValues& kv, std
         return false;
     }
 
-    drive_[(size_t)unit].forced = media;
-    if (path.empty()) return true;
+    if (path.empty()) {
+        drive_[(size_t)unit].forced = media;
+        return true;
+    }
 
     // `create = true`: make the file (empty) where mount() will open it. Never replace a
     // file that is already there.
@@ -841,7 +865,8 @@ bool NorthStarFdc::addSubUnit(const std::string& table, const KeyValues& kv, std
             if (!writeHostFile(rp, {}, cerr)) { err = cerr + pathNote(path); return false; }
         }
     }
-    return mount("drive" + std::to_string(unit), path, ro, err);
+    // Always passed, empty too: a table with no `media` is a disk the size decides.
+    return mountWith("drive" + std::to_string(unit), path, ro, {{"media", media}}, err);
 }
 
 // An EMPTY drive with no forced media writes no table (DESIGN.md 5).

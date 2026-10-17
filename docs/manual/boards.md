@@ -1316,12 +1316,18 @@ altairsim> RUN 0
 
 The board recognizes a disk by the size of its image. An 8″ CompuPro disk has a single-density
 track 0, which the EPROM reads, and its other tracks can be double density. A disk can have one
-side or two. A smaller image that has no known size mounts as a blank disk. CompuPro's
-`FORMAT.COM` formats it.
+side or two. A smaller image that has no known size is a blank disk. CompuPro's `FORMAT.COM`
+formats it.
 
-The `media` key of a drive gives the diskette its size and sides. `8ds` is an 8″ disk with two
-sides, and `5ss` is a 5.25″ disk with one side. Without `media`, a blank disk reads as
-one-sided until a format writes side 1. In a machine file:
+A blank disk needs `media`, which gives the diskette its size and sides. `8ds` is an 8″ disk with
+two sides, and `5ss` is a 5.25″ disk with one side. Without `media`, the board refuses a blank,
+and the error names the values to set. This command puts a blank 8″ two-sided disk in drive 1:
+
+```
+altairsim> MOUNT fd0:drive1 BLANK.DSK CREATE media=8ds
+```
+
+In a machine file:
 
 ```toml
 [[board]]
@@ -1404,8 +1410,14 @@ altairsim> SET fd0:serial baud=1200
 Set `baud` to the rate of the guest's delay loop.
 
 To format a blank disk, give its drive `media = "8ds"`, an 8″ disk with two sides. Without
-`media`, a blank disk reads as one-sided until a format writes side 1. On that blank,
-CompuPro's `FORMAT.COM` on the 2.2N disk stops with `Drive Format Error`. In a machine file:
+`media`, the board refuses a blank, and the error names `8ss` and `8ds`. This command puts a
+blank 8″ two-sided disk in drive 1:
+
+```
+altairsim> MOUNT fd0:drive1 BLANK.DSK CREATE media=8ds
+```
+
+In a machine file:
 
 ```toml
 [[board]]

@@ -197,6 +197,40 @@ bool setUnitProperty(Board& b, const std::string& unit, const std::string& key,
     return ok;
 }
 
+bool splitMountOptions(Board& b, const std::string& unit, const KeyValues& opts, KeyValues& pre,
+                       KeyValues& post, std::string& err) {
+    const auto keys  = b.mountKeys(unit);
+    const auto props = b.unitProperties(unit);
+    for (const auto& [k, text] : opts) {
+        const Property* p     = nullptr;
+        bool            early = false;
+        for (const auto& x : keys)
+            if (named(x, k)) { p = &x; early = true; }
+        for (const auto& x : props)
+            if (!p && named(x, k)) p = &x;
+        if (!p) {
+            std::string legal;
+            for (const auto& x : keys) legal += (legal.empty() ? "" : ", ") + x.name;
+            for (const auto& x : props) legal += (legal.empty() ? "" : ", ") + x.name;
+            err = b.id + ":" + unit + " has no MOUNT option `" + k + "`";
+            err += legal.empty() ? std::string(" -- it takes none") : " -- it takes " + legal;
+            return false;
+        }
+        Value v;
+        if (!parseValue(text, p->kind, v, err, p->radix)) {
+            err = b.id + ":" + unit + ": " + p->name + ": " + err;
+            return false;
+        }
+        if (!validate(*p, v, err)) {
+            err = b.id + ":" + unit + ": " + err;
+            return false;
+        }
+        if (early) pre.emplace_back(p->name, p->kind == Kind::Enum ? v.s() : text);
+        else post.emplace_back(k, text);
+    }
+    return true;
+}
+
 // The console is not a Board -- it is the host's keyboard -- but it has
 // properties and must obey exactly the same rules about them. Hence this: the
 // same path, over a property list from anywhere at all.

@@ -562,15 +562,37 @@ std::vector<Property> VersaFloppyBoard::subUnitProperties(const std::string& tab
         x.aliases = {"writeprotect"};
         p.push_back(std::move(x));
     }
-    {
-        Property x;
-        x.name = "media";
-        x.help = "Force the format instead of probing the image's size";
-        x.kind = Kind::Enum;
-        for (const auto& f : vfFormats()) x.choices.push_back(f.name);
-        p.push_back(std::move(x));
-    }
+    p.push_back(mediaKey());
     return p;
+}
+
+// `media`: a [[board.drive]] key, and a MOUNT option that reaches the probe (mountKeys).
+Property VersaFloppyBoard::mediaKey() const {
+    Property x;
+    x.name = "media";
+    x.help = "Force the format instead of probing the image's size";
+    x.kind = Kind::Enum;
+    for (const auto& f : vfFormats()) x.choices.push_back(f.name);
+    return x;
+}
+
+std::vector<Property> VersaFloppyBoard::mountKeys(const std::string& unit) const {
+    if (driveIndex(unit, drives_) < 0) return {};
+    return {mediaKey()};
+}
+
+// The media goes with the disk: a mount that is refused leaves the old disk and its media.
+bool VersaFloppyBoard::mountWith(const std::string& unit, const std::string& path, bool ro,
+                      const KeyValues& keys, std::string& err) {
+    const int i = driveIndex(unit, drives_);
+    if (i < 0) return mount(unit, path, ro, err);  // mount() names the units
+    std::string& forced = drive_[(size_t)i].forced;
+    const std::string was = forced;
+    for (const auto& [k, v] : keys)
+        if (k == "media") forced = v;
+    if (mount(unit, path, ro, err)) return true;
+    forced = was;
+    return false;
 }
 
 bool VersaFloppyBoard::addSubUnit(const std::string& table, const KeyValues& kv,
@@ -609,9 +631,12 @@ bool VersaFloppyBoard::addSubUnit(const std::string& table, const KeyValues& kv,
         return false;
     }
 
-    drive_[(size_t)unit].forced = media;
-    if (path.empty()) return true;
-    return mount("drive" + std::to_string(unit), path, ro, err);
+    if (path.empty()) {
+        drive_[(size_t)unit].forced = media;
+        return true;
+    }
+    // Always passed, empty too: a table with no `media` is a disk the size decides.
+    return mountWith("drive" + std::to_string(unit), path, ro, {{"media", media}}, err);
 }
 
 std::vector<Board::SubUnit> VersaFloppyBoard::subUnits() const {

@@ -110,17 +110,15 @@ order puts it.
 Three 5.25″ formats have 327,680 bytes, and two have 655,360 bytes. Without `media`, the probe
 refuses these two sizes, because a raw image cannot say which format it is. The error names the
 `media` values that fit. An image that is smaller than the largest format and has no known size
-mounts as a blank disk. A guest can format it track by
-track with Format a Track. A blank has 80 cylinders and two sides, the size of the largest disk. A
-track that is never formatted takes no bytes in the image. Because of this, a one-sided or a
-77-cylinder format is written end to end, and the probe reads it at the next mount.
+is a blank disk. A blank has no size to probe, so it needs `media`, as on the VersaFloppy. Without
+`media`, the probe refuses a blank, and the error names the values to set (issue #777). A guest
+can format a blank track by track with Format a Track. A track that is never formatted takes no
+bytes in the image. Because of this, a format of fewer tracks is written end to end, and the probe
+reads it at the next mount.
 
-The TS line to the 765 is high when Drive Select bit 3 (Force Two Sided) is set. Otherwise, it
-follows the disk:
-
-- With `media`, TS is the diskette's sides, formatted or blank.
-- Without `media`, TS is high when side 1 of the disk has a formatted track. A blank disk reads
-  one-sided until a FORMAT writes side 1, as new 8″ one-sided media does.
+The TS line to the 765 is high when Drive Select bit 3 (Force Two Sided) is set. Otherwise, it is
+the sides of the diskette: from the size of the image, or from `media` for a blank. A format does
+not change it.
 
 An 8″ `FORMAT.COM` reads TS to decide how many sides to write. CompuPro's BIOS and the EPROM set
 bit 3 for every 5.25″ drive.
@@ -141,15 +139,20 @@ offers only the 8″ values. The schema takes any case, and the board stores the
 With `media`, the probe does these things:
 
 - An image of a format that fits mounts as that format.
-- A smaller image mounts as a blank of the forced shape: 80 cylinders, the forced number of
-  sides, and the rate of the forced size (a 5.25″ blank turns at 5 rev/s).
+- A smaller image mounts as a blank of the forced shape. The blank has 77 cylinders for 8″ or 80
+  for 5.25″, and the forced number of sides. It has the rate and motor bit of the forced size.
+  For example, a 5.25″
+  blank turns at 5 rev/s, and Motor Control bit 7 runs it.
 - A formatted image of a different shape, or a larger image, is refused. The old disk stays.
 - `5ds` alone on 655,360 bytes is still refused, because two formats fit it.
 
 The media stays with the drive across `MOUNT` and `UNMOUNT`, and `CONFIG SAVE` writes it, also for
 an empty drive. When the mount of a `[[board.drive]]` table is refused, the drive keeps its old
-media. MOUNT options cannot set `media`, because the monitor applies them after the mount, as
-on the DCDD and the VersaFloppy.
+media. `MOUNT` takes `media` too, and gives it to the board before the disk goes in:
+
+```
+MOUNT fd0:drive1 BLANK.DSK CREATE media=5ds
+```
 
 ### Properties
 
@@ -230,7 +233,8 @@ The `[[board.drive]]` table takes these keys:
 - `tests/test_disk1a.cpp` (suite `disk1a`) uses real bus cycles. It tests these things:
   - the port map at a moved base, each status bit, and the DMA stack
   - a DMA read, a DMA write and the 24-bit counter
-  - the size probe, a blank disk formatted as a 5.25″ and as an 8″ disk, and the TS line
+  - the size probe, the refusal of a blank with no `media`, a `5ds` and an `8ss` blank
+    formatted, the TS line from the media, and a `5ds` blank run by motor bit 7
   - `media`: a 655,360-byte image mounts as `5ds-dd512` and reads side 1, 327,680 bytes mounts
     as `5ss-dd256` and as `5ds-sd`, a `5ds` blank reads two-sided, and an 8″ image is refused as
     5.25″ media

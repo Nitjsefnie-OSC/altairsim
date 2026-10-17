@@ -6,6 +6,7 @@
 #include "core/machines.h"
 #include "host/console.h"
 #include "host/filter.h"
+#include "host/media.h"
 #include "host/mirror_stream.h"
 #include "host/stream.h"
 #include "host/tee_stream.h"
@@ -1982,6 +1983,46 @@ void test_mcp() {
               "connect reports the wiring it made");
         CHECK(rep[2].at("result").has("isError") && rep[2].at("result").at("isError").boolean(),
               "mount on an unknown board is an error, not a silent no-op");
+    }
+
+    SECTION("MCP: mount takes media, for a blank disk that needs it (#777)");
+    {
+        setMediaResolver(openHostFile);
+        const auto dir = std::filesystem::temp_directory_path() / "altairsim-mcp-media-777";
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        std::filesystem::create_directories(dir, ec);
+        const std::string blank = (dir / "b.dsk").string(), bare = (dir / "c.dsk").string();
+
+        Machine m;
+        if (!loadAltmon(m)) return;
+        std::ostringstream add;
+        Monitor(m).exec("BOARDS ADD disk1a fd0", add);
+        std::ostringstream s;
+        int id = 0;
+        auto req = [&](const std::string& params) {
+            s << R"({"jsonrpc":"2.0","id":)" << ++id
+              << R"(,"method":"tools/call","params":)" << params << "}\n";
+        };
+        req(R"({"name":"mount","arguments":{"id":"fd0","unit":"Drive1","path":")" + blank +
+            R"(","create":true,"media":"5ds"}})");
+        req(R"({"name":"mount","arguments":{"id":"fd0","unit":"drive2","path":")" + bare +
+            R"(","create":true}})");
+        req(R"({"name":"mount","arguments":{"id":"sio0","unit":"a","path":")" + bare +
+            R"(","media":"5ds"}})");
+        auto rep = runScript(m, s.str());
+        CHECK(!rep[1].at("result").has("isError"), "mount with media = 5ds mounts a blank");
+        CHECK(rep[2].at("result").has("isError") &&
+                  rep[2].at("result").at("content").items().at(0).at("text").str().find("set `media`") !=
+                      std::string::npos,
+              "...and without it the blank is refused, with the key to set");
+        CHECK(rep[3].at("result").has("isError") &&
+                  rep[3].at("result").at("content").items().at(0).at("text").str().find("media") !=
+                      std::string::npos,
+              "a unit that takes no media refuses it");
+        std::string uerr;
+        if (Board* fd = m.find("fd0")) fd->unmount("drive1", uerr);
+        std::filesystem::remove_all(dir, ec);
     }
 
     SECTION("MCP: start leaves the guest running between calls; the other tools still work; "

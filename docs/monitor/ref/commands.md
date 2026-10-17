@@ -1039,10 +1039,12 @@ CREATE makes the file first if it is not there (empty), then mounts it -- a
 fresh hard-sector disk to FORMAT, or a blank cassette. Without CREATE a missing
 file is a 'no such file', because a mistyped name is a mistake, not a new disk.
 
-A TRAILING k=v SETS A UNIT PROPERTY, applied the moment the medium is in --
-the same properties SHOW <id> lists and SET <id>:<unit> writes, said at the one
-moment you were going to say them anyway. A unit with no such property says so
-rather than ignoring you.
+A TRAILING k=v IS CHECKED BEFORE ANYTHING IS CREATED OR MOUNTED. A bad key or
+value is refused, and nothing is created or mounted.
+media=NAME goes in with the disk, on a disk board that has a media key. It names
+the disk's format. A blank disk gets its size and sides from it.
+Any other k=v sets a unit property when the medium is in. These are the
+properties that SHOW <id> lists and SET <id>:<unit> writes.
 
 EXTRACT is not a property and runs after the mount: it splits a cassette WAV
 into one .TAP per program on it, exactly as the EXTRACT verb does.
@@ -1057,6 +1059,7 @@ and it will tell you so.
 MOUNT dsk0:drive0 disks/cpm.dsk
 MOUNT dsk0:drive1 disks/master.dsk WP
 MOUNT dsk0:drive1 new.dsk CREATE      ; a blank disk to FORMAT from the guest
+MOUNT fd0:drive1 new.dsk CREATE media=8ds ; a blank 8" two-sided disk
 MOUNT mem0:rom0 roms/monitor.bin
 MOUNT ACR tape.bin                    ; the one cassette, its one tape: acr0:tape
 MOUNT ACR new.wav CREATE mode=record  ; a blank tape, in and recording

@@ -299,7 +299,8 @@ void test_disk1a() {
             {256256, true, "8\" SSSD 26 x 128"},     {512512, true, "8\" DSSD"},
             {625920, true, "8\" SSDD 8 x 1024"},     {587008, true, "8\" SSDD 15 x 512"},
             {509184, true, "8\" SSDD 26 x 256"},     {163840, true, "5.25\" SSSD 16 x 128"},
-            {409600, true, "5.25\" SSDD 5 x 1024"},  {0, true, "a blank (0-byte) disk"},
+            {409600, true, "5.25\" SSDD 5 x 1024"},
+            {0, false, "a blank (0-byte) disk with no media (#777)"},
             {327680, false, "327,680 (three 5.25\" formats)"},
             {655360, false, "655,360 (two 5.25\" formats)"},
             {2000000, false, "an image larger than any disk"},
@@ -311,6 +312,10 @@ void test_disk1a() {
                   (std::string(s.ok ? "mounts: " : "refused: ") + s.what).c_str());
         }
         CHECK(!k.fdc->mount("drive4", "x.dsk", false, err), "there is no drive4");
+        withRampDisk(0);
+        CHECK(!k.fdc->mount("drive1", "x.dsk", false, err) &&
+                  err.find("8ss, 8ds, 5ss, 5ds") != std::string::npos,
+              "a blank with no media: the error names the media to set");
     }
     {
         // A blank formats as any disk: a 5.25" FORMAT writes cylinder 79 head 1, and an 8"
@@ -336,7 +341,8 @@ void test_disk1a() {
         {
             Rig         k;
             std::string err;
-            CHECK(k.fdc->mount("drive1", "blank5.dsk", false, err), "a blank (0-byte) disk mounts");
+            CHECK(k.fdc->mountWith("drive1", "blank5.dsk", false, {{"media", "5ds"}}, err),
+                  "a blank (0-byte) 5ds disk mounts");
             k.out(DSR, 0x28);  // 5.25" rate + Force Two Sided, as the EPROM and HMXBIOS set
             k.home(1);
             auto r = format(k, 79, 1, 3, 5, true);
@@ -344,14 +350,27 @@ void test_disk1a() {
             CHECK(blank->bytes().size() == 5120, "...and the image holds that one track");
             k.out(DSR, 0x20);
             k.out(DATA, 0x04); k.out(DATA, 0x01);
-            CHECK((k.in(DATA) & 0x08) == 0x08, "side 1 is formatted: TS is high without Force Two Sided");
+            CHECK((k.in(DATA) & 0x08) == 0x08, "TS is the media's: high without Force Two Sided");
         }
         {
             Rig         k;
             std::string err;
-            k.fdc->mount("drive1", "blank8.dsk", false, err);
+            CHECK(k.fdc->mountWith("drive1", "blank5h0.dsk", false, {{"media", "5ds"}}, err),
+                  "a second 5ds blank mounts");
+            k.out(DSR, 0x20);  // 5.25" rate, no Force Two Sided
+            k.home(1);
+            auto r = format(k, 0, 0, 3, 5, true);
+            CHECK((r[0] & 0xC0) == 0, "a 5ds blank formats cylinder 0 head 0 only");
             k.out(DATA, 0x04); k.out(DATA, 0x01);
-            CHECK((k.in(DATA) & 0x08) == 0, "a blank reads one-sided (ST3 TS low), so an 8\" FORMAT writes side 0 only");
+            CHECK((k.in(DATA) & 0x08) == 0x08, "...and TS is still high: side 1 unformatted does not make it one-sided");
+        }
+        {
+            Rig         k;
+            std::string err;
+            CHECK(k.fdc->mountWith("drive1", "blank8.dsk", false, {{"media", "8ss"}}, err),
+                  "a blank 8ss disk mounts");
+            k.out(DATA, 0x04); k.out(DATA, 0x01);
+            CHECK((k.in(DATA) & 0x08) == 0, "an 8ss blank reads one-sided (ST3 TS low), so an 8\" FORMAT writes side 0 only");
             k.home(1);
             format(k, 0, 0, 0, 26, false);
             auto r = format(k, 1, 0, 0, 26, false);
@@ -554,6 +573,17 @@ void test_disk1a() {
         CHECK(!sawIndex(), "J11 in: the 5.25\" motor stops with bit 7 clear");
         k.out(MOTOR, 0x81);
         CHECK(sawIndex(), "J11 in: bit 7 runs the 5.25\" motor");
+
+        // A BLANK 5.25" DISKETTE IS IN A 5.25" DRIVE (#777): its motor is bit 7, not the 8"
+        // drive 2 bit 6. A blank was an 8" disk, whatever the diskette, before `media` was
+        // needed for it.
+        k.fdc->unmount("drive2", err);
+        withRampDisk(0);
+        CHECK(k.fdc->mountWith("drive2", "b.dsk", false, {{"media", "5ds"}}, err), "a 5ds blank in unit 2");
+        k.out(MOTOR, 0x41);
+        CHECK(!sawIndex(), "a 5ds blank: the 8\" bit 6 does not run it");
+        k.out(MOTOR, 0x81);
+        CHECK(sawIndex(), "a 5ds blank: bit 7 runs it");
     }
 
     SECTION("disk1a: the snapshot");

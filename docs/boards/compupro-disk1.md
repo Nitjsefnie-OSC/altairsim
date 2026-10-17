@@ -81,9 +81,9 @@ them off (1982 manual). With `port3 = serial`, the minifloppy motors are on all 
   `clock_hz = 0` too.
 - **8″ drives only.** The 765 runs at 8 MHz. The size probe takes 8″ images only and refuses
   an image the size of a 5.25″ disk. The board has no software rate select.
-- **The TS line** is the disk's own. With `media`, it is the diskette's sides, formatted or
-  blank. Without `media`, it is high when side 1 of the disk has a formatted track. A blank disk
-  then reads one-sided until a format writes side 1. The Disk 1 has no Force Two Sided bit.
+- **The TS line** is the sides of the diskette: from the size of the image, or from `media` for
+  a blank. A blank needs `media` (`8ss` or `8ds`), and without it the mount is refused (issue
+  #777). The Disk 1 has no Force Two Sided bit.
 - **`media` and `create`** on `[[board.drive]]` work as on the Disk 1A
   (`docs/boards/compupro-disk1a.md`, *The `media` of a drive*), with the 8″ values only. CompuPro
   `FORMAT.COM` 3.1c on the 2.2N disk formats a blank drive B only with `media = "8ds"`. The BIOS
@@ -177,7 +177,7 @@ for the processor clock: 600 at 2 MHz, 1200 at 4 MHz and 2400 at 6 MHz.
   - the port map at a moved base, port 0 OUT not decoded, and status bit 7 only
   - the 256-byte EPROM window, `routine` paging, and D0 = 0 and a reset
   - a DMA read of track 0 to `0100`, the 765 at 8 MHz, and the refusal of a 5.25″ image
-  - `media`: TS on a blank with `8ds`, `8SS` and no media, the refusal of 5.25″ media and of a
+  - `media`: TS on a blank with `8ds` and `8SS`, the refusal of a blank with no media, of 5.25″ media and of a
     formatted image of another shape, `CONFIG SAVE` of the media, and `create`
   - `port3 = motor`, the snapshot round trip and the property checks
   - an 8080 guest that bit-bangs `HELLO` at 1200 baud and echoes bytes from a stream

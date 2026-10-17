@@ -53,9 +53,10 @@ cmd(5 "PIP X.COM=STAT.COM")
 cmd(6 "X DSK:")
 cmd(7 "ERA X.COM")
 cmd(8 "DIR X.COM")
-# 4. A blank disk in drive 1, and FORMAT.COM's prompts one at a time: the drive, the mode, and
-# the confirmation. Each answer is one key with no RETURN.
-call(9 monitor "{\"command\":\"MOUNT fd0:drive1 BLANK.DSK CREATE\"}")
+# 4. A blank 8" single-sided diskette in drive 1 (a blank needs its media), and FORMAT.COM's
+# prompts one at a time: the drive, the mode, and the confirmation. Each answer is one key with
+# no RETURN.
+call(9 monitor "{\"command\":\"MOUNT fd0:drive1 BLANK.DSK CREATE media=8ss\"}")
 call(10 run "{\"input\":\"FORMAT\\r\",\"until\":\"(A: - D:)\",\"timeout_ms\":20000}")
 call(11 run "{\"input\":\"B\",\"until\":\"3 = 1024\",\"timeout_ms\":20000}")
 call(12 run "{\"input\":\"0\",\"until\":\"(y)\",\"timeout_ms\":20000}")

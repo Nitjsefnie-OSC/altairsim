@@ -46,10 +46,10 @@ int driveIndex(const std::string& unit) {
 //
 // Three 5.25" formats share 327,680 bytes and two share 655,360, so those sizes are
 // refused rather than guessed. A smaller image of no known size is a BLANK disk: READY,
-// steppable, and formattable track by track with Format a Track. A blank has the reach of the
-// largest disk, 80 cylinders and two sides, so a 5.25" two-sided FORMAT can write every track.
-// A slot that is never formatted takes no bytes (DiskImage::rebuild), so a one-sided or
-// 77-cylinder format still lays out end to end, and the size probe reads it back.
+// steppable, and formattable track by track with Format a Track. A blank has no size to probe,
+// so it needs `media` to give it its size and sides, and without one it is refused, as on the
+// VersaFloppy (#777). A slot that is never formatted takes no bytes (DiskImage::rebuild), so a
+// format that writes fewer tracks still lays out end to end, and the size probe reads it back.
 //
 // A board takes the sizes its drives are: the Disk 1A both, a Disk 1 the one it was built
 // for (takes8()/takes525()). An image the size of a disk it does not take is refused, not
@@ -197,8 +197,18 @@ bool CompuProDiskBoard::probe(DiskImage& img, const std::string& forced, bool& e
     const int      sides   = m ? m->heads : 2;
     const uint64_t largest = formatBytes(*big, sides);
     if (bytes < largest) {
-        eightInch = m ? m->eightInch : takes8();
-        img.init(80, sides, true);  // blank: no tracks formatted yet
+        // A BLANK. Its size and sides are the diskette's, and only `media` can say what they
+        // are: a guess here was TS read from whatever FORMAT wrote, and an 8" drive for a
+        // 5.25" diskette (#777).
+        if (!m) {
+            err = std::to_string(bytes) + " bytes: too small to identify a " + traits_.name +
+                  " format -- set `media` to give a blank its size and sides (" +
+                  (takes8() ? std::string("8ss, 8ds") : std::string()) +
+                  (takes8() && takes525() ? ", " : "") + (takes525() ? "5ss, 5ds" : "") + ").";
+            return false;
+        }
+        eightInch = m->eightInch;
+        img.init(eightInch ? 77 : 80, m->heads, true);  // blank: no tracks formatted yet
         return true;
     }
     if (m) {
@@ -219,18 +229,11 @@ CompuProDiskBoard::CompuProDiskBoard(const Traits& traits)
     mover_.d = this;
     chip_.wiring.drive = [this](int us) -> FloppyDrive* { return &drive_[(size_t)cableUnit(us)].drv; };
     chip_.wiring.head  = [this](int us, int hd) { drive_[(size_t)cableUnit(us)].drv.setSide(hd); };
-    // TS is the disk's. With a `media`, it is the diskette's sides, formatted or not. Without
-    // one, two-sided when side 1 has a formatted track: a blank reaches both sides, but reads
-    // one-sided until a FORMAT writes side 1, as a new 8" SS disk does.
+    // TS is the diskette's sides: from its size, or from `media` for a blank. Formatting
+    // does not change it, as it does not change a real diskette.
     chip_.wiring.twoSided = [this](int us) {
-        if (forceTwoSided()) return true;
-        const Drive&     d   = drive_[(size_t)cableUnit(us)];
-        const DiskImage* img = d.img.get();
-        if (!d.forced.empty()) return img && img->heads() > 1;
-        TrackFormat      f;
-        for (int t = 0; img && img->heads() > 1 && t < img->tracks(); ++t)
-            if (img->trackFormat(t, 1, f)) return true;
-        return false;
+        const DiskImage* img = drive_[(size_t)cableUnit(us)].img.get();
+        return forceTwoSided() || (img && img->heads() > 1);
     };
     rom_.assign(traits_.romBytes, 0xFF);
 }
@@ -617,26 +620,51 @@ std::vector<Property> CompuProDiskBoard::subUnitProperties(const std::string& ta
         x.aliases = {"writeprotect"};
         p.push_back(std::move(x));
     }
-    {
-        Property x;
-        x.name = "media";
-        x.help = "The diskette: its size and sides, such as 8ds, or a whole format, such as "
-                 "8ds-dd1024. A blank disk takes its sides from it. Without it, the size of the "
-                 "image decides";
-        x.kind = Kind::Enum;
-        for (const Media& m : allMedia())
-            if (m.eightInch ? takes8() : takes525()) x.choices.push_back(m.name);
-        p.push_back(std::move(x));
-    }
+    p.push_back(mediaKey());
     {
         Property x;
         x.name = "create";
         x.help = "Make an empty disk file if it is not there, then mount it as a blank disk. "
-                 "Set `media` to give the blank its sides";
+                 "A blank needs `media`";
         x.kind = Kind::Bool;
         p.push_back(std::move(x));
     }
     return p;
+}
+
+// `media`, the one key that shapes a disk before it goes in: a [[board.drive]] key, and a
+// MOUNT option (mountKeys).
+Property CompuProDiskBoard::mediaKey() const {
+    Property x;
+    x.name = "media";
+    x.help = "The diskette: its size and sides, such as 8ds, or a whole format, such as "
+             "8ds-dd1024. A blank disk needs it. Without it, the size of the image decides";
+    x.kind = Kind::Enum;
+    for (const Media& m : allMedia())
+        if (m.eightInch ? takes8() : takes525()) x.choices.push_back(m.name);
+    return x;
+}
+
+std::vector<Property> CompuProDiskBoard::mountKeys(const std::string& unit) const {
+    if (driveIndex(unit) < 0) return {};
+    return {mediaKey()};
+}
+
+// The media goes with the disk: a mount that is refused leaves the old disk and its media.
+bool CompuProDiskBoard::mountWith(const std::string& unit, const std::string& path, bool ro,
+                                  const KeyValues& keys, std::string& err) {
+    const int i = driveIndex(unit);
+    if (i < 0) return mount(unit, path, ro, err);  // mount() names the units
+    std::string& forced = drive_[(size_t)i].forced;
+    const std::string was = forced;
+    for (const auto& [k, v] : keys)
+        if (k == "media") {
+            const Media* m = findMedia(v);  // the schema has checked it
+            forced = m ? m->name : v;
+        }
+    if (mount(unit, path, ro, err)) return true;
+    forced = was;
+    return false;
 }
 
 bool CompuProDiskBoard::addSubUnit(const std::string& table, const KeyValues& kv, std::string& err) {
@@ -657,19 +685,15 @@ bool CompuProDiskBoard::addSubUnit(const std::string& table, const KeyValues& kv
         else if (k == "mount") path = v;
         else if (k == "readonly") ro = flag(v);
         else if (k == "create") create = flag(v);
-        else if (k == "media") {
-            const Media* m = findMedia(v);  // the schema has checked it
-            media = m ? m->name : v;
-        }
+        else if (k == "media") media = v;
     }
     if (unit < 0) {
         err = "[[board.drive]] needs a `unit`";
         return false;
     }
-    // The media goes with the disk: a mount that is refused leaves the old disk and its media.
-    std::string& forced = drive_[(size_t)unit].forced;
     if (path.empty()) {
-        forced = media;
+        const Media* m = findMedia(media);
+        drive_[(size_t)unit].forced = m ? m->name : media;
         return true;
     }
     // `create`: an empty file at the place mount() opens, never over a file that is there.
@@ -684,11 +708,8 @@ bool CompuProDiskBoard::addSubUnit(const std::string& table, const KeyValues& kv
             }
         }
     }
-    const std::string was = forced;
-    forced = media;
-    if (mount("drive" + std::to_string(unit), path, ro, err)) return true;
-    forced = was;
-    return false;
+    // Always passed, empty too: a table with no `media` is a disk the size decides.
+    return mountWith("drive" + std::to_string(unit), path, ro, {{"media", media}}, err);
 }
 
 std::vector<Board::SubUnit> CompuProDiskBoard::subUnits() const {

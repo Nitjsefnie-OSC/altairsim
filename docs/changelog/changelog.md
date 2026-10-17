@@ -33,7 +33,7 @@ connects the line to a terminal or a socket. The board runs 8″ drives. Its EPR
 The new `disk1` machine adds the board to a Z80, 64K of RAM, a System Support 1 and an
 Interfacer I console. Mount a CompuPro CP/M 2.2N disk in drive 0 and run from `0000`. Routine 4
 then boots the disk to `A>` on the Interfacer. Routine 6 boots it on the System Support 1.
-The `media` key of a drive gives a blank disk its sides. With `media = "8ds"`, CompuPro's
+A blank disk needs the `media` key of its drive, for its size and sides. With `media = "8ds"`, CompuPro's
 `FORMAT.COM` 3.1c formats a blank two-sided disk in drive B.
 
 **The CompuPro Disk 1A floppy controller is a new board, `disk1a`.** The board has an NEC
@@ -44,10 +44,19 @@ to `A>`. The board reads 8″ disks with one side or two, in single and double d
 CompuPro's `FORMAT.COM` formats a blank disk. Routines 2 and 3 boot a 5.25″ disk from unit 2, as
 CompuPro CP/M 2.2P and 2.2Q do. A 5.25″ CP/M 2.2Q disk built from CompuPro's 1985 sources boots
 this way, formats a blank disk in unit 3 and copies files to it. The `media` key of a drive
-sets the size and sides of a blank disk. It also names the format of a 5.25″ image of 327,680
+sets the size and sides of a blank disk, and a blank disk needs it. It also names the format of a 5.25″ image of 327,680
 or 655,360 bytes, a size that more than one format has. `create` makes an empty disk file. The
 `mini_motor_control` property is jumper J11. With J11 removed, the 5.25″ motors run all the
 time, and the 8″ motors follow their bits in the Motor Control Register.
+
+**`MOUNT … media=NAME` now gives the disk its format.** The monitor set each `key=value` of a
+`MOUNT` after the disk was in, as a unit property. `media` is a key of a drive, not a unit
+property, so the disk went in without it. `MOUNT` said that the unit had no property `media`, and
+mounted the disk anyway. On the VersaFloppy, `MOUNT vf0:drive1 new.dsk CREATE media=8sd` was
+refused with ``set `media=NAME` to format a blank``, which is the key that it was given. The
+hard-sector boards, such as the 88-DCDD, and the North Star MDS had the same fault. Now `media`
+goes in with the disk. `MOUNT` checks every key and value before it creates or mounts anything,
+and refuses a bad one. The MCP `mount` tool also takes `media`.
 
 **Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
 The `ss1` board could not take the line that `--mcp` builds for the console, so the program

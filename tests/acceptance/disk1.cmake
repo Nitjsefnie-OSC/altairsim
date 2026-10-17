@@ -19,9 +19,9 @@
 #   4. routine 6 passes C = 2, and the same disk boots to A> on the System Support 1 serial
 #      channel (cpm22n-ss1.toml), with the Interfacer not connected;
 #   5. FORMAT 3.1c formats a blank two-sided disk in drive B (cpm22n-format.toml, which sets
-#      `media = "8ds"`), and STAT reads it as an empty 1200K drive. Without `media` the blank
-#      reads one-sided until side 1 is formatted, and FORMAT stops with Drive Format Error
-#      (issue #755).
+#      `media = "8ds"`), and STAT reads it as an empty 1200K drive. A blank with no `media` is
+#      refused at mount (issue #777). Before #755, a blank read one-sided, and FORMAT stopped
+#      with Drive Format Error.
 #
 # The guest writes, so the test works on a copy of tests/media/compupro, never the tracked
 # image.
