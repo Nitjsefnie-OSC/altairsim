@@ -541,6 +541,15 @@ void SdlDisplay::pollEvents() {
         if (!running_ && w) w->pendingClose = true;  // stopped: closeWindow() takes the flagged one
     };
 
+    // Whether keys typed in the window an event names reach the guest. `keyboard = none`
+    // silences a video window, but a window whose drawer claimed the keyboard (a terminal's)
+    // still sends its keys (issue #767). No matching window falls back to the display-wide rule.
+    auto keysFrom = [&](SDL_WindowID id) {
+        for (auto& [owner, win] : windows_)
+            if (win.window && SDL_GetWindowID(win.window) == id) return keysToGuest(owner);
+        return Display::keyboardToConsole();
+    };
+
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
@@ -572,9 +581,10 @@ void SdlDisplay::pollEvents() {
             break;
         case SDL_EVENT_TEXT_INPUT:
             // Printable characters, already shift/layout-resolved. The guest is a
-            // 7-bit machine, so pass ASCII only; Ctrl-combos come via KEY_DOWN. Keyboard is
-            // display-wide (one operator, one Console), so which window has focus does not route.
-            if (!Display::keyboardToConsole()) break;  // display-only: keys are the joystick's
+            // 7-bit machine, so pass ASCII only; Ctrl-combos come via KEY_DOWN. Which window
+            // has focus does not route (one operator, one Console); it only decides whether
+            // the window is a keyboard at all (keysFrom).
+            if (!keysFrom(e.text.windowID)) break;  // display-only: keys are the joystick's
             for (const char* p = e.text.text; p && *p; ++p) {
                 uint8_t c = (uint8_t)*p;
                 if (c < 0x80) emitKeys(&c, 1);
@@ -587,7 +597,7 @@ void SdlDisplay::pollEvents() {
             // they must not land at the CP/M or altairsim> prompt. Honor only ATTN
             // (Ctrl-E), mapped to the same guest-stop the close box raises, so the window
             // still hands the operator back the monitor. See Display::keyboardToConsole().
-            if (!Display::keyboardToConsole()) {
+            if (!keysFrom(e.key.windowID)) {
                 if ((e.key.mod & SDL_KMOD_CTRL) && k == 'e')
                     requestClose(windowById(e.key.windowID));
                 break;

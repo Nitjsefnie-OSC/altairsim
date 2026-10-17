@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**A terminal window now sends its keys when `[display] keyboard = none`.** The
+setting is for the window of a video board that only shows a picture, such as a Dazzler. The
+simulator applied it to every window, the terminal window too. On a Dazzler machine with a unit
+connected to the terminal window, the keys typed there did not go to the guest. Only `Ctrl-E`
+worked. Now `none` applies only to the windows of video boards. A terminal window always sends
+its keys to its unit.
+
 **The terminal window's `cr` setting is now `crlf`, the name the console uses.** The setting
 adds an LF after each CR that the guest prints. On the console it was `crlf = on | off`. On the
 terminal window it was `cr = cr | crlf`, so one setting had two names and two sets of values.

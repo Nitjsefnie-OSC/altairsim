@@ -108,6 +108,7 @@ public:
 
     // ---- composition root: the borrowed host video service and bundled font ----
     static void setDisplay(Display* d) { s_display = d; }
+    static Display* display() { return s_display; }
     static void setFont(const TerminalFont* f) { s_font = f; }
 
     // Is a `terminal:` usable in this build/run? True only when a real window is behind the

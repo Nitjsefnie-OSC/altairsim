@@ -11,6 +11,7 @@
 #include "host/terminal/vt52.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace altair;
@@ -346,6 +347,29 @@ void test_terminal() {
         ts.write((const uint8_t*)msg, 5);
         ts.pump();  // should paint one frame (the screen is dirty) without a window
         CHECK(!TerminalStream::hasWindow(), "the test display is not windowed");
+    }
+
+    SECTION("terminal stream -- its window is a keyboard even with keyboard=none (#767)");
+    {
+        // `[display] keyboard = none` makes a VIDEO window display-only (a Dazzler's). The
+        // terminal's own window still sends its keys: pump() claims the keyboard for it, and
+        // the back end asks keysToGuest() per window as each key arrives.
+        Display* d = TerminalStream::display();
+        CHECK(d != nullptr, "tests/main.cpp injected a display");
+        int videoBoard = 0;  // any other drawer's owner handle
+        Display::setKeyboardToConsole(false);
+        // An optional keeps the storage in scope after reset(), so the address checked below
+        // still names live memory (GCC's -Wdangling-pointer flags a block-scoped local).
+        std::optional<TerminalStream> ts;
+        ts.emplace("terminal", 24, 80, std::make_unique<Vt100Emulator>());
+        const void* owner = &*ts;
+        ts->pump();
+        CHECK(d->keysToGuest(owner), "keyboard=none: the terminal window still sends its keys");
+        CHECK(!d->keysToGuest(&videoBoard), "keyboard=none: a video window sends nothing");
+        ts.reset();
+        CHECK(!d->keysToGuest(owner), "a destroyed terminal leaves no claim behind");
+        Display::setKeyboardToConsole(true);
+        CHECK(d->keysToGuest(&videoBoard), "keyboard=console: every window sends its keys");
     }
 
     // ---- The host keyboard -> the line (issue #244, Task 4, single-window scope) ----
