@@ -1992,7 +1992,9 @@ void test_mcp() {
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         std::filesystem::create_directories(dir, ec);
-        const std::string blank = (dir / "b.dsk").string(), bare = (dir / "c.dsk").string();
+        // generic_string(): a Windows `C:\Users\...` is not a JSON string (`\U`).
+        const std::string blank = (dir / "b.dsk").generic_string(),
+                          bare  = (dir / "c.dsk").generic_string();
 
         Machine m;
         if (!loadAltmon(m)) return;

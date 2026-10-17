@@ -41,6 +41,14 @@ if(MSVC)
   if(WERROR)
     add_compile_options(/WX)
   endif()
+  # AN 8 MB STACK, AS ON LINUX AND macOS. The Windows default is 1 MB, an eighth of theirs.
+  # MSVC gives Monitor::exec a frame of about 49 KB (it does not let the locals of separate
+  # blocks share stack space; Clang needs about 20 KB), and DO nests exec. Twice a test that was
+  # green on the other platforms overflowed here: 4644401f cut the DO depth cap from 32 to 10 to
+  # fit, and #780 then went over with a few new locals. The value is the other platforms', not
+  # a number tuned to one frame. It is address space only: pages are committed as they are used,
+  # and a std::thread takes the same reserve.
+  add_link_options(/STACK:8388608)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic -Wshadow)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
