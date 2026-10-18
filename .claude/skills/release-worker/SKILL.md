@@ -1,6 +1,5 @@
 ---
 name: release-worker
-model: sonnet
 description: Build, test, package and deliver ONE altairsim release archive on THIS machine — for a tag someone else created. Use when asked to build the release package, build vX.Y.Z, run the release build on this box, or do DISTRIBUTION.md §4.2. A build machine never tags, never publishes, never picks a version.
 ---
 
