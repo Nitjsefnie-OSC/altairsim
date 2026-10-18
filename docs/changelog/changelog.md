@@ -12,6 +12,10 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The CP/M example disk now has the `vi` text editor.** `examples/cpm/cpm22b23-56k.dsk` has
+`VI.COM` and its manual, `VI.DOC`. To make space, WordMaster (`WM.COM`, `WM.HLP`) and
+`OTHELLO.COM` are no longer on the disk. The disk has 8K free.
+
 **Under `--mcp`, `SHOW CONSOLE` now names the unit that holds the console on every board.**
 Some boards, such as the 88-PIO, hold the console on a plain `scripted` line. `SHOW CONSOLE`
 did not count that line, so it printed `held by (nobody -- ...)` while `pio0:in` held the
