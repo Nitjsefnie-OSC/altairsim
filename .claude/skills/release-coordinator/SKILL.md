@@ -1,5 +1,7 @@
 ---
 name: release-coordinator
+model: sonnet
+effort: high
 description: Cut an altairsim release from the coordinator — bump the version, curate the changelog, tag the CI PDF commit, open the draft GitHub release, drive the build machines over ssh, collect the four archives, checksum, upload and publish. Use when asked to cut, tag, ship or publish a release, or to run DISTRIBUTION.md §5. Runs only on the machine holding the GitHub credentials.
 ---
 

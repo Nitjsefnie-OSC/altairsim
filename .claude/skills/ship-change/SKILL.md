@@ -1,5 +1,6 @@
 ---
 name: ship-change
+model: sonnet
 description: How a reviewed altairsim change is shipped — commit after the maintainer approves, open the PR only after a second approval, poll CI, merge on green, then comment on the related issues. Use when told to commit, open the PR, push, ship or merge. Every step here waits for its own approval; work-task comes first.
 ---
 

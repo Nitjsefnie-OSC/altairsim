@@ -1,5 +1,6 @@
 ---
 name: release-verify
+model: sonnet
 description: Prove an altairsim release archive works as downloaded — unpack it outside any repository, check the version, check that SDL3 is linked in statically (not headless, not by absolute path), and hand a person the window checklist. Use when asked to verify, check or test a release package or archive before (or after) it is published, or to run DISTRIBUTION.md §7.
 ---
 
