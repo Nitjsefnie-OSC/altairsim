@@ -599,6 +599,94 @@ void test_mcp() {
         }
     }
 
+    SECTION("MCP: CONNECT takes the console during the command, and SHOW CONSOLE names the holder (#779)");
+    {
+        // One routine takes the console, under --mcp as in the CLI. The holder shows
+        // `scripted`, so CONNECT once missed it and the server moved the console only after
+        // the command: a SHOW CONSOLE later in the same DO file named two holders. And a board
+        // that cannot take a pre-built stream holds a bare line of its own, which SHOW CONSOLE
+        // did not count at all.
+        auto call = [](int id, const std::string& tool, const std::string& args) {
+            return R"({"jsonrpc":"2.0","id":)" + std::to_string(id) +
+                   R"(,"method":"tools/call","params":{"name":")" + tool +
+                   R"(","arguments":)" + args + "}}\n";
+        };
+        auto mon = [&](int id, const std::string& cmd) {
+            return call(id, "monitor", R"({"command":")" + cmd + R"("})");
+        };
+        auto textOf = [](std::map<int, Json>& rep, int n) {
+            return rep.count(n) ? rep[n].at("result").at("content").items().at(0).at("text").str()
+                                : std::string();
+        };
+        auto stateOf = [](Machine& mm, const char* id, const char* unit) -> std::string {
+            if (Board* b = mm.find(id))
+                for (const auto& u : b->units())
+                    if (u.name == unit) return u.state;
+            return std::string();
+        };
+        const std::string init =
+            std::string(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})") + "\n";
+
+        // In one monitor call: the CONNECT, then SHOW CONSOLE, from a DO file.
+        {
+            const std::string doFile = tmpPath("altair_mcp_take_console.do");
+            {
+                std::ofstream f(doFile);
+                f << "CONNECT sio0:b console\nSHOW CONSOLE\n";
+            }
+            Machine m;
+            if (!loadAltmon(m)) return;
+            std::string path = doFile;
+            for (auto& c : path)
+                if (c == '\\') c = '/';
+            auto rep = runScript(m, init + mon(2, "DO \\\"" + path + "\\\""));  // quoted: a space
+            std::filesystem::remove(doFile);
+            const std::string said = textOf(rep, 2);
+            const size_t connect = said.find("do> CONNECT sio0:b console\n");
+            const size_t taken   = said.find("console taken from sio0:a\n");
+            CHECK(connect != std::string::npos && taken != std::string::npos && taken > connect,
+                  "CONNECT takes the console from sio0:a during the command, not after it");
+            CHECK(said.find("held by  sio0:b\n") != std::string::npos,
+                  "and SHOW CONSOLE, in the same call, names sio0:b alone");
+            CHECK(stateOf(m, "sio0", "a") == "null", "sio0:a is on null");
+        }
+
+        // The move keeps the line: output the guest wrote before it, and nobody has read yet,
+        // is still there for `recv`. The program writes 'Z' out of port B, then 'Y' out of
+        // port A, which holds the console; then sio0:b takes it.
+        {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            auto rep = runScript(
+                m, init + mon(2, "DEPOSIT 100 3E 03 D3 12 3E 11 D3 12 3E 5A D3 13 3E 03 D3 10 "
+                                 "3E 11 D3 10 3E 59 D3 11 76") +
+                       mon(3, "RUN 100") + call(4, "step", R"({"count":13})") +
+                       mon(5, "CONNECT sio0:b console") + call(6, "recv", "{}"));
+            const std::string out =
+                rep.count(6) ? rep[6].at("result").at("structuredContent").at("output").str() : "";
+            CHECK(out.find('Y') != std::string::npos,
+                  "port A's unread output survives the move of the console to sio0:b");
+        }
+
+        // A board with no connectStream (the 88-PIO) holds a bare scripted line.
+        {
+            Machine m;
+            if (!loadAltmon(m)) return;
+            auto rep = runScript(m, init + mon(2, "BOARDS ADD pio pio0 port=4") +
+                                        mon(3, "CONNECT pio0:out console") +
+                                        mon(4, "SHOW CONSOLE") +
+                                        mon(5, "CONNECT pio0:in console"));
+            CHECK(textOf(rep, 3).rfind("console taken from sio0:a\n", 0) == 0,
+                  "pio0:out takes the console from sio0:a");
+            CHECK(textOf(rep, 4).find("held by  pio0:out (--mcp)\n") != std::string::npos,
+                  "SHOW CONSOLE names pio0:out, on its own bare line");
+            CHECK(textOf(rep, 5).rfind("console taken from pio0:out\n", 0) == 0,
+                  "CONNECT takes the console from the bare line's holder");
+            CHECK(stateOf(m, "pio0", "out") == "null", "pio0:out is on null");
+            CHECK(stateOf(m, "pio0", "in") == "scripted", "pio0:in holds the line");
+        }
+    }
+
     SECTION("MCP: the no-console-line error gives advice that works (issue #783)");
     {
         // The console unit goes to another endpoint, then to a bare `scripted`. That does not

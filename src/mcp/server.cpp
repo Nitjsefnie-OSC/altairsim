@@ -784,6 +784,11 @@ struct McpSession {
     // "console taken from <id>:<unit>" lines from console(), for the tool that caused the move
     // to report, as the CLI's CONNECT does.
     std::vector<std::string> taken;
+    // Set when takeConsole() took the session's line from the unit that held it: the line lost
+    // its holder to a move, not to a CONFIG LOAD, so console() keeps it -- with any --mirror
+    // watcher and the output nobody has read yet -- for the unit that takes the console.
+    // Cleared by console().
+    bool handover = false;
     // `--mirror socket:PORT[?ro]`: when set, the console is `scripted` WRAPPED in a
     // MirrorStream so a human can telnet in and share the session (issue #381). Empty =
     // the bare scripted line. Set once at startup (runMcp), read by console().
@@ -878,6 +883,35 @@ bool anyUnitReaches(Machine& m, ScriptedStream* ss) {
     return false;
 }
 
+// The console line, as the session sees it: its own line, or the bare one a board owns when
+// it could not take a pre-built stream. Null when no unit holds the console.
+ScriptedStream* sessionLine(Machine& m, const McpSession& s) {
+    if (s.line) return asScripted(s.line.get());
+    if (s.conBoard.empty()) return nullptr;
+    Board* b = m.find(s.conBoard);
+    return b ? asScripted(b->unitStream(s.conUnit)) : nullptr;
+}
+
+// Does this unit hold the console under --mcp? It is wired to it (the CLI's answer), or its
+// line is the session's console line -- which shows `scripted`, so the CLI cannot see it.
+bool holdsLine(Machine& m, const McpSession& s, Board& b, const std::string& unit) {
+    if (wiredToConsole(b, unit)) return true;
+    ScriptedStream* ss = sessionLine(m, s);
+    return ss && asScripted(b.unitStream(unit)) == ss;
+}
+
+// Take the console for b:unit with the --mcp answer to who holds it -- for CONNECT (the
+// monitor tool sets it as the taker) and for console(), which the connect tool calls.
+std::vector<std::string> takeLine(Machine& m, McpSession& s, Board* b, const std::string& unit) {
+    ScriptedStream* own = s.line ? asScripted(s.line.get()) : nullptr;
+    const bool      held = own && anyUnitReaches(m, own);
+    auto taken = takeConsole(m, b, unit, [&](Board& ob, const std::string& ou) {
+        return holdsLine(m, s, ob, ou);
+    });
+    if (held && !anyUnitReaches(m, own)) s.handover = true;
+    return taken;
+}
+
 // Adopt the serial unit wired to the host console onto an in-memory ScriptedStream. Under
 // --mcp there is no terminal, so "console" would aim the guest's keyboard at the JSON-RPC pipe
 // and hang the first run forever (monitor.cpp:818), and aim its output at the JSON-RPC stdout;
@@ -894,12 +928,25 @@ bool anyUnitReaches(Machine& m, ScriptedStream* ss) {
 // output nobody has read yet. Called again after every monitor command and `connect`, so a
 // move happens at once (issue #756). Null + err if the machine has no such line.
 ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
+    const bool handover = s.handover;
+    s.handover = false;
+
+    // The units newly wired to `console`, gathered first: taking the console re-wires units,
+    // and no unit list is walked while it changes. More than one only at startup; the last
+    // one then holds the console, as a run of CONNECTs would leave it.
+    std::vector<std::pair<Board*, std::string>> arrivals;
+    for (const auto& b : m.boards())
+        for (const auto& u : b->units())
+            if (u.kind == UnitKind::Serial && u.state == "console")
+                arrivals.emplace_back(b.get(), u.name);
+
     // The line that is the console now, if any unit still reaches it: the session's line, or
     // (see the fallback below) a bare line one board owns.
     ScriptedStream* ss = nullptr;
     if (s.line) {
         ss = asScripted(s.line.get());
-        if (!anyUnitReaches(m, ss)) {
+        // Kept when a take moved it and its new holder is arriving (handover, above).
+        if (!anyUnitReaches(m, ss) && !(handover && !arrivals.empty())) {
             ss = nullptr;
             s.line.reset();  // closes a --mirror port now, so a rebuilt line can reopen it
         }
@@ -922,32 +969,14 @@ ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
     std::string baseSpec = s.mirror.empty() ? std::string("scripted") : "scripted|" + s.mirror;
     if (!s.log.empty()) baseSpec += "|" + s.log + "?fmt=text&append";
 
-    // The units newly wired to `console`, gathered first: taking the console re-wires units,
-    // and no unit list is walked while it changes. More than one only at startup; the last
-    // one then holds the console, as a run of CONNECTs would leave it.
-    std::vector<std::pair<Board*, std::string>> arrivals;
-    for (const auto& b : m.boards())
-        for (const auto& u : b->units())
-            if (u.kind == UnitKind::Serial && u.state == "console")
-                arrivals.emplace_back(b.get(), u.name);
-
-    for (const auto& [b, unit] : arrivals) {
-        // Take the console from the unit that holds it.
-        if (ss) {
-            std::vector<std::pair<Board*, std::string>> holders;
-            for (const auto& ob : m.boards())
-                for (const auto& ou : ob->units())
-                    if (ou.kind == UnitKind::Serial && asScripted(ob->unitStream(ou.name)) == ss)
-                        holders.emplace_back(ob.get(), ou.name);
-            for (const auto& [hb, hunit] : holders) {
-                std::string dErr;
-                hb->disconnect(hunit, dErr);
-                s.taken.push_back("console taken from " + hb->id + ":" + hunit);
-            }
-            if (!s.line) ss = nullptr;  // a board's own bare line went with its unit
-            s.conBoard.clear();
-            s.conUnit.clear();
-        }
+    if (!arrivals.empty()) {
+        auto [b, unit] = arrivals.back();
+        // Take the console from the unit that holds it, and from every other arrival.
+        for (auto& t : takeLine(m, s, b, unit)) s.taken.push_back(std::move(t));
+        s.handover = false;  // the line is kept below, as the handover asks
+        if (!s.line) ss = nullptr;  // a board's own bare line went with its unit
+        s.conBoard.clear();
+        s.conUnit.clear();
 
         if (!s.line) {
             auto base = resolveEndpoint(baseSpec, err);
@@ -1782,6 +1811,13 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
                                // CONFIG LOAD startup ends in) would otherwise wedge the server.
                                // It also stops TRACE from borrowing `os`, which dies with
                                // this call while the debugger would go on writing to it (#613).
+        // The unit on the session's scripted line holds the console, though it shows
+        // `scripted`: SHOW CONSOLE names it, and CONNECT ... console takes the console from it
+        // during the command (issue #779).
+        mon.setConsoleHolds(
+            [&](Board& b, const std::string& unit) { return holdsLine(m, sess, b, unit); });
+        mon.setConsoleTaker(
+            [&](Board* b, const std::string& unit) { return takeLine(m, sess, b, unit); });
         mon.exec(args.at("command").str(), os);
 
         // A monitor command can swap the console out from under us: CONFIG LOAD replaces
