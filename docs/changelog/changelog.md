@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`SET` now takes a value with a space in it.** `SET hb0 hostdir="My Project"` stopped with
+`SET: unexpected 'with'`, because the space ended the value. The form `SET hb0 hostdir "My
+Project"` was worse. It gave no error, and it stored the path with the quote mark at its start.
+The host bridge then pointed at a folder that does not exist. Both forms now store `My Project`
+with no quote marks. `HELP SET` shows the first form.
+
 **Under `--mcp`, the error for a lost console line now gives advice that works.** Connect the
 console unit to another endpoint, such as `CONNECT sio0:a pty`, and then to `scripted`. The
 next `run` stopped with `no console line: CONNECT a serial unit to 'scripted'`. That was the

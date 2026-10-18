@@ -152,7 +152,23 @@ std::vector<std::string> tokenize(const std::string& line) {
             continue;
         }
         std::string w;
-        while (i < line.size() && !std::isspace((unsigned char)line[i])) w += line[i++];
+        while (i < line.size() && !std::isspace((unsigned char)line[i])) {
+            // `key="a b"`: a quote right after `=` groups a value with a space in it, so
+            // `SET hb0 hostdir="My Project"` is one token. The quotes are dropped -- unlike
+            // a leading one, nothing downstream needs the marker. It groups only when the
+            // closing quote ends the word; `name="a\"b"` stays as typed, quote and all.
+            if (line[i] == '"' && !w.empty() && w.back() == '=') {
+                size_t close = line.find('"', i + 1);
+                if (close != std::string::npos &&
+                    (close + 1 == line.size() ||
+                     std::isspace((unsigned char)line[close + 1]))) {
+                    w.append(line, i + 1, close - i - 1);
+                    i = close + 1;
+                    break;
+                }
+            }
+            w += line[i++];
+        }
         t.push_back(w);
     }
     return t;
@@ -3888,7 +3904,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 if (tooMany(3)) return true;
             } else if (a.size() >= 4) {
                 k = a[2];
-                v = a[3];
+                v = unquote(a[3]);
                 if (tooMany(4)) return true;
             } else {
                 out << "usage: SET REG <r>=<v>\n";
@@ -3939,7 +3955,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 if (tooMany(3)) return true;
             } else if (a.size() >= 4) {
                 k = a[2];
-                v = a[3];
+                v = unquote(a[3]);
                 if (tooMany(4)) return true;
             } else {
                 out << "usage: SET <id>[:<unit>] <key>=<value>  |  SET CONSOLE <key>=<value>"

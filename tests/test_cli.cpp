@@ -2413,6 +2413,14 @@ void test_cli() {
         CHECK(roundTrips("box2"), "CONFIG SAVE writes the name and CONFIG LOAD reads it back");
         CHECK(roundTrips("my #1 C:\\box"),
               "a name with a space, a '#' and a backslash survives the round trip");
+        // A value with a space in it (issue #785): quoted after `=`, or as the spaced word.
+        nr("SET MACHINE name=\"my box\"");
+        CHECK(nm.name == "my box", "name=\"my box\" is one value, with the quotes dropped");
+        nr("SET MACHINE name \"your box\"");
+        CHECK(nm.name == "your box", "the spaced form drops the quotes as well");
+        nr("SET MACHINE name=\"two\"");
+        CHECK(nm.name == "two", "a quoted value with no space loses its quotes too");
+        nr("SET MACHINE name=box2");
         CHECK(!nmon.failed(), "a run of valid SET MACHINE commands leaves failed() clear");
 
         // The refusals, each on its own monitor because failed() is sticky.
