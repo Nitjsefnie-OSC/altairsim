@@ -97,6 +97,15 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
 A hand-typed copy in this page and in the MCP schema kept `file:PATH` after `in:` and `out:`
 replaced it (#784). Examples: `socket:2323`, `serial:/dev/ttyUSB0`, `out:printout.txt`.
 
+The scheme words (`console`, `socket:`, `in:`, …) are in one table, `kSchemes`, at the top of
+`endpoint.cpp`. `canonicalEndpoint()` folds each word in the table to lower case, once, before
+the resolver reads the spec. The resolver names a scheme with `isScheme()` or `hasScheme()`.
+These take a `Scheme`, which has a `consteval` constructor, so a word that is not in the table
+does not compile. To add a scheme, add its row to `kSchemes`. The new word is then
+case-insensitive, as every other scheme is (#778). The `sink` column marks the words that can
+follow a `|` as a mirror. `isMirrorSink()` reads that column for the resolver, for
+`rebaseEndpointPaths` and for `--mirror`.
+
 `CONNECT` and `MOUNT` are generic monitor commands, not per-board ones (DESIGN.md §7.7): the monitor opens the endpoint, the board decides what the bytes
 mean. That division is why a serial card gets every backend the day it lands without one line
 changing in the monitor.
