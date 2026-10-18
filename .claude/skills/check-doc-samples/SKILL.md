@@ -46,8 +46,9 @@ with no output, has nothing to check.
 - **Prepared state.** A `DISASM` or `DUMP` listing shows its own bytes. Put the bytes in first
   with a `DEPOSIT` setup command. A file that a block names by a relative path needs
   `DIR=<folder>`. For example, `SYMBOLS LOAD ALTMON.PRN` needs `DIR=roms/ALTMON`.
-- **A command that writes a file** (`SNAPSHOT`, `TRACE ON <file>`, `SET CONSOLE log=`) must run
-  in your scratchpad, not in the tree. Use `DIR=<scratchpad>`.
+- **A command that writes a file** (`SNAPSHOT`, `TRACE ON <file>`, `SET CONSOLE log=`) needs
+  nothing extra. The script replays each block in a new temporary folder, so the file lands
+  there. If a replay changes the tree, the script stops with exit 3 and shows `git status`.
 - **Unknown state.** A `REGS` line from a moment that the text does not describe cannot be
   replayed. Report the block as **not checkable**, and give the reason. Do not guess a state
   and do not change the sample to make it match.
