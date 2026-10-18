@@ -53,7 +53,8 @@ it with `run {from: …}` afterward.
 
 **On macOS, a downloaded copy will not start until its quarantine mark is gone.** If the user
 got the archive with a browser, macOS blocks the first run with a dialog (*"altairsim" Not
-Opened* on macOS 27, *cannot be opened because the developer cannot be verified* before it).
+Opened* on newer versions, seen on macOS 27; *cannot be opened because the developer cannot be
+verified* on older ones).
 Tell them to press **Done** — **Move to Trash** is the default button and deletes the program —
 then run `xattr -dr com.apple.quarantine ./altairsim` in the package folder. It is once per
 download: every new archive carries a new mark.

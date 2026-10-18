@@ -15,10 +15,11 @@ register, the bit or the command that was wrong.
 **The Quick Start now gives the macOS step for a downloaded copy.** macOS blocks a program from
 a browser download until you remove its mark with `xattr -dr com.apple.quarantine ./altairsim`.
 Only the chapters *Running it* and *Troubleshooting* gave the command, and they quoted only the
-message of earlier macOS versions. Now both Quick Starts give it. The
-manual also quotes the macOS 27 dialog, *"altairsim" Not Opened*, and tells you to press
+message of older macOS versions. Now both Quick Starts give it. The
+manual also quotes the dialog of newer versions, *"altairsim" Not Opened*, and tells you to press
 **Done**, because the default button, **Move to Trash**, deletes the program. You do the step
-one time for each download, not one time only.
+one time for each download, not one time only. The System Settings way now includes the second
+dialog, **Open Anyway**, where **Move to Trash** is the default button again.
 
 **`HELP MOUNT` now names `tnfs://`.** `MOUNT` can get a disk image from a TNFS server, but only
 the *Disks* chapter said so. The syntax line, the cheat sheet and `DRIVING-WITH-AI.md` now give

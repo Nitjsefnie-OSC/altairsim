@@ -277,8 +277,9 @@ plug, and the program keeps that difference.
 
 ## macOS refuses to run the program
 
-macOS 27 shows *"altairsim" Not Opened* and *Apple could not verify "altairsim" is free of
-malware*. Earlier versions show *"cannot be opened because the developer cannot be verified"*.
+Newer versions of macOS (seen on macOS 27) show *"altairsim" Not Opened* and *Apple could not
+verify "altairsim" is free of malware*. Older versions show *"cannot be opened because the
+developer cannot be verified"*.
 
 **Press Done. Do not press Move to Trash**, because that button deletes the program.
 After you press Done, type:
