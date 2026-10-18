@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Under `--mcp`, the error for a lost console line now gives advice that works.** Connect the
+console unit to another endpoint, such as `CONNECT sio0:a pty`, and then to `scripted`. The
+next `run` stopped with `no console line: CONNECT a serial unit to 'scripted'`. That was the
+command you had just given, and it did not give the line back. The error now says to connect
+the unit to `console`. `CONNECT sio0:a console` gives `run` the console line again, with any
+`--mirror` and `--log`.
+
 **A machine file that has a word in the wrong case now gets an error that names the fix.**
 The loader reads `id`, `type`, `remove` and the table names in exact case, as TOML does. A word
 with the wrong case gave the wrong advice. `Id = "mem9"` gave "every [[board]] needs an `id`".
