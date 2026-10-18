@@ -40,7 +40,8 @@ Rak) is licensed under the GNU General Public License v2.0; the `.COM` images
 here are builds of that source.
 
 To satisfy GPL-2.0 §3, the **corresponding source travels with the binaries**:
-`zexdoc.z80` and `zexall.z80` are the exact upstream sources, and `LICENSE` in
+`zexdoc.z80` and `zexall.z80` are the upstream sources, with CRLF line ends added so that
+CP/M can read them, and `LICENSE` in
 this directory is the GPL-2.0 text. They live here, walled off in
 `tests/cpu/z80/`, as **test fixtures the simulator runs as guest programs** —
 not linked into or derived from the simulator. Under the mere-aggregation
