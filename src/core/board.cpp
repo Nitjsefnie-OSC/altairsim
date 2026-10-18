@@ -276,6 +276,9 @@ bool Board::loadSubUnit(const std::string& table, const KeyValues& kv, std::stri
         if (t == table) known = true;
     if (!known) {
         err = type() + " has no [[board." + table + "]] table";
+        // A name wrong only in its case: say which one the board has.
+        for (const auto& t : subUnitTables())
+            if (lower(t) == lower(table)) err += "; did you mean [[board." + t + "]]?";
         return false;
     }
 

@@ -599,6 +599,42 @@ void test_mcp() {
         }
     }
 
+    SECTION("MCP: the no-console-line error gives advice that works (issue #783)");
+    {
+        // The console unit goes to another endpoint, then to a bare `scripted`. That does not
+        // give it the console line back, and `run` says so. The error once told the client to
+        // CONNECT a unit to 'scripted' -- what it had just done. It must name `console`, and
+        // doing what it says must give `run` its line again.
+        Machine m;
+        if (!loadAltmon(m)) return;
+        auto call = [](int id, const std::string& tool, const std::string& args) {
+            return R"({"jsonrpc":"2.0","id":)" + std::to_string(id) +
+                   R"(,"method":"tools/call","params":{"name":")" + tool +
+                   R"(","arguments":)" + args + "}}\n";
+        };
+        auto mon = [&](int id, const char* cmd) {
+            return call(id, "monitor", std::string(R"({"command":")") + cmd + R"("})");
+        };
+        const std::string cr = R"({"input":"\r","until":"*","timeout_ms":2000})";
+        auto rep = runScript(
+            m, std::string(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})") + "\n" +
+                   call(2, "run", R"({"from":63488,"until":"*","timeout_ms":4000})") +
+                   mon(3, "CONNECT sio0:a null") + mon(4, "CONNECT sio0:a scripted") +
+                   call(5, "run", cr) + mon(6, "CONNECT sio0:a console") + call(7, "run", cr));
+        CHECK(rep.count(5) && rep[5].at("result").has("isError"),
+              "run has no console line after `scripted`");
+        const std::string said =
+            rep.count(5) ? rep[5].at("result").at("content").items().at(0).at("text").str() : "";
+        CHECK(said.find("CONNECT a serial unit to 'console'") != std::string::npos,
+              "the error says to connect a unit to console");
+        CHECK(said.find("'scripted'") == std::string::npos,
+              "and not to scripted, which is what the client had just done");
+        CHECK(rep.count(7) && !rep[7].at("result").has("isError") &&
+                  rep[7].at("result").at("structuredContent").at("output").str().find('*') !=
+                      std::string::npos,
+              "after the advised CONNECT sio0:a console, run reaches the ALTMON prompt");
+    }
+
     SECTION("MCP: TYPE sends a quote and a control byte through the monitor tool (issue #624)");
     {
         // A client that cannot put a JSON escape in `input` sends its keys with TYPE. The

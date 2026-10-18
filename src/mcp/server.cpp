@@ -904,7 +904,10 @@ ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
             s.line.reset();  // closes a --mirror port now, so a rebuilt line can reopen it
         }
     }
-    if (!ss && !s.conBoard.empty()) {  // e.g. the console unit re-wired to its own `scripted`
+    // E.g. the console unit re-wired to its own `scripted`. Only while s.conBoard still names
+    // it: a unit that went to another endpoint first lost the console, and a bare `scripted`
+    // does not give it back -- `console` does (issue #783).
+    if (!ss && !s.conBoard.empty()) {
         if (Board* b = m.find(s.conBoard)) ss = asScripted(b->unitStream(s.conUnit));
     }
     if (!ss) {
@@ -983,8 +986,7 @@ ScriptedStream* console(Machine& m, McpSession& s, std::string& err) {
         s.conUnit  = unit;
     }
     if (ss) return ss;
-    err = "no console line: CONNECT a serial unit to 'scripted' (one wired to 'console' "
-          "is adopted automatically).";
+    err = "no console line: CONNECT a serial unit to 'console' to give it the console line.";
     return nullptr;
 }
 

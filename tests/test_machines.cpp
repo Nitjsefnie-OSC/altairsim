@@ -977,6 +977,84 @@ void test_toml_errors() {
                       {"line 3: unknown table [widgets]"}),
           "a table we do not know is still reported as unknown, in either form");
 
+    SECTION("the loader's own words are exact case; a word wrong only in case is named (#782)");
+
+    const std::string hdr = "[machine]\nbase = \"default\"\n";
+    // A1: a wrong-case boolean used to be ignored, and the board stayed on the bus.
+    for (const char* v : {"TRUE", "True", "\"Yes\"", "\"on\"", "1"})
+        CHECK(refusedWith(hdr + "[[board]]\nid = \"hb0\"\nremove = " + v + "\n",
+                          {"line 5:", "`remove` takes true or false"}),
+              "remove takes the TOML boolean and nothing else");
+    // A2: two spellings of one key were two keys to the duplicate check; the last won.
+    CHECK(refusedWith(hdr + "[[board]]\nid = \"sio0\"\nport = 0x20\nPORT = 0x30\n",
+                      {"line 6: 'PORT' is already set at line 5, as 'port'"}),
+          "port and PORT in one board are a repeated key");
+    CHECK(refusedWith(hdr + "[[board]]\nid = \"sio0\"\n[board.unit.b]\nbaud = 300\nBAUD = 1200\n",
+                      {"line 7: 'BAUD' is already set at line 6, as 'baud'"}),
+          "...and in a unit table");
+    CHECK(refusedWith(hdr + "[console]\nstop = 3\nSTOP = 4\n",
+                      {"line 5: 'STOP' is already set at line 4, as 'stop'"}),
+          "...and in [console]");
+    // B1, B2: the file HAS the key; the message must not say it is missing.
+    CHECK(refusedWith(hdr + "[[board]]\nType = \"memory\"\nid = \"mem9\"\n",
+                      {"line 4: unknown key `Type`; did you mean `type`?"}),
+          "Type names itself, not a missing type");
+    CHECK(refusedWith(hdr + "[[board]]\nType = \"2sio\"\nid = \"sio0\"\n",
+                      {"line 4: unknown key `Type`; did you mean `type`?"}),
+          "...on a base board too");
+    CHECK(refusedWith(hdr + "[[board]]\ntype = \"memory\"\nId = \"mem9\"\n",
+                      {"line 5: unknown key `Id`; did you mean `id`?"}),
+          "Id names itself, not a missing id");
+    CHECK(refusedWith(hdr + "[[board]]\nid = \"hb0\"\nRemove = true\n",
+                      {"line 5: unknown key `Remove`; did you mean `remove`?"}),
+          "Remove names itself");
+    // C1, C2
+    CHECK(refusedWith("[machine]\nName = \"x\"\nbase = \"default\"\n",
+                      {"line 2: unknown [machine] key 'Name'; did you mean 'name'?"}),
+          "a [machine] key in the wrong case is named");
+    CHECK(refusedWith("[Machine]\nbase = \"default\"\n",
+                      {"line 1: unknown table [Machine]; did you mean [machine]?"}),
+          "a table in the wrong case is named");
+    CHECK(refusedWith(hdr + "[[Board]]\nid = \"hb0\"\n",
+                      {"line 3: unknown table [[Board]]; did you mean [[board]]?"}),
+          "...with the brackets as written");
+    CHECK(refusedWith(hdr + "[Console]\n", {"did you mean [console]?"}),
+          "[Console] too");
+    // B5: the fix is lower-case `unit`, NOT double brackets.
+    {
+        std::string shown;
+        CHECK(refusedWith(hdr + "[[board]]\nid = \"sio0\"\n[board.Unit.b]\nbaud = 300\n",
+                          {"line 5: unknown table [board.Unit.b]; did you mean [board.unit.b]?"},
+                          &shown),
+              "[board.Unit.b] is named, with the single brackets it needs");
+        CHECK(shown.find("double brackets") == std::string::npos,
+              "...and is not told to add brackets");
+    }
+    // B4: a sub-unit table in the wrong case.
+    CHECK(refusedWith(hdr + "[[board]]\nid = \"dsk0\"\n[[board.Drive]]\n",
+                      {"has no [[board.Drive]] table; did you mean [[board.drive]]?"}),
+          "[[board.Drive]] names the table the board has");
+    // B3: an id is case-blind everywhere, REPLACE too.
+    {
+        Machine     m;
+        std::string err;
+        CHECK(loadTomlText(hdr + "[[board]]\ntype = \"2sio\"\nid = \"SIO0\"\n", "t.toml", m, err),
+              "replacing a base board by an id in another case loads");
+        if (!err.empty()) std::printf("      %s\n", err.c_str());
+        int n = 0;
+        for (const auto& b : m.boards())
+            if (b->id == "SIO0" || b->id == "sio0") ++n;
+        CHECK(n == 1, "...and replaces it: one board, not two");
+    }
+    // The exact-case forms still work.
+    {
+        Machine     m;
+        std::string err;
+        CHECK(loadTomlText(hdr + "[[board]]\nid = \"hb0\"\nremove = true\n", "t.toml", m, err),
+              "remove = true still removes");
+        CHECK(!m.find("hb0"), "...the board");
+    }
+
     SECTION("the syntax checks: a key twice, a key in no table, a header with a tail");
 
     CHECK(refusedWith("[machine]\n"
