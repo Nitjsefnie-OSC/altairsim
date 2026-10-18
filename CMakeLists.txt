@@ -1478,6 +1478,27 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# THE LBR TOOLS WE SHIP OPEN A REAL LIBRARY.
+#
+# tools/user/lbr-extract.py, uncrunch.py and unsqueeze.py go into the package as tools/. This
+# extracts and decodes two period CP/M libraries, one crunched and one squeezed, and compares
+# the files with lbrate's output, then checks that a bad CRC and a bad checksum are reported. Python 3 runs them on every platform; without it the
+# test is not registered.
+# ---------------------------------------------------------------------------
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME lbr-tools
+           COMMAND ${CMAKE_COMMAND}
+                   -DPYTHON=${Python3_EXECUTABLE}
+                   -DSRC=${CMAKE_CURRENT_SOURCE_DIR}
+                   -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/lbr-tools.cmake)
+  set_tests_properties(lbr-tools PROPERTIES LABELS acceptance TIMEOUT 120)
+else()
+  message(STATUS "Python 3 not found -- the lbr-tools test is not registered")
+endif()
+
+# ---------------------------------------------------------------------------
 # EVERY reference/ DISTILLATION MUST BE CATALOGUED.
 #
 # reference/*.md are the text-only hardware references. reference/README.md indexes them and

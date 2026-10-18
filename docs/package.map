@@ -94,6 +94,9 @@ DIR  hostbridge          <=  cpm/hostbridge
 # TODAY IT HOLDS the two mirror-watch scripts (issue #664): a viewer for `--mirror socket:PORT`
 # that waits for the mirror and connects again after the simulator restarts. Windows installs
 # neither telnet nor nc, so without mirror-watch.ps1 a Windows user has no viewer at all.
+# And the three LBR tools, lbr-extract.py, uncrunch.py and unsqueeze.py: they open the CP/M
+# libraries and the crunched and squeezed files that period software is found in. Python 3, so one file serves all three
+# platforms.
 DIR  tools               <=  tools/user
 
 # ALSO NOT AN EXAMPLE. skills/altairsim/ is DRIVING-WITH-AI.md's front door for an assistant

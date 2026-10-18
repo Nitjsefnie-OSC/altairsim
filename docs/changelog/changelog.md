@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**New tools: `tools/lbr-extract.py`, `tools/uncrunch.py` and `tools/unsqueeze.py` open CP/M
+library files.** `lbr-extract.py` lists the files in a `.LBR` file, or copies them out.
+`uncrunch.py` decodes a file that CRUNCH 2.x compressed, such as `SUPSUB13.AZM`, and writes it
+with its original name, `SUPSUB13.ASM`. `unsqueeze.py` does the same for a file that SQ
+squeezed, such as `EX15.AQM`. The scripts check the CRC or the checksum of each file. The scripts need
+Python 3. `tools/README.pdf` gives the commands.
+
 **New command: `SHOW SERIAL` lists the serial ports on your computer.** For each port, it also
 shows the unit that holds it. Before, the only way to see the list was to give `CONNECT` a wrong
 device name and read the error. `HELP CONNECT` and the serial chapter of the *User Manual* now

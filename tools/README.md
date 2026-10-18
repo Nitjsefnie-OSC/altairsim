@@ -8,7 +8,7 @@ starts with a long comment that gives its usage and the reason that it exists.
 
 | File | What it does |
 |---|---|
-| `user/` | The tools that a person with the release package uses. This is the only part of `tools/` that ships: it is `tools/` in the package. It has the two `mirror-watch` scripts, which show a `--mirror` in a second window. |
+| `user/` | The tools that a person with the release package uses. This is the only part of `tools/` that ships: it is `tools/` in the package. It has the two `mirror-watch` scripts, which show a `--mirror` in a second window, and the three LBR tools (`lbr-extract.py`, `uncrunch.py`, `unsqueeze.py`), which open CP/M library files and decode crunched and squeezed files. |
 
 ## Release
 
