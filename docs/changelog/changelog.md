@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`SET` now takes a value with a space in it.** `SET hb0 hostdir="My Project"` stopped with
+`SET: unexpected 'with'`, because the space ended the value. The form `SET hb0 hostdir "My
+Project"` was worse. It gave no error, and it stored the path with the quote mark at its start.
+The host bridge then pointed at a folder that does not exist. Both forms now store `My Project`
+with no quote marks. `HELP SET` shows the first form.
+
 **The MCP `connect` tool now lists the endpoints that `CONNECT` takes.** The description of
 its `endpoint` argument gave `tcp:HOST:PORT` and `file:PATH` as examples. The simulator has no
 `tcp:` endpoint, and `out:PATH` replaced `file:PATH` before the first release. An assistant that

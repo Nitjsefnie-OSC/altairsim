@@ -1128,6 +1128,7 @@ SHOW CONSOLE, SHOW DISPLAY and SHOW TERMINAL each list the keys and their values
 SET mem0 fill=zero
 SET mem0 phantom=read
 SET acr0:tape mode=record  ; the tape in the recorder, not the recorder
+SET hb0 hostdir="My Project"  ; put quotes around a value that has a space in it
 SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)
 SET CONSOLE upper=on       ; change the letters you type to uppercase. HELP SET CONSOLE lists the keys.
 SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.
