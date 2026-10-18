@@ -16,43 +16,45 @@
 # one line ending cmd.exe is guaranteed to parse without surprises around labels/goto.
 *.bat  text eol=crlf
 
-# CP/M source and listing artifacts (.ASM, .PRN, .HEX, .INC, .Z80, .LST) originated on a CP/M system
-# and are meant to be transferred verbatim onto a CP/M disk -- pasted with PIP x=CON:, run
-# through the assembler's LOAD, or carried in a bootable image -- where CP/M expects CRLF
-# line terminators (and, for text, a trailing ^Z). The global `eol=lf` rule above would
-# strip them to LF on checkout, which broke `PIP R.ASM=CON:`: the pasted source arrived as
-# one line with no terminators, so ASM emitted nothing (issue #118). Mark them binary so
-# git preserves the exact CRLF bytes on every platform and never normalises them. (.HEX is
-# already binary in the media section below.)
-*.ASM binary
-*.asm binary
-*.PRN binary
-*.prn binary
-*.INC binary
-*.inc binary
-*.Z80 binary
-*.z80 binary
-*.LST binary
-*.lst binary
+# CP/M source and listing files (.ASM, .PRN, .INC, .Z80, .LST) go onto a CP/M disk as they
+# are: pasted with PIP x=CON:, run through the assembler's LOAD, or carried in a bootable
+# image. CP/M needs CRLF line ends in them (and, for text, a trailing ^Z). The global
+# `eol=lf` rule above would strip the CRs on checkout, which broke `PIP R.ASM=CON:`: the
+# pasted source arrived as one line with no line ends, so ASM produced nothing (issue #118).
+#
+#   -text                 Git never changes a line end. The repository and the working
+#                         tree both hold CRLF.
+#   diff                  `git diff` shows these files as text. (`binary` would turn
+#                         this off.)
+#   whitespace=cr-at-eol  `git diff` does not mark the CR at the end of a line.
+#
+# Keep every one of these files CRLF on all lines. (.HEX is binary in the media section below.)
+*.ASM -text diff whitespace=cr-at-eol
+*.asm -text diff whitespace=cr-at-eol
+*.PRN -text diff whitespace=cr-at-eol
+*.prn -text diff whitespace=cr-at-eol
+*.INC -text diff whitespace=cr-at-eol
+*.inc -text diff whitespace=cr-at-eol
+*.Z80 -text diff whitespace=cr-at-eol
+*.z80 -text diff whitespace=cr-at-eol
+*.LST -text diff whitespace=cr-at-eol
+*.lst -text diff whitespace=cr-at-eol
 
 # The CP/M symbol-file fixtures carry two more format-under-test extensions
 # (tests/programs/symbols/README.md): their CRLF and trailing ^Z padding are part of the
-# format, so keep these binary too. (.ASM/.PRN there are covered by the rule above.)
-tests/programs/symbols/*.SYM binary
-tests/programs/symbols/*.MAC binary
+# format, so they follow the same rule. (.ASM/.PRN there are covered by the rule above.)
+tests/programs/symbols/*.SYM -text diff whitespace=cr-at-eol
+tests/programs/symbols/*.MAC -text diff whitespace=cr-at-eol
 
-# The CPU exerciser sources (tests/cpu/*.MAC) are the same kind of period CP/M artifact
-# as the .ASM files above: fetched byte-for-byte from altairclone.com (see
-# tests/cpu/PROVENANCE.md), CRLF and all. Keep them verbatim -- the .COM images they
-# assemble to are the binary media that actually run the gate.
-tests/cpu/*.MAC binary
+# The CPU exerciser sources (tests/cpu/*.MAC) are the same kind of period CP/M file as the
+# .ASM files above: fetched from altairclone.com (see tests/cpu/PROVENANCE.md), CRLF and all.
+# The .COM images they assemble to are the binary media that actually run the gate.
+tests/cpu/*.MAC -text diff whitespace=cr-at-eol
 
 # The MBL boot ROM's source and listing are deramp originals, CRLF like every other
-# period artifact here (roms/MBL/). Keep them byte-for-byte so the checkout matches the
-# dump on every platform. (.HEX is binary globally below.) These are scoped to roms/MBL
-# on purpose: the repo-wide `*.ASM`/`*.PRN binary` rule is a separate change.
-roms/MBL/*.PRN binary
-roms/MBL/*.ASM binary
+# CP/M file here (roms/MBL/). (.HEX is binary globally below.)
+roms/MBL/*.PRN -text diff whitespace=cr-at-eol
+roms/MBL/*.ASM -text diff whitespace=cr-at-eol
 
 # Period media and disk images are binary -- never munge.
 *.DSK binary

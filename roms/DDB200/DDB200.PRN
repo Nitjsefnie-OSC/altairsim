@@ -2842,7 +2842,7 @@ DDB200 VFDIAG DISK DIAGNOSTIC PROGRAM  SD SYSTEMS Z80 ASSEMBLER PAGE 0044
 
  CROSS REFERENCE LISTING
  SYMBOL VALUE  TYPE   STMT   STATEMENT REFERENCES
- ------ -----  ----   ----   --------------------
+ ------ -----  ----   ----   --------------------
 
  BFFR1  0800          1357    1559  1537  1484 
  BFFR2  0900          1358    1535  1488 

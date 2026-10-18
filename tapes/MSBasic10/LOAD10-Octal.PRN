@@ -1,0 +1,67 @@
+
+
+                ;----------------------------------------------------------------------- 
+                ;
+                ; Bootstrap loader for Altair BASIC 1.0 (ACR SIO Version)
+                ;
+                ;     This loader loads BASIC 1.0 through an 88-SIO at I/O address
+                ;     6/7 (the Altair cassette SIO address)
+                ;
+                ;	1) Enter this bootstrap loader at 1800h (014000 octal).
+                ;
+                ;	2) Examine 1800h (014000 octal) on the front panel.
+                ;
+                ;	3) Position the tape in the NULL leader and start
+                ;	   the tape reader.
+                ;
+                ;	4) Immediately depress RUN on the front panel.
+                ;
+                ;	5) After the tape finishes reading, STOP-RESET the machine
+                ;	   and then depress RUN. The BASIC initialization dialog is
+                ;	   then displayed on the console.
+                ;
+                ;  Version      Date   		Description
+                ;    1.0    14-Aug-2016	    M. Douglas, Original
+                ;
+                ;----------------------------------------------------------------------- 
+                
+                ; Equates
+                
+ 0006 =         SIOST	equ	06h		;SIO status register
+ 0007 =         SIODR	equ	07h		;SIO data register
+                
+ 1800           	org	1800h		;location of this loader
+                
+                ; Store bytes in sequentially increasing memory pointed to by HL.
+                ;    If the SYNC byte is detected (6Ah, ends the leader, marks the
+                ;    start of data), HL is reset to zero. This code assumes the
+                ;    leader is less than 255 bytes long.
+                
+ 1800 2600      	mvi	h,0		;HL->where to load binary (L set later)
+                
+ 1802 311218    loop	lxi	sp,stack	;init SP so a RET jumps to loop
+ 1805 DB06      	in	SIOST		;get sio status
+ 1807 0F        	rrc			;new byte available?
+ 1808 D8        	rc			;no (jumps back to loop)
+                
+ 1809 DB07      	in	SIODR		;get the byte and store in memory
+ 180B 77        	mov	m,a
+ 180C 23        	inx	h
+                
+ 180D D66A      	sui	6Ah		;sync byte?
+ 180F C0        	rnz			;no (jumps back to loop)
+                
+ 1810 6F        	mov	l,a		;restart hl at zero (sync in 1st 256 bytes)
+ 1811 C9        	ret			;jump back to loop
+                
+ 1812 0218      stack	dw	loop		;stack content jumps to loop when RET executed
+                
+ 1814           	end
+
+
+ Program in Octal
+
+ 14000: 046 000 061 022 030 333 006 017
+ 14010: 330 333 007 167 043 326 152 300
+ 14020: 157 311 002 030
+
