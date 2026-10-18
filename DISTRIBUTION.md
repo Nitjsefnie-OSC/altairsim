@@ -416,8 +416,10 @@ person to answer yes or no per platform. An assistant driving a pipe cannot clic
 
 ## 8. What is not automated
 
-- **No workflow builds a package.** The coordinator starts `tools/release-worker.sh` on each of
-  the four machines with `tools/release-drive.sh`. The upload is by hand.
+- **No workflow builds a release package.** The coordinator starts `tools/release-worker.sh` on
+  each of the four machines with `tools/release-drive.sh`. The upload is by hand.
+  `.github/workflows/package.yml` builds a `macos-arm64` package and runs `verify-package.sh` on
+  it, but only as a check of the manual. Nothing ships from that run.
 - **Setting up a worker is scripted on Windows only.** The macOS and Linux workers, and every
   worker's delivery key, are set up by hand (§4.5).
 - **Nothing makes the machines' SDL3 versions agree** other than the pin in the two scripts.

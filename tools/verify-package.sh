@@ -18,7 +18,9 @@
 #   * ctest runs BEFORE packaging (DISTRIBUTION.md 4.2 step 4) and proves the BINARY, not the
 #     archive. The archive only exists at release time, and only then do the PDFs (docs.yml)
 #     and the windowed-SDL binary that build-package.sh's own gates require exist. So this is
-#     a release-time check, wired into DISTRIBUTION.md 4.2 after build-package.sh, not CI.
+#     a release-time check, wired into DISTRIBUTION.md 4.2 after build-package.sh. CI also runs
+#     it (.github/workflows/package.yml, issue #813), on a macos-arm64 package it builds for the
+#     purpose, when the manual, the examples or the packaging change.
 #
 # WHERE THE COMMANDS AND THE PROMPTS COME FROM. The commands are read from the manual SOURCE
 # (docs/manual/*.md in this checkout -- the package ships only the rendered PDF), token-expanded
