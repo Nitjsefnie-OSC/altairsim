@@ -83,8 +83,12 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 2>&1 | tee configure.log
           grep -F -- '-- SDL3 found -- video boards enabled (windowed)' configure.log
 
+      # Only the program that ships: this job runs no tests, so the test programs are not built.
+      # The job count is given. A bare --parallel runs `make -j` with no limit, which starts
+      # every compile at once, and the 3-core runner ran out of memory and stopped making
+      # progress (the first run stood at 55% for over 15 minutes).
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel "$(sysctl -n hw.ncpu)" --target altairsim
 
       # The committed manual, as a release passes it. A PDF built here would be a different
       # document (docs.yml pins pandoc).
