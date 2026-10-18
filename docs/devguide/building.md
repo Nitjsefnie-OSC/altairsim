@@ -188,6 +188,15 @@ architecture-independent is the compiler: the cores are full of shifts, masks an
 arithmetic, and until a release nothing has ever driven billions of instructions through the
 MSVC build. `cpu-exerciser-release.yml` runs them on the three CI platforms on demand only.
 
+**`package.yml` checks the manual against a real package.** It builds a `macos-arm64` package
+with a static SDL3, then runs `tools/verify-package.sh` on the archive. That script types the
+manual's `$ altairsim …` commands at the packaged binary. The job fails unless every command
+reaches its prompt and none is skipped. It runs on a PR or a push to `master` that changes one
+of its inputs: the manual, the examples, `docs/package.map`, the packaging scripts,
+`tools/user/`, or the acceptance scripts that `verify-package.sh` uses. Start it on demand
+with `gh workflow run package.yml`. The static SDL3 is cached on the hash of
+`tools/build-sdl3-static.sh`, so a new SDL3 version builds once. Nothing ships from this run.
+
 The hardware tests (`-L hw`) run against an actual null-modem cable between two USB serial
 ports, because a claim about a cable deserves a cable. They are opt-in, pointed at your ports
 with `ALTAIR_SERIAL_A` / `ALTAIR_SERIAL_B`, and they **skip loudly** when the hardware is

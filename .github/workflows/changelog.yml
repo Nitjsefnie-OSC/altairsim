@@ -1,0 +1,93 @@
+name: Changelog
+
+# The `Changelog entry` check, on its own so that a label change runs it again (issue #814).
+#
+# WHY NOT IN ci.yml: the check reads the PR's labels, so it must run again when a label is added
+# or removed. In ci.yml, the `labeled` and `unlabeled` types would start the whole build matrix
+# for a label, and `cancel-in-progress` would cancel the build that was already running. Here a
+# label change runs only this one job, which takes a few seconds.
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+
+# A newer event on the same PR cancels the older run. Its own group, so it never cancels CI.
+concurrency:
+  group: changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # THE CHANGELOG IS THE ONE SHIPPED DOCUMENT WITH NOTHING CHECKING IT.
+  #
+  # Every other documentation rule in ci.yml is mechanical: docs-manual proves the shipped documents
+  # name nothing outside the package and that every chapter is in an ORDER, docs-package compares
+  # the manual's manifest against package.map, docs-reference byte-diffs the generated reference
+  # against the binary. The changelog has none of that -- an entry is written because somebody
+  # remembered, and a release note that was never written looks exactly like a change that did not
+  # need one.
+  #
+  # It went missing the first time the moment it mattered: `recipes/` (a new folder of documents
+  # in the archive) and examples/dazzler (an example that had never shipped) both reached master
+  # with `## Unreleased` saying nothing about either, because the change was filed mentally as "a
+  # docs change" and the checklist that names the changelog was not opened.
+  #
+  # So: if a PR changes WHAT A PACKAGE HOLDER GETS, `## Unreleased` has to say so. The paths below
+  # are that contract -- the shipped documents, the examples tree, and the manifest that decides
+  # what goes in the zip. Not all of src/: a bug nobody reported gets no entry, and requiring one
+  # for every code change would teach people to write filler, which is worse than a gap.
+  #
+  # THE ESCAPE HATCH IS A LABEL, not a magic commit word, because a label is visible on the PR and
+  # can be added after the fact without a rewrite: `no changelog` says a human looked and decided
+  # this one does not need an entry (a typo fix in a chapter, a rebuilt PDF).
+  changelog:
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0            # need the base commit present to diff against it
+
+      - shell: bash
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+
+          if printf '%s' "$LABELS" | grep -qi '"no changelog"'; then
+            echo "labelled 'no changelog' -- a human decided this one needs no entry."
+            exit 0
+          fi
+
+          base='${{ github.event.pull_request.base.sha }}'
+          changed=$(git diff --name-only "$base" HEAD)
+
+          # What the reader of the archive gets. A change to any of these is a change to the
+          # product, whether or not a line of C++ moved.
+          facing=$(printf '%s\n' "$changed" | grep -E '^(docs/manual/|docs/monitor/|docs/debugger/|examples/|docs/package.map$|docs/QUICK-START\.md$|docs/migrating\.md$)' || true)
+
+          # A PDF is a build artifact that CI itself commits -- it is not an authored change and
+          # cannot need a changelog entry of its own.
+          facing=$(printf '%s\n' "$facing" | grep -v '\.pdf$' || true)
+
+          if [ -z "$facing" ]; then
+            echo "nothing package-facing changed -- no entry required."
+            exit 0
+          fi
+
+          if printf '%s\n' "$changed" | grep -q '^docs/changelog/changelog\.md$'; then
+            echo "package-facing change, and the changelog moved with it."
+            exit 0
+          fi
+
+          echo "::error::This PR changes what a package holder gets, and docs/changelog/changelog.md does not mention it."
+          echo
+          echo "  Package-facing paths in this diff:"
+          printf '    %s\n' $facing
+          echo
+          echo "  Add a section under '## Unreleased' (add that header above the newest release if"
+          echo "  it is not there) saying what someone can do now that they"
+          echo "  could not do in the last release -- a NEW DOCUMENT in the archive and an EXAMPLE"
+          echo "  that now ships both count, not just code."
+          echo
+          echo "  If this genuinely needs no entry (a typo, a rebuilt PDF), label the PR"
+          echo "  'no changelog'. The label runs this check again."
+          exit 1

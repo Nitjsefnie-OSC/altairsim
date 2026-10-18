@@ -1,6 +1,5 @@
 ---
 name: release-worker
-model: sonnet
 description: Build, test, package and deliver ONE altairsim release archive on THIS machine — for a tag someone else created. Use when asked to build the release package, build vX.Y.Z, run the release build on this box, or do DISTRIBUTION.md §4.2. A build machine never tags, never publishes, never picks a version.
 ---
 
@@ -44,6 +43,11 @@ The script finds the target itself:
 | Linux, `x86_64` | `linux-x86_64` | `.tar.gz` |
 
 ## Run it
+
+**The checkout on a build machine is disposable.** Keep no work in it. The coordinator's
+`tools/release-drive.sh start` and `preflight` reset it (`git reset --hard`,
+`git clean -fdx`) before they do anything else. Step 1 still stops on a change to a tracked
+file. That protects a person who runs the script by hand.
 
 **Run a copy that is outside the checkout.** Step 1 is `git checkout -f vX.Y.Z`, which can
 replace the script while the shell reads it. The script refuses to start from inside the

@@ -1,6 +1,5 @@
 ---
 name: release-coordinator
-model: sonnet
 effort: high
 description: Cut an altairsim release from the coordinator — bump the version, curate the changelog, tag the CI PDF commit, open the draft GitHub release, drive the build machines over ssh, collect the four archives, checksum, upload and publish. Use when asked to cut, tag, ship or publish a release, or to run DISTRIBUTION.md §5. Runs only on the machine holding the GitHub credentials.
 ---
@@ -57,6 +56,25 @@ until now. Before the version bump:
 manual, changelog, monitor or debugger PDF. Never build the PDFs locally: a different pandoc
 is a different document.
 
+## 2a. Preflight, before the tag
+
+Run it with this checkout at the commit that you will tag:
+
+```sh
+tools/release-drive.sh preflight
+```
+
+- **The coordinator first.** The checkout must have no change to a tracked file. A clone of
+  HEAD in a temporary folder is configured, built and packaged, and `verify-package.sh` runs
+  the manual's commands on the archive. This checkout and its `build/` are not touched.
+- **Then each worker.** ssh must answer. The checkout on the box is reset
+  (`git reset --hard`, `git clean -fdx`), and the command prints each path that it removed.
+  The worker then copies a small file to `COORDINATOR_DIST` with `scp`, as its step 8 does. In
+  1.3.4 a delivery key failed only after a full build (issue #816).
+- **CHECK the last line, `preflight: OK`.** **STOP on `preflight: FAIL`.** The
+  `preflight: FAIL -- <item>` lines above it name each problem. Tag only after
+  `preflight: OK`.
+
 ## 3. Tag and push
 
 ```sh
@@ -91,7 +109,7 @@ The driver reads `distribution.conf`, copies the worker script to the box (outsi
 checkout), gives it the site values and the version, and starts it detached. For
 `COORDINATOR_TARGET` it runs the script here: no ssh and no delivery, the archive lands in
 `dist/`. **This checkout must have no change to a tracked file**, because the worker checks
-out the tag in it.
+out the tag in it. On a worker box, the driver first resets the checkout, as `preflight` does.
 
 - **CHECK `release-drive: OK -- <target> started`.** The driver prints it only when the
   checkout on the box is at `vX.Y.Z`, the worker is a running process, and its log names the
@@ -99,18 +117,37 @@ out the tag in it.
   a start that printed `started` ran nothing, and nobody saw it for about 10 minutes.
 - **Any order, and at the same time**, but the driver refuses a target in `SHARED_HOST` while
   another target of that list runs. They are one physical machine.
-- **Read the result** with `tools/release-drive.sh status <target>`. It prints the end of the
-  log and exits 2 while the worker runs, 0 on `release-worker: OK`, 1 on
-  `release-worker: FAIL at step N`. A build with the exercisers takes 10 to 30 minutes for
-  each box; poll every few minutes.
+- **Wait for the results with one command, run in the background.** Do not poll by hand.
+
+  ```sh
+  tools/release-drive.sh wait macos-arm64 macos-x86_64 linux-x86_64 windows-x86_64
+  ```
+
+  Give it each target that you started. It checks them once a minute until every worker has
+  ended. A build with the exercisers takes 10 to 30 minutes for each box. Then it prints each
+  report block under `##### <target>`, and one last line. **CHECK
+  `release-drive: wait OK -- all N workers OK`.** **STOP on `release-drive: wait FAIL`.** It
+  names the targets that failed.
+- A target in `SHARED_HOST` starts only after its partner has ended. Start it then, and give
+  it its own `wait`.
+- `tools/release-drive.sh status <target>` reads one worker's log once. It exits 2 while the
+  worker runs, 0 on `release-worker: OK`, and 1 on `release-worker: FAIL at step N`.
 - The Windows log is `dist/worker-windows-x86_64.log` here, and the ssh that holds the worker
   runs on this machine: do not end it. The macOS and Linux workers run on their boxes and
   survive a dropped link.
 
-Collect each worker's report block. Any FAIL is a STOP for the release: do not upload a set
+The `wait` output holds each worker's report block. Any FAIL is a STOP for the release: do not upload a set
 with a hole in it. `serial-hw` and `tnfs-hw` results are warnings — put them in front of the
 person, do not hold the release for them. The `exercisers` line of each report is the CPU
 gate for that platform.
+
+### While the builds run
+
+- **Merge only the fixes that this release needs**, from the tag to the publish. A re-tag
+  ships every merge since the first tag.
+- **The coordinator's own build uses this checkout.** Do not switch a branch and do not edit a
+  file here until its worker has ended. Merge a PR on GitHub with
+  `gh pr merge <N> --merge --delete-branch`, not in this checkout.
 
 ### Re-spinning for a doc-only fix
 

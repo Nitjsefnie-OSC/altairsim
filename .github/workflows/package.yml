@@ -1,0 +1,104 @@
+name: Package
+
+# Build the macos-arm64 package and run tools/verify-package.sh on it: the manual's own
+# `$ altairsim ...` commands, typed at the binary in the archive (issue #813). Until this ran in
+# CI, a chapter that named a missing machine file or a wrong prompt was found only on release
+# day, on the coordinator, after the tag.
+#
+# PATH-FILTERED, AS cpu-exerciser.yml IS. The check reads the manual source, the examples, the
+# package map, the packaging scripts and the acceptance scripts that verify-package.sh reuses.
+# A change to anything else cannot change its answer, and a run costs a static SDL3 build on a
+# cache miss. workflow_dispatch runs it on demand.
+#
+# ONE TARGET IS ENOUGH HERE. The question is whether the manual is true of the package, and the
+# manual is the same for every target. The four real archives are built on the four build
+# machines at release time (tools/release-drive.sh), and none of them comes from this run.
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'docs/manual/**'
+      - 'docs/package.map'
+      - 'examples/**'
+      - 'tools/build-package.sh'
+      - 'tools/verify-package.sh'
+      - 'tools/build-sdl3-static.sh'
+      - 'tools/user/**'
+      - 'tests/acceptance/basic1.exp'
+      - 'tests/acceptance/diskbasic.exp'
+      - 'tests/acceptance/trek80.exp'
+      - 'tests/acceptance/cpm-dir.keys'
+      - 'tests/acceptance/hdsk-dir.keys'
+      - 'tests/acceptance/basic4k.keys'
+      - '.github/workflows/package.yml'
+  pull_request:
+    paths:
+      - 'docs/manual/**'
+      - 'docs/package.map'
+      - 'examples/**'
+      - 'tools/build-package.sh'
+      - 'tools/verify-package.sh'
+      - 'tools/build-sdl3-static.sh'
+      - 'tools/user/**'
+      - 'tests/acceptance/basic1.exp'
+      - 'tests/acceptance/diskbasic.exp'
+      - 'tests/acceptance/trek80.exp'
+      - 'tests/acceptance/cpm-dir.keys'
+      - 'tests/acceptance/hdsk-dir.keys'
+      - 'tests/acceptance/basic4k.keys'
+      - '.github/workflows/package.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: package-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: Package and verify (macos-arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # build-package.sh stamps the version from `git describe`, which needs the tags.
+          fetch-depth: 0
+
+      # build-package.sh refuses a binary that links SDL3 by an absolute path, which is what
+      # Homebrew's SDL3 gives. That refusal is a release gate and gets no bypass, so this job
+      # builds the same static SDL3 as a build machine. The script pins the version, so its hash
+      # is the cache key. On a hit the script finds its stamp and returns at once.
+      - name: Restore the static SDL3
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/sdl3-static
+          key: sdl3-static-macos-arm64-${{ hashFiles('tools/build-sdl3-static.sh') }}
+
+      - name: Build the static SDL3
+        run: tools/build-sdl3-static.sh "$HOME/opt/sdl3-static"
+
+      # As step 2 of tools/release-worker.sh configures a Mac.
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$HOME/opt/sdl3-static" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 2>&1 | tee configure.log
+          grep -F -- '-- SDL3 found -- video boards enabled (windowed)' configure.log
+
+      # Only the program that ships: this job runs no tests, so the test programs are not built.
+      # The job count is given. A bare --parallel runs `make -j` with no limit, which starts
+      # every compile at once, and the 3-core runner ran out of memory and stopped making
+      # progress (the first run stood at 55% for over 15 minutes).
+      - name: Build
+        run: cmake --build build --config Release --parallel "$(sysctl -n hw.ncpu)" --target altairsim
+
+      # The committed manual, as a release passes it. A PDF built here would be a different
+      # document (docs.yml pins pandoc).
+      - name: Build the package
+        run: tools/build-package.sh --pdf docs/altairsim-manual.pdf --target macos-arm64
+
+      # expect is on the runner, so every command runs. A skipped command is not verified, so
+      # the job fails unless the PASS line says `skipped 0`.
+      - name: Verify the package
+        run: |
+          archive=$(ls dist/altairsim-*-macos-arm64.tar.gz)
+          tools/verify-package.sh "$archive" 2>&1 | tee verify.log
+          grep -E '^verify-package: PASS -- .*\(skipped 0\)\.$' verify.log

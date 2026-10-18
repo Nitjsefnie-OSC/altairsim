@@ -221,6 +221,10 @@ block and one line, `release-worker: OK` or `release-worker: FAIL at step N`. Th
    extracts it outside the repo and runs the manual's own `$ altairsim …` commands.
 8. **Deliver** — `scp` the archive to the coordinator's `dist/`.
 
+**A worker's checkout is disposable.** `tools/release-drive.sh` resets it
+(`git reset --hard`, `git clean -fdx`) before a build, and prints each path that it removed.
+The coordinator's checkout is a development tree and is never reset.
+
 **If any check fails, stop and report it.** No delivery, no workaround. A package that reaches
 the download page has no later gate.
 
@@ -308,14 +312,21 @@ The `release-coordinator` skill has the commands. Steps 1–4 can be done ahead 
    them as *"Rebuild the PDFs for `<sha>`"*. **Tag that commit**, not the merge, or the tagged
    tree carries a stale manual. The manual goes to `build-package.sh` with `--pdf`; the
    changelog, monitor and debugger PDFs are copied straight from the tagged tree.
-3. **Tag and push.** The tag starts no CI run: the CPU exercisers run on the build machines in
+3. **Preflight, then tag and push.** Run `tools/release-drive.sh preflight` at the commit
+   that you will tag. It builds a package of HEAD in a temporary clone on the coordinator and
+   runs §7 on it. Next, it resets each worker's checkout and proves that the worker can `scp` a
+   file to the coordinator's `dist/`. Tag only after its last line, `preflight: OK`. The tag
+   starts no CI run: the CPU exercisers run on the build machines in
    step 5 (§4.2 step 4). `cpu-exerciser-release.yml` is manual only.
 4. **Open the draft** — `gh release create vX.Y.Z --draft`.
 5. **Build on all four machines** (§4.2): `tools/release-drive.sh start <target> X.Y.Z` for
    each, in any order. The driver copies the worker script to the box, starts it detached, and
    **proves that it started** (the checkout is at the tag, and the worker is a running
-   process). It refuses two targets that share a physical machine at once.
-   `tools/release-drive.sh status <target>` reads the result. The workers `scp` their archives
+   process). On a worker, it first resets the checkout. It refuses two targets that share a
+   physical machine at once.
+   `tools/release-drive.sh wait <target>...` checks every worker once a minute until all have
+   ended. Then it prints each report block and one `wait OK` or `wait FAIL` line.
+   `status <target>` reads one log once. The workers `scp` their archives
    into the coordinator's `dist/`; the coordinator builds its own straight into it.
 6. **Verify, checksum, upload, publish.** §7 on each archive; then `tools/build-checksums.sh`
    (it refuses unless all four of one version are in `dist/`, and writes `dist/SHA256SUMS`);
@@ -405,8 +416,10 @@ person to answer yes or no per platform. An assistant driving a pipe cannot clic
 
 ## 8. What is not automated
 
-- **No workflow builds a package.** The coordinator starts `tools/release-worker.sh` on each of
-  the four machines with `tools/release-drive.sh`. The upload is by hand.
+- **No workflow builds a release package.** The coordinator starts `tools/release-worker.sh` on
+  each of the four machines with `tools/release-drive.sh`. The upload is by hand.
+  `.github/workflows/package.yml` builds a `macos-arm64` package and runs `verify-package.sh` on
+  it, but only as a check of the manual. Nothing ships from that run.
 - **Setting up a worker is scripted on Windows only.** The macOS and Linux workers, and every
   worker's delivery key, are set up by hand (§4.5).
 - **Nothing makes the machines' SDL3 versions agree** other than the pin in the two scripts.

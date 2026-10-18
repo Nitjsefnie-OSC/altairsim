@@ -11,8 +11,14 @@
 #       not compared. Prints "OK <doc>:<line>" on a match, else the diff. Exit 0 on a match.
 #
 #   DIR=<folder> check-block.sh ...
-#       Run the binary from <folder>, for a block that names a file by a relative path
+#       Replay as if from <folder>, for a block that names a file by a relative path
 #       (`SYMBOLS LOAD ALTMON.PRN` needs DIR=roms/ALTMON).
+#
+# THE REPLAY RUNS IN A NEW TEMPORARY FOLDER, never in the tree (issue #815). It holds a copy of
+# each file of <folder> (default: the repository root) and a link to each of its sub-folders,
+# so a relative read finds its file and a file the block writes (`SAVE`, `--log`) lands in the
+# temporary folder. A write into a sub-folder would go through the link into the tree, so the
+# script compares `git status` before and after, and fails with exit 3 if the tree changed.
 #
 # Paths are relative to the repository root, and the binary is its build/altairsim. Stdin is
 # always /dev/null: a pipe or a tty on stdin becomes the guest's keyboard, and a `startup`
@@ -54,8 +60,26 @@ args=()
 for c in "$@"; do args+=(-x "$c"); done
 while IFS= read -r c; do args+=(-x "$c"); done < <(printf '%s\n' "$want" | sed -n 's/^altairsim> //p')
 
-got=$(cd "${DIR:-.}" && perl -e 'alarm 20; exec @ARGV' "$bin" "$machine" "${args[@]}" </dev/null 2>&1 |
+# A machine file named by a path from the root must still be found from the temporary folder.
+[ -f "$machine" ] && machine=$root/$machine
+
+src=$root/${DIR:-.}
+[ -d "$src" ] || { echo "DIR=$DIR is not a folder" >&2; exit 2; }
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/check-block.XXXXXX") || exit 2
+trap 'rm -rf "$tmp"' EXIT
+for f in "$src"/*; do
+    if [ -d "$f" ]; then ln -s "$f" "$tmp/"; elif [ -f "$f" ]; then cp "$f" "$tmp/"; fi
+done
+before=$(git status --porcelain --untracked-files=all)
+
+got=$(cd "$tmp" && perl -e 'alarm 20; exec @ARGV' "$bin" "$machine" "${args[@]}" </dev/null 2>&1 |
       awk -v f="$first" '$0 == f { p = 1 } p' | sed 's/ *$//' | grep -v -e '^\[console' -e '^$')
+
+if [ "$(git status --porcelain --untracked-files=all)" != "$before" ]; then
+    echo "$doc:$line: the replay changed the tree. git status now shows:" >&2
+    git status --short --untracked-files=all >&2
+    exit 3
+fi
 
 # A block that ends in "..." shows only the start of the output. Compare that start.
 if [ "$(printf '%s\n' "$want" | tail -1)" = "..." ]; then
