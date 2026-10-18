@@ -120,6 +120,47 @@ std::string endpointHelp(bool all) {
     return s;
 }
 
+// THE SCHEME WORDS, the one list of them (issue #778). canonicalEndpoint() folds these and
+// only these, and the dispatcher below names a scheme through `Scheme`, which does not
+// compile with a word that is not here -- so a new scheme is case-insensitive the day it is
+// added. `line`: the word may start an endpoint. `sink`: it may follow a `|` as a mirror (a
+// sink that is not one of these is a log FILE, and a file's name is never folded).
+struct SchemeEntry {
+    const char* word;
+    bool        line;
+    bool        sink;
+};
+constexpr SchemeEntry kSchemes[] = {
+    {"console", true, false},  {"null", true, false},    {"loopback", true, false},
+    {"scripted", true, false}, {"terminal", true, false}, {"pty", true, true},
+    {"socket:", true, true},   {"telnet:", true, false},  {"serial:", true, true},
+    {"in:", true, false},      {"out:", true, false},     {"printer:", true, false},
+};
+
+// A scheme literal the dispatcher compares against: a word in kSchemes, or a bare word
+// there with the ':' or '?' that may follow it (`pty:`, `terminal?`). Any other literal is
+// a compile error -- the throw cannot be evaluated in a constant expression.
+struct Scheme {
+    const char* text;
+    consteval Scheme(const char* w) : text(w) {
+        if (!known(w)) throw "endpoint scheme is not in kSchemes";
+    }
+    static consteval bool known(const char* w) {
+        for (const auto& e : kSchemes) {
+            size_t k = 0;
+            while (e.word[k] && w[k] == e.word[k]) ++k;
+            if (e.word[k]) continue;
+            if (!w[k]) return true;
+            if (e.word[k - 1] != ':' && (w[k] == ':' || w[k] == '?') && !w[k + 1]) return true;
+        }
+        return false;
+    }
+};
+
+// `s` IS the scheme word; `s` STARTS WITH it. Both exact: `s` is already canonical.
+static bool isScheme(const std::string& s, Scheme w) { return s == w.text; }
+static bool hasScheme(const std::string& s, Scheme w) { return s.rfind(w.text, 0) == 0; }
+
 // A grammar word at the front of `s`, in any case: `w` ending in ':' is a prefix
 // (`socket:`); a bare word (`pty`, `null`) must end there or be followed by ':' or '?', so a
 // log file called `ptylog` is not the `pty` sink.
@@ -132,14 +173,15 @@ static size_t schemeWord(const std::string& s, const char* w) {
     return n;
 }
 
+bool isMirrorSink(const std::string& path) {
+    for (const auto& e : kSchemes)
+        if (e.sink && schemeWord(path, e.word) != 0) return true;
+    return false;
+}
+
 std::string canonicalEndpoint(const std::string& spec) {
     // The line (left of the first `|`) may be any endpoint. A sink right of a `|` is a
     // mirror (socket:, pty, serial:) or a log FILE -- and a file's name is never folded.
-    static const char* const kLine[] = {"console", "null",    "loopback", "scripted",
-                                        "terminal", "pty",    "socket:",  "telnet:",
-                                        "serial:",  "in:",    "out:",     "printer:"};
-    static const char* const kSink[] = {"pty", "socket:", "serial:"};
-
     std::string out;
     bool        line = true;
     for (size_t start = 0; start <= spec.size();) {
@@ -156,13 +198,8 @@ std::string canonicalEndpoint(const std::string& spec) {
             size_t q = part.find('?');
             std::string head = part.substr(0, q);
             size_t      n    = 0;
-            if (line) {
-                for (const char* w : kLine)
-                    if ((n = schemeWord(head, w)) != 0) break;
-            } else {
-                for (const char* w : kSink)
-                    if ((n = schemeWord(head, w)) != 0) break;
-            }
+            for (const auto& e : kSchemes)
+                if ((line ? e.line : e.sink) && (n = schemeWord(head, e.word)) != 0) break;
             out += lowerAscii(head.substr(0, n)) + head.substr(n);
             // Every option name and value is a word or a number, never a path.
             if (q != std::string::npos) out += lowerAscii(part.substr(q));
@@ -176,9 +213,9 @@ std::string canonicalEndpoint(const std::string& spec) {
     return out;
 }
 
-std::string rebaseEndpointPaths(const std::string&                                    spec,
-                                const std::function<std::string(const std::string&)>& rebase) {
-    if (std::string c = canonicalEndpoint(spec); c != spec) return rebaseEndpointPaths(c, rebase);
+// rebaseEndpointPaths() on a spec that is already canonical.
+static std::string rebaseCanonical(const std::string&                                    spec,
+                                   const std::function<std::string(const std::string&)>& rebase) {
     // A capture tap (ENDPOINT|FILE) carries a path on BOTH sides: the inner endpoint may
     // be an in:/out: file, and the log FILE itself is a path. Split on the `|` first,
     // rebase each independently, and rejoin -- otherwise a machine-file relative
@@ -193,26 +230,23 @@ std::string rebaseEndpointPaths(const std::string&                              
             path = file.substr(0, q);
             opts = file.substr(q);  // keeps the leading '?'
         }
-        // A `socket:` right side is a MIRROR sink, not a path -- rebasing it against the
-        // config dir would corrupt the port spec. Only a FILE sink (the tee) is a path.
-        // A `pty` right side is a mirror sink too; only the link after `pty:` is a path.
-        if (path == "pty") {
-        } else if (path.rfind("pty:", 0) == 0) {
+        // A mirror sink is not a path -- rebasing `socket:PORT` or `serial:DEVICE` against
+        // the config dir would corrupt it. Only a FILE sink (the tee) is a path, and the
+        // link after `pty:`.
+        if (hasScheme(path, "pty:")) {
             if (path.size() > 4) path = "pty:" + rebase(path.substr(4));
-        } else if (!path.empty() && path.rfind("socket:", 0) != 0 &&
-                   path.rfind("serial:", 0) != 0) {
-            // (`serial:` is a mirror sink too: a device name, not a file in the config dir.)
+        } else if (!path.empty() && !isMirrorSink(path)) {
             path = rebase(path);
         }
-        return rebaseEndpointPaths(inner, rebase) + "|" + path + opts;
+        return rebaseCanonical(inner, rebase) + "|" + path + opts;
     }
 
     // `pty:LINK` names the link, and that is a path (issue #685). A bare `pty` has none.
-    if (spec.rfind("pty:", 0) == 0)
+    if (hasScheme(spec, "pty:"))
         return spec.size() > 4 ? "pty:" + rebase(spec.substr(4)) : spec;
 
     // Only in:/out: name a path; everything else is returned byte-for-byte.
-    if (spec.rfind("in:", 0) != 0 && spec.rfind("out:", 0) != 0) return spec;
+    if (!hasScheme(spec, "in:") && !hasScheme(spec, "out:")) return spec;
 
     std::string out;
     for (size_t start = 0; start <= spec.size();) {
@@ -224,8 +258,8 @@ std::string rebaseEndpointPaths(const std::string&                              
         // options alone. A part that is neither in: nor out: is passed through -- the
         // resolver will reject it, with the operator's original text intact.
         size_t colon = part.find(':');
-        bool   isIn  = part.rfind("in:", 0) == 0;
-        bool   isOut = part.rfind("out:", 0) == 0;
+        bool   isIn  = hasScheme(part, "in:");
+        bool   isOut = hasScheme(part, "out:");
         if ((isIn || isOut) && colon != std::string::npos) {
             std::string prefix = part.substr(0, colon + 1);
             std::string rest   = part.substr(colon + 1);
@@ -244,6 +278,11 @@ std::string rebaseEndpointPaths(const std::string&                              
         start = comma + 1;
     }
     return out;
+}
+
+std::string rebaseEndpointPaths(const std::string&                                    spec,
+                                const std::function<std::string(const std::string&)>& rebase) {
+    return rebaseCanonical(canonicalEndpoint(spec), rebase);
 }
 
 std::function<std::unique_ptr<ByteStream>(const std::string&, std::string&)> rebasingResolver(
@@ -343,8 +382,8 @@ static std::unique_ptr<TcpStream> makeTcpStream(const std::string& body,
     return std::make_unique<TcpConnectStream>(std::move(conn), spec);
 }
 
-std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string& err) {
-    if (std::string c = canonicalEndpoint(spec); c != spec) return resolveEndpoint(c, err);
+// resolveEndpoint() on a spec that is already canonical.
+static std::unique_ptr<ByteStream> resolveCanonical(const std::string& spec, std::string& err) {
 
     // ---- ENDPOINT|FILE -- a transparent HEX TAP on the line (host/tee_stream.h) ----
     //
@@ -387,9 +426,9 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
         // bare `socket:PORT`; a `?ro` option makes it read-only (watch, no take-over).
         // A `pty` or `pty:LINK` right side is the same mirror over a pseudo-terminal
         // (issue #683): the watcher opens the link with a terminal program.
-        const bool ptySink    = path == "pty" || path.rfind("pty:", 0) == 0;
-        const bool serialSink = path.rfind("serial:", 0) == 0;
-        if (path.rfind("socket:", 0) == 0 || ptySink || serialSink) {
+        const bool ptySink    = isScheme(path, "pty") || hasScheme(path, "pty:");
+        const bool serialSink = hasScheme(path, "serial:");
+        if (isMirrorSink(path)) {
             uint16_t    port = 0;
             std::string link;  // "" = the first free /tmp/altairsim{n}
             std::string device;
@@ -467,7 +506,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
             // CONNECT, not a half-built mirror. describe() echoes `inner|file`, so SHOW
             // and CONFIG SAVE round-trip the whole mirror (the socket: right side
             // re-selects this branch on reload).
-            auto innerStream = resolveEndpoint(inner, err);
+            auto innerStream = resolveCanonical(inner, err);
             if (!innerStream) return nullptr;
             if (serialSink) {
                 // One port cannot be both the line and its mirror.
@@ -585,7 +624,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
         }
 
         // Recurse for the wrapped line; its error (a bad inner spec) is the operator's.
-        auto innerStream = resolveEndpoint(inner, err);
+        auto innerStream = resolveCanonical(inner, err);
         if (!innerStream) return nullptr;
 
         // The resolver opens the log so it can REFUSE cleanly here (a bad path is a
@@ -605,15 +644,15 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
         return std::make_unique<TeeStream>(std::move(innerStream), file, params, std::move(log));
     }
 
-    if (spec == "console") return std::make_unique<ConsoleRef>();
-    if (spec == "null") return std::make_unique<NullStream>();
-    if (spec == "loopback") return std::make_unique<LoopbackStream>();
+    if (isScheme(spec, "console")) return std::make_unique<ConsoleRef>();
+    if (isScheme(spec, "null")) return std::make_unique<NullStream>();
+    if (isScheme(spec, "loopback")) return std::make_unique<LoopbackStream>();
 
     // A terminal with a caller instead of a human: the two directions are separate,
     // so whoever holds the stream feed()s keystrokes and reads out() what the guest
     // printed. It is what the MCP server binds the console to (the guest cannot tell
     // it from a person), and what a test types into with no tty in the picture.
-    if (spec == "scripted") return std::make_unique<ScriptedStream>();
+    if (isScheme(spec, "scripted")) return std::make_unique<ScriptedStream>();
 
     // ---- terminal -- a built-in windowed terminal, the simulator's own (issue #244) ----
     //
@@ -624,8 +663,8 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     // REPORTED BEFORE the windowed-build check, so a bad emulation or size is caught even
     // on a headless build -- and a well-formed spec then refuses cleanly there, because a
     // terminal nobody can see or type at is not a serial line worth opening.
-    if (spec == "terminal" || spec.rfind("terminal:", 0) == 0 ||
-        spec.rfind("terminal?", 0) == 0) {
+    if (isScheme(spec, "terminal") || hasScheme(spec, "terminal:") ||
+        hasScheme(spec, "terminal?")) {
         std::string rest = spec.size() > 8 ? spec.substr(8) : "";  // after "terminal"
         if (!rest.empty() && rest[0] == ':') rest = rest.substr(1);
         std::string query;
@@ -728,7 +767,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     }
 
     // ---- socket: -- a RAW byte pipe: listen on a port, or call out to a host ----
-    if (spec.rfind("socket:", 0) == 0)
+    if (hasScheme(spec, "socket:"))
         return makeTcpStream(spec.substr(7), spec, "socket", /*bannerDefault=*/false, err);
 
     // ---- telnet: -- like socket:, but speaks the Telnet protocol (host/telnet_stream.h) ----
@@ -738,7 +777,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     // character-at-a-time -- instead of the raw pipe's double echo. LISTEN is the server
     // role (we offer to echo); a dial-out is the client role. socket: stays raw for
     // machine-to-machine CONNECT and the mirror.
-    if (spec.rfind("telnet:", 0) == 0) {
+    if (hasScheme(spec, "telnet:")) {
         auto inner = makeTcpStream(spec.substr(7), spec, "telnet", /*bannerDefault=*/true, err);
         if (!inner) return nullptr;
         std::string body = spec.substr(7);
@@ -748,7 +787,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     }
 
     // ---- serial: -- a real port on this host ----
-    if (spec.rfind("serial:", 0) == 0) {
+    if (hasScheme(spec, "serial:")) {
         std::string dev = spec.substr(7);
         if (dev.empty()) {
             err = "serial: needs a device (serial:/dev/tty.usbserial-XXXX, serial:COM3)";
@@ -784,13 +823,13 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     // `pty` takes the first free /tmp/altairsim{n}; `pty:LINK` names the link, which is
     // the form a saved machine file wants. NOT behind havePty(): on Windows openPty()
     // refuses by name, and that is a better answer than "no endpoint 'pty'".
-    if (spec == "pty" || spec.rfind("pty:", 0) == 0 || spec.rfind("pty?", 0) == 0) {
+    if (isScheme(spec, "pty") || hasScheme(spec, "pty:") || hasScheme(spec, "pty?")) {
         if (spec.find('?') != std::string::npos) {
             err = "pty: has no options (pty, or pty:LINK)";
             return nullptr;
         }
         std::string link = spec.size() > 3 ? spec.substr(4) : std::string();
-        if (spec != "pty" && link.empty()) {
+        if (!isScheme(spec, "pty") && link.empty()) {
             err = "pty: wants a path for the link (or use a bare 'pty')";
             return nullptr;
         }
@@ -816,7 +855,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     // board's config dir BEFORE we see it (rebaseEndpointPaths) and the board keeps
     // the ORIGINAL spec for round-trip, so `spec` -- not any resolved path -- is
     // what describe() echoes. Typed at the prompt, the path is the shell's.
-    if (spec.rfind("in:", 0) == 0 || spec.rfind("out:", 0) == 0) {
+    if (hasScheme(spec, "in:") || hasScheme(spec, "out:")) {
         std::optional<std::vector<uint8_t>> input;
         std::string inPath, outPath;
         uint64_t    nsPerByte = 0;
@@ -863,7 +902,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
             std::string part =
                 spec.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
 
-            if (part.rfind("in:", 0) == 0) {
+            if (hasScheme(part, "in:")) {
                 if (sawIn) {
                     err = "in: given twice in '" + spec + "'";
                     return nullptr;
@@ -881,7 +920,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
                 }
                 if (!query.empty() && !parseInOpts(query)) return nullptr;
                 inPath = path;
-            } else if (part.rfind("out:", 0) == 0) {
+            } else if (hasScheme(part, "out:")) {
                 if (sawOut) {
                     err = "out: given twice in '" + spec + "'";
                     return nullptr;
@@ -951,7 +990,7 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
     // true/yes/on/1 booleans and radix-aware integers every other setting accepts, so
     // no operator meets a second convention here. The buffering, the boundaries and
     // the "never submit an empty buffer" rule all live in PrinterStream.
-    if (spec.rfind("printer:", 0) == 0) {
+    if (hasScheme(spec, "printer:")) {
         std::string rest  = spec.substr(8);
         std::string queue = rest;
         std::string query;
@@ -1018,6 +1057,10 @@ std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string
 
     err = "no endpoint '" + spec + "'. Try: " + endpointHelp();
     return nullptr;
+}
+
+std::unique_ptr<ByteStream> resolveEndpoint(const std::string& spec, std::string& err) {
+    return resolveCanonical(canonicalEndpoint(spec), err);
 }
 
 } // namespace altair

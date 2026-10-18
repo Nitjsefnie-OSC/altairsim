@@ -200,10 +200,8 @@ int main(int argc, char** argv) {
             // Accept a bare port for convenience: `--mirror 2323` is `socket:2323`.
             // `pty` and `pty:LINK` name the pseudo-terminal sink, and `serial:DEVICE` a real
             // port (issue #683).
-            const std::string m     = canonicalEndpoint(a[i]);
-            const bool        named = m.rfind("socket:", 0) == 0 || m.rfind("pty", 0) == 0 ||
-                               m.rfind("serial:", 0) == 0;
-            mirror = named ? m : "socket:" + m;
+            const std::string m = canonicalEndpoint(a[i]);
+            mirror              = isMirrorSink(m) ? m : "socket:" + m;
         } else if (s == "--log") {
             if (!need(i, "a file (--log session.log)")) return 2;
             log = a[i];

@@ -489,6 +489,20 @@ void test_lines() {
         CHECK(canonicalEndpoint("Telnet:Bbs.Example:23?Banner=Off") ==
                   "telnet:Bbs.Example:23?banner=off",
               "a host keeps its case");
+        CHECK(canonicalEndpoint("PTY") == "pty", "a bare pty folds");
+        CHECK(canonicalEndpoint("Terminal?Size=80x24") == "terminal?size=80x24",
+              "terminal and its options fold");
+        CHECK(canonicalEndpoint("PRINTER:Queue") == "printer:Queue", "a queue keeps its case");
+        CHECK(canonicalEndpoint("null|SOCKET:2323") == "null|socket:2323",
+              "a socket mirror sink folds");
+
+        // One sink list (issue #778): the resolver, the rebase and --mirror all ask this.
+        CHECK(isMirrorSink("Pty") && isMirrorSink("pty:/tmp/x") && isMirrorSink("socket:1") &&
+                  isMirrorSink("Serial:/dev/x"),
+              "pty, pty:LINK, socket: and serial: are mirror sinks, in any case");
+        CHECK(!isMirrorSink("ptylog") && !isMirrorSink("Console") && !isMirrorSink("cap.hex") &&
+                  !isMirrorSink("telnet:23"),
+              "a log file, and a line-only scheme, are not mirror sinks");
 
         CHECK(resolveEndpoint("socket:", err) == nullptr, "socket: with no port is an error");
         CHECK(!err.empty(), "...and it says so");

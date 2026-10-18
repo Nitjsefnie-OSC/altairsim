@@ -55,6 +55,10 @@ bool parseHostPort(const std::string& spec, std::string& host, uint16_t& port, s
 // rebaseEndpointPaths() fold through this first, so every endpoint word is case-insensitive.
 std::string canonicalEndpoint(const std::string& spec);
 
+// True when `path` names a mirror sink (`socket:PORT`, `pty`, `pty:LINK`, `serial:DEVICE`),
+// in any case -- what may follow a `|` other than a log file. The `--mirror` option asks it.
+bool isMirrorSink(const std::string& path);
+
 // Returns null and sets `err` on anything it does not understand. It never
 // guesses: `CONNECT sio:a consle` is an error with the list of what it could
 // have meant, not a silent NullStream that leaves you wondering why the terminal
