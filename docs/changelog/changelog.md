@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Under `--mcp`, `SHOW CONSOLE` now names the unit that holds the console on every board.**
+Some boards, such as the 88-PIO, hold the console on a plain `scripted` line. `SHOW CONSOLE`
+did not count that line, so it printed `held by (nobody -- ...)` while `pio0:in` held the
+console. It now prints `held by pio0:in (--mcp)`. In a DO file, `CONNECT sio0:b console` now
+also takes the console before the next line runs. Before, the move came after the whole
+command, and a `SHOW CONSOLE` later in the same file named two holders.
+
 **`SET` and `CONNECT` now print the value as the simulator stored it.** `CONNECT sio0:a Loopback`
 printed `connected to Loopback`, and `SET mem0 fill=ZERO` printed `fill=ZERO`. The board had
 stored `loopback` and `zero`, and `SHOW` and `CONFIG SAVE` showed those words. The echo repeated

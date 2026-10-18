@@ -2268,6 +2268,31 @@ bool Monitor::setConsoleKey(const std::string& k, const std::string& v,
     return true;
 }
 
+bool wiredToConsole(Board& b, const std::string& unit) {
+    for (const auto& u : b.units())
+        if (u.name == unit) return u.kind == UnitKind::Serial && u.state == "console";
+    return false;
+}
+
+std::vector<std::string> takeConsole(Machine& m, const Board* keep, const std::string& keepUnit,
+                                     const ConsoleHolds& holds) {
+    // Gathered first: a disconnect re-wires a unit, and no unit list is walked while it changes.
+    std::vector<std::pair<Board*, std::string>> holders;
+    for (const auto& b : m.boards())
+        for (const auto& u : b->units()) {
+            if (u.kind != UnitKind::Serial) continue;
+            if (b.get() == keep && u.name == keepUnit) continue;
+            if (holds(*b, u.name)) holders.emplace_back(b.get(), u.name);
+        }
+    std::vector<std::string> taken;
+    for (const auto& [b, unit] : holders) {
+        std::string err;
+        b->disconnect(unit, err);
+        taken.push_back("console taken from " + b->id + ":" + unit);
+    }
+    return taken;
+}
+
 void Monitor::showConsole(std::ostream& out) {
     Console& con = Console::instance();
     out << "console  (the host keyboard and screen" << (con.isTty() ? "" : " -- not a tty")
@@ -2275,16 +2300,14 @@ void Monitor::showConsole(std::ostream& out) {
     showProps(con.properties(), out);
 
     // A unit holds the console when it is wired to it -- or, under --mcp, when its line is
-    // the console's stand-in: a filter that follows the console's transforms (issue #529).
+    // the session's console line (setConsoleHolds), which the unit shows as `scripted`.
+    const ConsoleHolds& holds = consoleHolds_ ? consoleHolds_ : ConsoleHolds(wiredToConsole);
     std::string holder;
     for (const auto& b : m_.boards())
         for (const auto& u : b->units()) {
-            if (u.kind != UnitKind::Serial) continue;
-            const auto* f       = dynamic_cast<const FilterStream*>(b->unitStream(u.name));
-            const bool  standIn = f && f->follows(con.filter());
-            if (u.state != "console" && !standIn) continue;
+            if (u.kind != UnitKind::Serial || !holds(*b, u.name)) continue;
             if (!holder.empty()) holder += ", ";
-            holder += b->id + ":" + u.name + (standIn ? " (--mcp)" : "");
+            holder += b->id + ":" + u.name + (u.state == "console" ? "" : " (--mcp)");
         }
     out << "\n  held by  " << (holder.empty() ? "(nobody -- CONNECT <id>:<unit> console)" : holder)
         << "\n";
@@ -4088,15 +4111,11 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         // looked like an endpoint name, which is lowercase by convention, and that
         // is exactly how it slipped through.
         if (is(a[2], "CONSOLE")) {
-            for (const auto& other : m_.boards()) {
-                for (const auto& ou : other->units()) {
-                    if (ou.kind != UnitKind::Serial || ou.state != "console") continue;
-                    if (other.get() == b && ou.name == u.name) continue;
-                    std::string err;
-                    other->disconnect(ou.name, err);
-                    out << "console taken from " << other->id << ":" << ou.name << "\n";
-                }
-            }
+            const auto taken =
+                consoleTaker_ ? consoleTaker_(b, u.name)
+                              : takeConsole(m_, b, u.name,
+                                            consoleHolds_ ? consoleHolds_ : wiredToConsole);
+            for (const auto& t : taken) out << t << "\n";
         }
 
         std::string err;

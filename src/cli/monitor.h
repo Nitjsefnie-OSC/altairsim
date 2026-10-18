@@ -13,6 +13,7 @@
 #include <functional>
 #include <iosfwd>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace altair {
@@ -21,6 +22,18 @@ class Display;      // host/display.h -- the run loop only asks it a question
 class Joystick;     // host/joystick.h -- the host game controllers, for SHOW JOYSTICKS
 class LineEditor;   // cli/lineedit.h -- an interactive command reads follow-up lines through it
 struct Completions; // cli/lineedit.h -- what complete() hands the editor for Tab
+
+// EXACTLY ONE UNIT MAY HOLD THE CONSOLE (DESIGN.md 7.2, 9). `holds` says whether a serial
+// unit holds it now. The CLI's answer is wiredToConsole(); under --mcp the holder shows
+// `scripted`, so the server adds "its line is the session's console line" (mcp/server.cpp).
+using ConsoleHolds = std::function<bool(Board& b, const std::string& unit)>;
+bool wiredToConsole(Board& b, const std::string& unit);
+
+// Take the console for keep:keepUnit: disconnect every other serial unit `holds` names, and
+// return one "console taken from <id>:<unit>" line for each. The one routine for the rule --
+// CONNECT ... console calls it, and so does the --mcp console binding (issue #779).
+std::vector<std::string> takeConsole(Machine& m, const Board* keep, const std::string& keepUnit,
+                                     const ConsoleHolds& holds);
 
 class Monitor {
 public:
@@ -53,6 +66,14 @@ public:
     // loop would hang the whole connection. When set, RUN sets PC and returns instead of
     // blocking -- the client advances with the non-blocking `run` tool (mcp/server.h).
     void setMcpMode(bool b) { mcpMode_ = b; }
+
+    // Who holds the console, for SHOW CONSOLE and CONNECT, and how CONNECT ... console takes
+    // it. The defaults are wiredToConsole() and takeConsole() with it. --mcp sets both, to
+    // find the unit on the session's scripted line too, so SHOW CONSOLE names it and CONNECT
+    // takes it during the command (issue #779).
+    using ConsoleTaker = std::function<std::vector<std::string>(Board* b, const std::string& unit)>;
+    void setConsoleHolds(ConsoleHolds h) { consoleHolds_ = std::move(h); }
+    void setConsoleTaker(ConsoleTaker t) { consoleTaker_ = std::move(t); }
 
     // Run a machine's startup list (DESIGN.md 10.0). Anything you can type, a
     // config can do -- so `startup` is not a second language.
@@ -243,6 +264,8 @@ private:
     bool failed_ = false;
     bool quit_ = false;
     bool mcpMode_ = false;  // RUN parks instead of blocking -- see setMcpMode()
+    ConsoleHolds consoleHolds_;  // empty = wiredToConsole
+    ConsoleTaker consoleTaker_;  // empty = takeConsole() with consoleHolds_
 
     // WHOSE DIRECTORY THE FILE CURRENTLY RUNNING CAME OUT OF -- meaningful only while a
     // file's lines are running (fileDepth_ > 0): a `startup` list, a `-s`/DO script.
