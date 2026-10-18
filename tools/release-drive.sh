@@ -300,6 +300,9 @@ if [ "$cmd" = preflight ]; then
     esac
   }
   trap remove_clone EXIT
+  # The processor count. A bare --parallel runs `make -j` with no limit, and that ran a 3-core
+  # runner out of memory (PR #817).
+  ncpu() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2; }
   src=$clone/src
   case ${COORDINATOR_TARGET:-} in
     macos-*) osx="-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0" ;;
@@ -312,7 +315,7 @@ if [ "$cmd" = preflight ]; then
          "-DCMAKE_PREFIX_PATH=$HOME/opt/sdl3-static" $osx \
     && if grep -F -- '-- SDL3 found -- video boards enabled (windowed)' "$plog" > /dev/null; then :
        else fail "coordinator: the configure output has no '-- SDL3 found' line"; false; fi \
-    && step "the build" cmake --build "$src/build" --config Release --parallel \
+    && step "the build" cmake --build "$src/build" --config Release --parallel "$(ncpu)" \
     && step "build-package.sh" "$src/tools/build-package.sh" --pdf "$src/docs/altairsim-manual.pdf" \
          --target "${COORDINATOR_TARGET:-}" "$src/dist" \
     && archive=$(ls "$src"/dist/altairsim-*-"${COORDINATOR_TARGET:-}".tar.gz 2> /dev/null | head -n 1) \
