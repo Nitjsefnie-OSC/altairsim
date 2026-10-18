@@ -315,7 +315,9 @@ The `release-coordinator` skill has the commands. Steps 1–4 can be done ahead 
    each, in any order. The driver copies the worker script to the box, starts it detached, and
    **proves that it started** (the checkout is at the tag, and the worker is a running
    process). It refuses two targets that share a physical machine at once.
-   `tools/release-drive.sh status <target>` reads the result. The workers `scp` their archives
+   `tools/release-drive.sh wait <target>...` checks every worker once a minute until all have
+   ended. Then it prints each report block and one `wait OK` or `wait FAIL` line.
+   `status <target>` reads one log once. The workers `scp` their archives
    into the coordinator's `dist/`; the coordinator builds its own straight into it.
 6. **Verify, checksum, upload, publish.** §7 on each archive; then `tools/build-checksums.sh`
    (it refuses unless all four of one version are in `dist/`, and writes `dist/SHA256SUMS`);

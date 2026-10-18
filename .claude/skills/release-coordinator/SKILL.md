@@ -98,15 +98,26 @@ out the tag in it.
   a start that printed `started` ran nothing, and nobody saw it for about 10 minutes.
 - **Any order, and at the same time**, but the driver refuses a target in `SHARED_HOST` while
   another target of that list runs. They are one physical machine.
-- **Read the result** with `tools/release-drive.sh status <target>`. It prints the end of the
-  log and exits 2 while the worker runs, 0 on `release-worker: OK`, 1 on
-  `release-worker: FAIL at step N`. A build with the exercisers takes 10 to 30 minutes for
-  each box; poll every few minutes.
+- **Wait for the results with one command, run in the background.** Do not poll by hand.
+
+  ```sh
+  tools/release-drive.sh wait macos-arm64 macos-x86_64 linux-x86_64 windows-x86_64
+  ```
+
+  Give it each target that you started. It checks them once a minute until every worker has
+  ended. A build with the exercisers takes 10 to 30 minutes for each box. Then it prints each
+  report block under `##### <target>`, and one last line. **CHECK
+  `release-drive: wait OK -- all N workers OK`.** **STOP on `release-drive: wait FAIL`.** It
+  names the targets that failed.
+- A target in `SHARED_HOST` starts only after its partner has ended. Start it then, and give
+  it its own `wait`.
+- `tools/release-drive.sh status <target>` reads one worker's log once. It exits 2 while the
+  worker runs, 0 on `release-worker: OK`, and 1 on `release-worker: FAIL at step N`.
 - The Windows log is `dist/worker-windows-x86_64.log` here, and the ssh that holds the worker
   runs on this machine: do not end it. The macOS and Linux workers run on their boxes and
   survive a dropped link.
 
-Collect each worker's report block. Any FAIL is a STOP for the release: do not upload a set
+The `wait` output holds each worker's report block. Any FAIL is a STOP for the release: do not upload a set
 with a hole in it. `serial-hw` and `tnfs-hw` results are warnings — put them in front of the
 person, do not hold the release for them. The `exercisers` line of each report is the CPU
 gate for that platform.
