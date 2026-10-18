@@ -23,7 +23,8 @@
 # AN EMPTY LOG PROVES NOTHING. `start` returns OK only when the checkout on the box is at the
 # new tag AND the worker script is a running process there AND its log names this version.
 #
-#   usage: tools/release-drive.sh start  <target> X.Y.Z [--skip-slow] [--no-deliver]
+#   usage: tools/release-drive.sh preflight [--conf FILE]
+#          tools/release-drive.sh start  <target> X.Y.Z [--skip-slow] [--no-deliver]
 #                                        [--repo DIR] [--conf FILE]
 #          tools/release-drive.sh status <target> [--conf FILE]
 #          tools/release-drive.sh wait   <target>... [--conf FILE]
@@ -34,6 +35,19 @@
 #     --repo        Build in this checkout, not in the one that distribution.conf names. Use
 #                   it for a dry run of the coordinator's own target in a second clone.
 #     --conf        Read this file. Default: distribution.conf in the repository root.
+#
+# `preflight` runs before the tag, and proves what a release needs (issues #811 and #816):
+#   1. The coordinator. Its checkout has no change to a tracked file. A clone of its HEAD
+#      configures, builds, packages with the committed manual, and passes verify-package.sh.
+#      The clone is in a temporary folder, so the build/ of this checkout is not touched.
+#   2. Each worker, only when the coordinator passed. ssh answers, the checkout is reset
+#      (`git reset --hard` and `git clean -fdx`), and an scp from the worker to
+#      COORDINATOR_DIST arrives. The scp is the one that step 8 of the worker makes.
+# Each check prints `preflight: OK -- <what>` or `preflight: FAIL -- <what>`. The last line is
+# `preflight: OK` or `preflight: FAIL`, and the exit status is 0 only for OK.
+#
+# A WORKER CHECKOUT IS DISPOSABLE. `start` and `preflight` reset it, and print each path that
+# `git clean` removed. The coordinator's checkout is never reset: it is a development tree.
 #
 # `status` prints the end of the worker's log. Its exit status is 0 when the worker printed
 # `release-worker: OK`, 1 when it printed FAIL or is gone with no result, and 2 while it
@@ -69,7 +83,7 @@ usage() {
 [ $# -ge 1 ] || usage 1
 cmd=$1; shift
 case $cmd in
-  start|status|wait) ;;
+  preflight|start|status|wait) ;;
   -h|--help) usage 0 ;;
   *) echo "release-drive: unknown command: $cmd" >&2; usage 1 ;;
 esac
@@ -89,7 +103,9 @@ while [ $# -gt 0 ]; do
     --repo)       [ $# -ge 2 ] || die "--repo needs a value"; repo_arg=$2; shift 2 ;;
     --conf)       [ $# -ge 2 ] || die "--conf needs a value"; conf=$2; shift 2 ;;
     -*)           echo "release-drive: unknown argument: $1" >&2; usage 1 ;;
-    *)            if [ "$cmd" = wait ]; then targets="$targets $1"
+    *)            if [ "$cmd" = preflight ]; then
+                    echo "release-drive: preflight takes no target: $1" >&2; usage 1
+                  elif [ "$cmd" = wait ]; then targets="$targets $1"
                   elif [ -z "$target" ]; then target=$1
                   elif [ -z "$version" ]; then version=$1
                   else echo "release-drive: unknown argument: $1" >&2; usage 1; fi
@@ -97,7 +113,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$cmd" = wait ]; then
+if [ "$cmd" = preflight ]; then
+  :
+elif [ "$cmd" = wait ]; then
   [ -n "$targets" ] || { echo "release-drive: give one or more targets." >&2; usage 1; }
 else
   [ -n "$target" ] || { echo "release-drive: give a target." >&2; usage 1; }
@@ -193,6 +211,161 @@ state_of() {
   return 3
 }
 
+# The script that resets a worker's checkout. It runs ON the worker, in sh or Git Bash, so the
+# same commands work on all three. With a destination and a file name it also makes the file
+# and copies it there with scp, as step 8 of the worker does. Its name must not match $pat.
+reset_script() {
+  cat <<'RESET'
+#!/bin/sh
+set -u
+cd "$1" 2> /dev/null || { echo "release-drive-reset: FAIL -- cannot enter the checkout $1"; exit 1; }
+git reset -q --hard || { echo "release-drive-reset: FAIL -- git reset --hard failed in $1"; exit 1; }
+git clean -fdx || { echo "release-drive-reset: FAIL -- git clean -fdx failed in $1"; exit 1; }
+echo "release-drive-reset: reset"
+if [ $# -ge 3 ]; then
+  f=${TMPDIR:-/tmp}/$3
+  echo "release-drive preflight" > "$f"
+  if ! scp -o BatchMode=yes -o ConnectTimeout=10 "$f" "$2/" 2>&1; then
+    rm -f "${f:?}"
+    echo "release-drive-reset: FAIL -- scp to $2 failed"
+    exit 1
+  fi
+  rm -f "${f:?}"
+fi
+echo "release-drive-reset: OK"
+RESET
+}
+
+# Reset the checkout of the selected worker. With $1 = a destination and $2 = a file name, also
+# copy that file from the worker to the destination. Prints each path that `git clean` removed,
+# and returns 0 only when the script on the worker printed its OK line. The worker's output is
+# left in $rtext.
+reset_worker() {
+  rcopy=${TMPDIR:-/tmp}/altairsim-release-reset.sh
+  reset_script > "$rcopy"
+  rtext=""
+  if [ "$target" = windows-x86_64 ]; then
+    # The copy goes to the login directory, which is also where Git Bash starts.
+    scp $sshopt "$rcopy" "$host:altairsim-release-reset.sh" > /dev/null 2>&1 \
+      && rtext=$(ssh $sshopt "$host" "$winbash --login altairsim-release-reset.sh $repo $*" 2>&1)
+  else
+    scp $sshopt "$rcopy" "$host:/tmp/altairsim-release-reset.sh" > /dev/null 2>&1 \
+      && rtext=$(ssh $sshopt "$host" "sh /tmp/altairsim-release-reset.sh $repo $*" 2>&1)
+  fi
+  rm -f "${rcopy:?}"
+  [ -n "$rtext" ] || rtext="release-drive-reset: FAIL -- cannot copy the reset script to $host"
+  rtext=$(printf '%s\n' "$rtext" | tr -d '\r')
+  printf '%s\n' "$rtext" | grep '^Removing ' | sed "s/^/  $target: /"
+  printf '%s\n' "$rtext" | grep '^release-drive-reset: OK$' > /dev/null
+}
+
+# ---------------------------------------------------------------------------
+if [ "$cmd" = preflight ]; then
+  bad=0
+  pass() { echo "preflight: OK -- $*"; }
+  fail() { echo "preflight: FAIL -- $*"; bad=1; }
+  finish() {
+    if [ $bad = 0 ]; then echo "preflight: OK"; exit 0; fi
+    echo "preflight: FAIL"; exit 1
+  }
+
+  # 1. The coordinator. Never reset: a change to a tracked file is a FAIL.
+  dirty=$(git -C "$root" status --porcelain --untracked-files=no)
+  if [ -n "$dirty" ]; then
+    printf '%s\n' "$dirty"
+    fail "coordinator: the checkout has changes to tracked files"
+    finish
+  fi
+  pass "coordinator: no change to a tracked file"
+
+  # A clone of HEAD, built as step 2 of the worker builds it. Each command's output goes to
+  # the log; a FAIL prints its last lines.
+  plog=$root/dist/preflight-coordinator.log
+  : > "$plog"
+  step() {  # $1 = what it does, the rest = the command
+    what=$1; shift
+    echo "+ $*" >> "$plog"
+    "$@" >> "$plog" 2>&1 && return 0
+    tail -n 15 "$plog"
+    fail "coordinator: $what failed. The full output is in $plog"
+    return 1
+  }
+  clone=$(mktemp -d "${TMPDIR:-/tmp}/release-preflight.XXXXXX") || die "mktemp failed"
+  # Remove only the folder that mktemp made: a name under the temporary folder, with this
+  # prefix. Any other value of $clone is left alone.
+  remove_clone() {
+    case ${clone:?} in
+      "${TMPDIR:-/tmp}"/release-preflight.?*) rm -rf -- "$clone" ;;
+      *) echo "release-drive: not removing '$clone': not a preflight folder" >&2 ;;
+    esac
+  }
+  trap remove_clone EXIT
+  src=$clone/src
+  case ${COORDINATOR_TARGET:-} in
+    macos-*) osx="-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0" ;;
+    *)       osx="" ;;
+  esac
+  # shellcheck disable=SC2086
+  step "git clone --local" git clone -q --local --no-checkout "$root" "$src" \
+    && step "the checkout of HEAD" git -C "$src" checkout -q --detach "$(git -C "$root" rev-parse HEAD)" \
+    && step "the configure" cmake -S "$src" -B "$src/build" -DCMAKE_BUILD_TYPE=Release \
+         "-DCMAKE_PREFIX_PATH=$HOME/opt/sdl3-static" $osx \
+    && if grep -F -- '-- SDL3 found -- video boards enabled (windowed)' "$plog" > /dev/null; then :
+       else fail "coordinator: the configure output has no '-- SDL3 found' line"; false; fi \
+    && step "the build" cmake --build "$src/build" --config Release --parallel \
+    && step "build-package.sh" "$src/tools/build-package.sh" --pdf "$src/docs/altairsim-manual.pdf" \
+         --target "${COORDINATOR_TARGET:-}" "$src/dist" \
+    && archive=$(ls "$src"/dist/altairsim-*-"${COORDINATOR_TARGET:-}".tar.gz 2> /dev/null | head -n 1) \
+    && if [ -n "$archive" ]; then :
+       else fail "coordinator: build-package.sh wrote no archive"; false; fi \
+    && step "verify-package.sh" "$src/tools/verify-package.sh" "$archive" \
+    && if line=$(grep -E '^verify-package: PASS -- ' "$plog"); then
+         pass "coordinator: the package of HEAD builds. $line"
+       else fail "coordinator: verify-package.sh printed no PASS line"; fi
+  [ $bad = 0 ] || finish
+
+  # 2. The workers: every target but the coordinator's. A release needs all four archives.
+  [ -n "${COORDINATOR_USER:-}" ] && [ -n "${COORDINATOR_HOST:-}" ] && [ -n "${COORDINATOR_DIST:-}" ] \
+    || die "$conf does not have COORDINATOR_USER, COORDINATOR_HOST and COORDINATOR_DIST"
+  case $COORDINATOR_DIST in
+    /*) ddir=$COORDINATOR_DIST ;;
+    *)  ddir=$HOME/$COORDINATOR_DIST ;;
+  esac
+  for t in macos-arm64 macos-x86_64 linux-x86_64 windows-x86_64; do
+    [ "$t" = "${COORDINATOR_TARGET:-}" ] && continue
+    if [ -z "$(conf_of "$t" SSH)" ]; then
+      fail "$t: $conf has no worker for it"
+      continue
+    fi
+    select_target "$t"
+    if ! ssh $sshopt "$host" "exit 0" > /dev/null 2>&1; then
+      fail "$t: ssh $host does not answer"
+      continue
+    fi
+    pass "$t: ssh $host answers"
+    if running "$t"; then
+      fail "$t: a worker runs there now"
+      continue
+    fi
+    marker=preflight-$t-$$.txt
+    rm -f "${ddir:?}/${marker:?}"
+    reset_worker "$COORDINATOR_USER@$COORDINATOR_HOST:$COORDINATOR_DIST" "$marker"; res=$?
+    if printf '%s\n' "$rtext" | grep '^release-drive-reset: reset$' > /dev/null; then
+      pass "$t: the checkout $repo is reset"
+    fi
+    if [ $res != 0 ]; then
+      printf '%s\n' "$rtext" | grep -v '^Removing ' | tail -n 5
+      fail "$t: $(printf '%s\n' "$rtext" | sed -n 's/^release-drive-reset: FAIL -- //p' | tail -n 1)"
+    elif [ -f "$ddir/$marker" ]; then
+      rm -f "${ddir:?}/${marker:?}"
+      pass "$t: an scp from the worker arrives in $COORDINATOR_DIST"
+    else
+      fail "$t: the scp to $COORDINATOR_USER@$COORDINATOR_HOST:$COORDINATOR_DIST printed no error, and the file is not in $ddir"
+    fi
+  done
+  finish
+fi
+
 # ---------------------------------------------------------------------------
 if [ "$cmd" = status ]; then
   state_of; res=$?
@@ -284,6 +457,16 @@ if [ $is_local = no ] && [ $deliver = yes ]; then
   [ -n "${COORDINATOR_USER:-}" ] && [ -n "${COORDINATOR_HOST:-}" ] && [ -n "${COORDINATOR_DIST:-}" ] \
     || die "$conf does not have COORDINATOR_USER, COORDINATOR_HOST and COORDINATOR_DIST"
   args="$args --deliver $COORDINATOR_USER@$COORDINATOR_HOST:$COORDINATOR_DIST"
+fi
+
+# A worker's checkout is disposable: reset it, so that step 1 of the worker does not stop on a
+# change that an earlier run left (issue #811). The coordinator's checkout is never reset.
+if [ $is_local = no ]; then
+  reset_worker || {
+    printf '%s\n' "$rtext" | grep -v '^Removing ' | tail -n 5
+    die "cannot reset the checkout $repo on $host"
+  }
+  echo "release-drive: the checkout $repo on $host is reset."
 fi
 
 if [ $is_local = yes ]; then

@@ -44,6 +44,11 @@ The script finds the target itself:
 
 ## Run it
 
+**The checkout on a build machine is disposable.** Keep no work in it. The coordinator's
+`tools/release-drive.sh start` and `preflight` reset it (`git reset --hard`,
+`git clean -fdx`) before they do anything else. Step 1 still stops on a change to a tracked
+file. That protects a person who runs the script by hand.
+
 **Run a copy that is outside the checkout.** Step 1 is `git checkout -f vX.Y.Z`, which can
 replace the script while the shell reads it. The script refuses to start from inside the
 checkout.

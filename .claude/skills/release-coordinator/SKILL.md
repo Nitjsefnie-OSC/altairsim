@@ -56,6 +56,25 @@ until now. Before the version bump:
 manual, changelog, monitor or debugger PDF. Never build the PDFs locally: a different pandoc
 is a different document.
 
+## 2a. Preflight, before the tag
+
+Run it with this checkout at the commit that you will tag:
+
+```sh
+tools/release-drive.sh preflight
+```
+
+- **The coordinator first.** The checkout must have no change to a tracked file. A clone of
+  HEAD in a temporary folder is configured, built and packaged, and `verify-package.sh` runs
+  the manual's commands on the archive. This checkout and its `build/` are not touched.
+- **Then each worker.** ssh must answer. The checkout on the box is reset
+  (`git reset --hard`, `git clean -fdx`), and the command prints each path that it removed.
+  The worker then copies a small file to `COORDINATOR_DIST` with `scp`, as its step 8 does. In
+  1.3.4 a delivery key failed only after a full build (issue #816).
+- **CHECK the last line, `preflight: OK`.** **STOP on `preflight: FAIL`.** The
+  `preflight: FAIL -- <item>` lines above it name each problem. Tag only after
+  `preflight: OK`.
+
 ## 3. Tag and push
 
 ```sh
@@ -90,7 +109,7 @@ The driver reads `distribution.conf`, copies the worker script to the box (outsi
 checkout), gives it the site values and the version, and starts it detached. For
 `COORDINATOR_TARGET` it runs the script here: no ssh and no delivery, the archive lands in
 `dist/`. **This checkout must have no change to a tracked file**, because the worker checks
-out the tag in it.
+out the tag in it. On a worker box, the driver first resets the checkout, as `preflight` does.
 
 - **CHECK `release-drive: OK -- <target> started`.** The driver prints it only when the
   checkout on the box is at `vX.Y.Z`, the worker is a running process, and its log names the
@@ -121,6 +140,14 @@ The `wait` output holds each worker's report block. Any FAIL is a STOP for the r
 with a hole in it. `serial-hw` and `tnfs-hw` results are warnings — put them in front of the
 person, do not hold the release for them. The `exercisers` line of each report is the CPU
 gate for that platform.
+
+### While the builds run
+
+- **Merge only the fixes that this release needs**, from the tag to the publish. A re-tag
+  ships every merge since the first tag.
+- **The coordinator's own build uses this checkout.** Do not switch a branch and do not edit a
+  file here until its worker has ended. Merge a PR on GitHub with
+  `gh pr merge <N> --merge --delete-branch`, not in this checkout.
 
 ### Re-spinning for a doc-only fix
 
