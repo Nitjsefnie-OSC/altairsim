@@ -639,7 +639,9 @@ void test_cli() {
         monc.exec("BOARDS ADD Memory mem0", sc);
         CHECK(mc.find("mem0") && mc.find("mem0")->type() == "memory",
               "BOARDS ADD Memory fits a `memory` board");
-        monc.exec("SET mem0 fill=ZERO", sc);
+        std::ostringstream echo;
+        monc.exec("SET mem0 fill=ZERO", echo);
+        CHECK(echo.str() == "mem0: fill=zero\n", "SET mem0 fill=ZERO echoes the value as stored (#792)");
         std::ostringstream show;
         monc.exec("SHOW mem0", show);
         const std::string t = show.str();
@@ -651,7 +653,10 @@ void test_cli() {
         monc.exec("BOARDS ADD 2SIO sio0", sc);
         Board* sio = mc.find("sio0");
         CHECK(sio && sio->type() == "2sio", "BOARDS ADD 2SIO fits a `2sio` board");
-        monc.exec("CONNECT sio0:a LoopBack", sc);
+        std::ostringstream cecho;
+        monc.exec("CONNECT sio0:a LoopBack", cecho);
+        CHECK(cecho.str() == "sio0:a: connected to loopback\n",
+              "CONNECT sio0:a LoopBack echoes the endpoint as stored (#792)");
         bool loop = false;
         if (sio)
             for (const auto& u : sio->units())

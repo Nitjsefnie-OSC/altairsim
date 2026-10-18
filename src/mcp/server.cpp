@@ -1224,7 +1224,8 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         if (!setProperty(*b, args.at("key").str(), args.at("value").str(), err))
             return textResult(err, true);
         return dataResult(propsJson(b), b->id + ": " + args.at("key").str() + "=" +
-                                            args.at("value").str());
+                                            storedText(b->properties(), args.at("key").str(),
+                                                       args.at("value").str()));
     }
 
     if (name == "who") {
@@ -2196,6 +2197,7 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         std::string endpoint = args.at("endpoint").str();
         std::string err;
         if (!b->connect(unit, endpoint, err)) return textResult(err, true);
+        endpoint = canonicalEndpoint(endpoint);
         // A unit wired to `console` takes the console now, as after a monitor command --
         // left alone, it writes guest output onto our stdout (issues #756, #759).
         std::string conErr;

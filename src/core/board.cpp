@@ -239,6 +239,13 @@ bool setPropertyIn(std::vector<Property> props, const std::string& who, const st
     return setOne(std::move(props), who, key, text, err);
 }
 
+std::string storedText(std::vector<Property> props, const std::string& key,
+                       const std::string& typed) {
+    for (const auto& p : props)
+        if (named(p, key)) return p.get ? p.get().text(p.radix) : typed;
+    return typed;
+}
+
 // EVERY successful set tells the board to re-settle, without asking what was set.
 //
 // `port`, `phantom`, `honors_phantom`, `card` (bankmem) and `enabled` rewire the card's

@@ -2264,7 +2264,7 @@ bool Monitor::setConsoleKey(const std::string& k, const std::string& v,
         failed_ = true;
         return false;
     }
-    out << "console: " << k << "=" << v << "\n";
+    out << "console: " << k << "=" << storedText(Console::instance().properties(), k, v) << "\n";
     return true;
 }
 
@@ -3978,7 +3978,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 out << err << "\n";
                 failed_ = true;
             } else {
-                out << "display: " << k << "=" << v << "\n";
+                out << "display: " << k << "=" << storedText(Display::properties(), k, v) << "\n";
             }
             return true;
         }
@@ -3991,7 +3991,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 out << err << "\n";
                 failed_ = true;
             } else {
-                out << "machine: " << k << "=" << v << "\n";
+                out << "machine: " << k << "=" << storedText(machineProperties(m_), k, v) << "\n";
             }
             return true;
         }
@@ -4041,7 +4041,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
                 out << err << "\n";
                 failed_ = true;
             } else {
-                out << b->id << ":" << u.name << ": " << k << "=" << v << "\n";
+                out << b->id << ":" << u.name << ": " << k << "=" << storedText(b->unitProperties(u.name), k, v) << "\n";
             }
             return true;
         }
@@ -4053,7 +4053,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             out << err << "\n";
             failed_ = true;
         } else {
-            out << b->id << ": " << k << "=" << v << "\n";
+            out << b->id << ": " << k << "=" << storedText(b->properties(), k, v) << "\n";
         }
         return true;
     }
@@ -4104,7 +4104,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
             out << err << "\n";
             failed_ = true;
         } else {
-            out << b->id << ":" << u.name << ": connected to " << a[2] << "\n";
+            out << b->id << ":" << u.name << ": connected to " << canonicalEndpoint(a[2]) << "\n";
             // A pseudo-terminal mirror's name is chosen at connect, and the operator
             // needs it now, not after the next RUN. Peel to the mirror, as above.
             for (ByteStream* s = b->unitStream(u.name); s;) {
