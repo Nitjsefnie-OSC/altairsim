@@ -375,6 +375,7 @@ The first two lines show the machine that the file made, which runs at full spee
 line shows the change. Without `--set`, the machine runs at full speed again:
 
 ```
+$ cd examples/cpm
 $ altairsim cpm22-buffered.toml
 ```
 
@@ -401,6 +402,7 @@ after the startup commands, when CP/M has started. `--set` runs before them.
 window of its own:
 
 ```
+$ cd examples/cpm
 $ altairsim cpm22-buffered.toml --set "sio0:a connect=terminal" --set "TERMINAL bsdel=bs"
 ```
 
