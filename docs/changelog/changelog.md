@@ -10,311 +10,66 @@ register, the bit or the command that was wrong.
 
 ---
 
-## Unreleased
+## 1.3.4
 
-**`DRIVING-WITH-AI.md` and the `altairsim` skill answer five more questions.** They now say
-that the prompt comes from the BIOS (`A0>` on the 8 MB Altair hard disk, not `A>`), that
-`idle = false` on the CPU board stops `run` from returning at a prompt, and that a one-key
-answer takes no `\r`. They also give a recipe to build flat out and then test a real serial
-device at 2 MHz. The `monitor` tool's description now says that the machine named on the
-command line runs no `startup`.
+**1.3.4 adds two CompuPro floppy controllers, `--set` and `SHOW SERIAL`. It makes a halted
+processor and `DEPOSIT` act as a front panel does, keeps the crystal on every run, and corrects
+many faults in the monitor, `--mcp` and the video windows.**
 
-**New tools: `tools/lbr-extract.py`, `tools/uncrunch.py` and `tools/unsqueeze.py` open CP/M
-library files.** `lbr-extract.py` lists the files in a `.LBR` file, or copies them out.
-`uncrunch.py` decodes a file that CRUNCH 2.x compressed, such as `SUPSUB13.AZM`, and writes it
-with its original name, `SUPSUB13.ASM`. `unsqueeze.py` does the same for a file that SQ
-squeezed, such as `EX15.AQM`. The scripts check the CRC or the checksum of each file. The scripts need
-Python 3. `tools/README.pdf` gives the commands.
+**The CompuPro Disk 1 and Disk 1A floppy controllers are new boards, `disk1` and `disk1a`.**
+Each has an NEC µPD765A floppy chip, a DMA engine and a boot EPROM. The new machines `disk1` and
+`disk1a` add the board to a Z80, 64K of RAM and a CompuPro System Support 1. Mount a CompuPro
+CP/M 2.2 disk in drive 0 and run from `0000`, and the EPROM boots it to `A>`. The boards read 8″
+disks, and the `disk1a` also boots a 5.25″ disk from unit 2. CompuPro's `FORMAT.COM` formats a
+blank disk. The `media` key of a drive sets the size and sides of a blank disk, and `create`
+makes an empty disk file.
 
-**New command: `SHOW SERIAL` lists the serial ports on your computer.** For each port, it also
-shows the unit that holds it. Before, the only way to see the list was to give `CONNECT` a wrong
-device name and read the error. `HELP CONNECT` and the serial chapter of the *User Manual* now
-point to the command.
+**A halted processor stays halted until `RESET`, and `DEPOSIT` uses the program counter.**
+`RUN <addr>`, `EXAMINE` and `DEPOSIT` now do nothing while the processor is halted, as on a real
+front panel. They print the `PC` and *"RESET ends the halt."* A `HLT` after `DI` now ends the
+run. `DEPOSIT <addr> <bytes>` is EXAMINE, DEPOSIT and DEPOSIT NEXT, so the `PC` ends on the last
+byte written. A value larger than `FF` is an error, and no byte is written.
 
-**The CP/M example disk now has the `vi` text editor.** `examples/cpm/cpm22b23-56k.dsk` has
-`VI.COM` and its manual, `VI.DOC`. To make space, WordMaster (`WM.COM`, `WM.HLP`) and
-`OTHELLO.COM` are no longer on the disk. The disk has 8K free.
+**A crystal is kept on every run.** `RUN` ignored `clock_hz` when the program was started from a
+script or a pipe. It now keeps the crystal each time `clock_hz` is not 0: at the prompt, with
+`-x`, with `-s`, from a pipe and under `--mcp`. **A script that must be fast must change if its
+machine sets a crystal.** The `sbc200`, `sbc200v` and `dazzler` machines set 4 MHz, so start such
+a script with `SET cpu0 clock_hz=0`.
 
-**Under `--mcp`, `SHOW CONSOLE` now names the unit that holds the console on every board.**
-Some boards, such as the 88-PIO, hold the console on a plain `scripted` line. `SHOW CONSOLE`
-did not count that line, so it printed `held by (nobody -- ...)` while `pio0:in` held the
-console. It now prints `held by pio0:in (--mcp)`. In a DO file, `CONNECT sio0:b console` now
-also takes the console before the next line runs. Before, the move came after the whole
-command, and a `SHOW CONSOLE` later in the same file named two holders.
+**Numbers and case.** A hex number that starts with `0B` is read as hex, and binary is written
+`%1010`. **A machine file that sets `sense = 0b10001110` must change to `sense = %10001110`.**
+Board types, endpoints, command-line options and settings with a list of values now work in any
+case. A machine-file word with the wrong case gets an error that names the fix, and `remove`
+refuses a value other than `true` or `false`.
 
-**`SET` and `CONNECT` now print the value as the simulator stored it.** `CONNECT sio0:a Loopback`
-printed `connected to Loopback`, and `SET mem0 fill=ZERO` printed `fill=ZERO`. The board had
-stored `loopback` and `zero`, and `SHOW` and `CONFIG SAVE` showed those words. The echo repeated
-the text that you typed, so it did not show what the board holds. Both commands now print the
-stored value: `connected to loopback` and `fill=zero`. The MCP tools `board_set` and `connect`
-report the stored value in the same way.
+**New commands and options.**
+- `SHOW SERIAL` lists the serial ports on your computer and the unit that holds each one.
+- `--set "cpu0 clock_hz=2000000"` changes settings for one run, before the machine's `startup`.
+- `--mcp` refuses `-x`, `-s` and `-i`.
+- `SET hb0 hostdir="My Project"` takes a value with a space in it.
+- `SET` and `CONNECT` print the value as the board stored it.
+- `W` chooses text mode from the extension of the CP/M file when you give no mode.
+- `MOUNT … media=NAME` gives the disk its format before the mount.
+- The terminal window's `cr` setting is now `crlf = on | off`, as on the console.
+- `SET CONSOLE DEBUG=<file>` writes each line when the line is made.
+- `tools/lbr-extract.py`, `tools/uncrunch.py` and `tools/unsqueeze.py` open CP/M library files.
 
-**`SET` now takes a value with a space in it.** `SET hb0 hostdir="My Project"` stopped with
-`SET: unexpected 'with'`, because the space ended the value. The form `SET hb0 hostdir "My
-Project"` was worse. It gave no error, and it stored the path with the quote mark at its start.
-The host bridge then pointed at a folder that does not exist. Both forms now store `My Project`
-with no quote marks. `HELP SET` shows the first form.
+**Under `--mcp`, the console line is more reliable.** `SHOW CONSOLE` names the unit that holds
+the console on every board. `CONNECT … console` takes the console from the unit that holds it,
+and the `ss1` board takes the console settings. The error for a lost line gives advice that
+works, and the `connect` tool lists the endpoints that `CONNECT` takes.
 
-**Under `--mcp`, the error for a lost console line now gives advice that works.** Connect the
-console unit to another endpoint, such as `CONNECT sio0:a pty`, and then to `scripted`. The
-next `run` stopped with `no console line: CONNECT a serial unit to 'scripted'`. That was the
-command you had just given, and it did not give the line back. The error now says to connect
-the unit to `console`. `CONNECT sio0:a console` gives `run` the console line again, with any
-`--mirror` and `--log`.
+**Video and terminal windows.** At each stop, the console gets the keyboard back on macOS, Windows and
+Linux with X11. A terminal window sends its keys when `[display] keyboard = none`. On a Mac with
+a Retina screen, a video window is drawn at full resolution, and its text no longer changes
+between normal and bold. The help and the manual use one name for each window.
 
-**A machine file that has a word in the wrong case now gets an error that names the fix.**
-The loader reads `id`, `type`, `remove` and the table names in exact case, as TOML does. A word
-with the wrong case gave the wrong advice. `Id = "mem9"` gave "every [[board]] needs an `id`".
-`Type = "memory"` gave "Give it a `type`". `[board.Unit.b]` said to use double brackets, and
-`[[board.Drive]]` said that the board has no such table. Each case now gives a message such as
-``unknown key `Id`; did you mean `id`?`` or ``unknown table [Machine]; did you mean [machine]?``.
-Two cases loaded with no error and gave the wrong machine. `remove = TRUE` left the board on
-the bus, because only `true`, `1` and `yes` were taken. `remove` now takes `true` or `false` and
-refuses anything else. `port = 0x20` followed by `PORT = 0x30` set the port to `0x30`, because
-the check for a repeated key compared the case. It now refuses the second line, and it names the
-first line. A board with the id `SIO0` now replaces the base board `sio0`, as `MODIFY` and
-`REMOVE` already did. Before, it gave "a board with id 'SIO0' already exists".
+**Other corrections.** The `X` command of `ssm-8080mon` shows each register, not one value. The
+`vi` editor is on the CP/M example disk, in place of WordMaster and `OTHELLO.COM`. The Quick Start
+gives the macOS step for a downloaded copy. `HELP MOUNT` names `tnfs://`. The manual shows how to
+run the SSM PB1 routines from the SSM 8080 monitor. `DRIVING-WITH-AI.md` answers five more
+questions, and the manual puts the skills where Claude Code loads them.
 
-**The Quick Start now gives the macOS step for a downloaded copy.** macOS blocks a program from
-a browser download until you remove its mark with `xattr -dr com.apple.quarantine ./altairsim`.
-Only the chapters *Running it* and *Troubleshooting* gave the command, and they quoted only the
-message of older macOS versions. Now both Quick Starts give it. The
-manual also quotes the dialog of newer versions, *"altairsim" Not Opened*, and tells you to press
-**Done**, because the default button, **Move to Trash**, deletes the program. You do the step
-one time for each download, not one time only. The System Settings way now includes the second
-dialog, **Open Anyway**, where **Move to Trash** is the default button again.
-
-**`HELP MOUNT` now names `tnfs://`.** `MOUNT` can get a disk image from a TNFS server, but only
-the *Disks* chapter said so. The syntax line, the cheat sheet and `DRIVING-WITH-AI.md` now give
-the form `tnfs://<host>[:<port>]/<path>`, with an example.
-
-**The manual now puts the skills where Claude Code loads them.** *Start a project of your own*
-and *What is in the package* told you to put the `skills` folder in the project folder. Claude
-Code does not load skills from there. Now they tell you to install the skills in a skills
-folder, and to put `DRIVING-WITH-AI.md` and `cheatsheet.md` in the project folder only for an
-assistant that does not read skills. `DRIVING-WITH-AI.md` has a new section, *Your own
-project*: keep a spare copy of the machine, and keep a session note in the folder.
-
-**The MCP `connect` tool now lists the endpoints that `CONNECT` takes.** The description of
-its `endpoint` argument gave `tcp:HOST:PORT` and `file:PATH` as examples. The simulator has no
-`tcp:` endpoint, and `out:PATH` replaced `file:PATH` before the first release. An assistant that
-used the examples got `no endpoint` on its first call. The description now holds the same list
-as `HELP CONNECT`, for example `socket:HOST:PORT` and `out:PATH`.
-
-**A terminal window now sends its keys when `[display] keyboard = none`.** The
-setting is for the window of a video board that only shows a picture, such as a Dazzler. The
-simulator applied it to every window, the terminal window too. On a Dazzler machine with a unit
-connected to the terminal window, the keys typed there did not go to the guest. Only `Ctrl-E`
-worked. Now `none` applies only to the windows of video boards. A terminal window always sends
-its keys to its unit.
-
-**The terminal window's `cr` setting is now `crlf`, the name the console uses.** The setting
-adds an LF after each CR that the guest prints. On the console it was `crlf = on | off`. On the
-terminal window it was `cr = cr | crlf`, so one setting had two names and two sets of values.
-Both now use `crlf = on | off`. A machine file or a `SET TERMINAL` command that gives `cr`
-stops with a message that gives the new line: `crlf=on` for `cr=crlf`, `crlf=off` for `cr=cr`.
-
-**The CompuPro Disk 1 floppy controller is a new board, `disk1`.** The Disk 1 came before the
-Disk 1A. It has the same µPD765A chip and DMA engine, and a 2 KB boot EPROM. Bit 7 of port 3 is
-a serial line with no UART. The guest makes each bit of the line itself, and the `serial` unit
-connects the line to a terminal or a socket. The board runs 8″ drives. Its EPROM,
-`builtin:DISK1`, is a copy of a factory EPROM, and routines 4–7 are for the 8080, 8085 and Z80.
-The new `disk1` machine adds the board to a Z80, 64K of RAM, a System Support 1 and an
-Interfacer I console. Mount a CompuPro CP/M 2.2N disk in drive 0 and run from `0000`. Routine 4
-then boots the disk to `A>` on the Interfacer. Routine 6 boots it on the System Support 1.
-A blank disk needs the `media` key of its drive, for its size and sides. With `media = "8ds"`, CompuPro's
-`FORMAT.COM` 3.1c formats a blank two-sided disk in drive B.
-
-**The CompuPro Disk 1A floppy controller is a new board, `disk1a`.** The board has an NEC
-µPD765A floppy chip, a DMA engine and a boot EPROM with all sixteen routines. The new `disk1a`
-machine adds it to a Z80, 64K of RAM and a CompuPro System Support 1 for the console. Mount a
-CompuPro CP/M 2.2 disk in drive 0 and run from `0000`. Routine 0 of the EPROM then boots the disk
-to `A>`. The board reads 8″ disks with one side or two, in single and double density.
-CompuPro's `FORMAT.COM` formats a blank disk. Routines 2 and 3 boot a 5.25″ disk from unit 2, as
-CompuPro CP/M 2.2P and 2.2Q do. A 5.25″ CP/M 2.2Q disk built from CompuPro's 1985 sources boots
-this way, formats a blank disk in unit 3 and copies files to it. The `media` key of a drive
-sets the size and sides of a blank disk, and a blank disk needs it. It also names the format of a 5.25″ image of 327,680
-or 655,360 bytes, a size that more than one format has. `create` makes an empty disk file. The
-`mini_motor_control` property is jumper J11. With J11 removed, the 5.25″ motors run all the
-time, and the 8″ motors follow their bits in the Motor Control Register.
-
-**`MOUNT … media=NAME` now gives the disk its format.** The monitor set each `key=value` of a
-`MOUNT` after the disk was in, as a unit property. `media` is a key of a drive, not a unit
-property, so the disk went in without it. `MOUNT` said that the unit had no property `media`, and
-mounted the disk anyway. On the VersaFloppy, `MOUNT vf0:drive1 new.dsk CREATE media=8sd` was
-refused with ``set `media=NAME` to format a blank``, which is the key that it was given. The
-hard-sector boards, such as the 88-DCDD, and the North Star MDS had the same fault. Now `media`
-goes in with the disk. `MOUNT` checks every key and value before it creates or mounts anything,
-and refuses a bad one. The MCP `mount` tool also takes `media`.
-
-**Under `--mcp`, a console on the CompuPro System Support 1 now gets the console settings.**
-The `ss1` board could not take the line that `--mcp` builds for the console, so the program
-connected a plain line to it. That line skipped `strip7out` and the other console settings.
-CompuPro's `FORMAT.COM` sets bit 7 of the last character of each message, and an MCP client
-got `formatted®` for `formatted.`. The board now takes the console line, as the `2sio` does.
-
-**Under `--mcp`, connecting a unit to `console` now takes the console from the unit that holds
-it.** One unit holds the console. In the monitor, `CONNECT` disconnects the old unit and says
-`console taken from` it. Under `--mcp`, the unit that holds the console is on the line that the
-tools read. `CONNECT` did not see that unit as the holder, and left it there. The new unit went to the
-host console, and under `--mcp` the host console is stdout. Its output went onto the JSON-RPC
-channel between the replies, and `run` did not show it. The `connect` tool had the same fault.
-On the `disk1` machine with routine 6, `CONNECT ss1:serial console` left the Interfacer on the
-line. The CP/M 2.2N banner and `A>` went to stdout, and `run` stopped at its timeout with no
-output. Now the new unit takes the line, and the old unit goes to `null`. The reply says
-`console taken from if1:a`, and `run` shows the banner and the `A>` prompt.
-
-**`SET CONSOLE DEBUG=<file>` now writes each line to the file when the line is made.** The file
-was kept in a 4 KB buffer. A line got to the file only when the buffer was full or altairsim
-stopped. On the `cpm22-buffered` machine with `SET dsk0 DEBUG=all`, a boot and a `DIR` make 170
-lines. While CP/M was at `A>`, the file had 91 of them. Thus `tail -f` showed the lines late, and
-the lines before a hang or a crash were lost. Now `tail -f` in a second window shows each line
-as the guest makes it.
-
-**When the machine stops, the console now gets the keyboard back on Windows and Linux, and
-with `focus = true`.** Before, only macOS gave the keyboard back, and only with `focus = false`.
-On Linux and Windows the program did nothing at a stop. For example, on a Sol-20 you typed in
-the video window and then clicked its close box. The keys that you typed at `altairsim>` then
-went to the video window. The Sol-20 sets `focus = true`, so this also happened on macOS. A
-breakpoint or a `HLT` did the same.
-Now the `focus` setting has an effect only when a window opens. At each stop, the console gets
-the keyboard back on macOS, on Windows and on Linux with X11. On Wayland, one program cannot
-give the keyboard to a different program, so you click in the console.
-
-**A halted processor now stays halted until `RESET`, as on a real front panel.** Before, the
-monitor moved the program counter of a halted processor. `RUN <addr>` and `EXAMINE` loaded the
-`PC`, and a bare `RUN` reported "1 instructions, 4 T-states" for a `HLT` that nothing could end.
-For example, on a Sol-20 a `RUN C000` after a `HLT` stopped at once with `HLT at C000`, and did
-not say why. A real panel does nothing for RUN, EXAMINE or DEPOSIT while the processor is
-halted. Now these commands do nothing, and they print the `PC` and *"RESET ends the halt."*
-A `HLT` that waits for an interrupt (`EI`, then `HLT`) still continues with a bare `RUN`
-or `STEP`. A `HLT` after `DI` now stops the run even if a board pulls the interrupt line.
-Before, that run went on until you pressed `Ctrl-E`. The `--mcp` tools `run`, `start` and `step`
-refuse in the same way. On the front-panel board, the HLTA lamp now stays lit until `RESET`. The
-ADDRESS and DATA lamps of a halted 8080 or 8085 show `FFFF` and `FF`, the floating bus, as on
-the real panel.
-
-**`DEPOSIT` now uses the program counter as its address, as the front panel does.** Before,
-`DEPOSIT <addr> <bytes>` wrote the bytes and did not change the `PC`. There was no DEPOSIT NEXT,
-and a value larger than a byte was cut to 8 bits without a message. Now `DEPOSIT <addr> <bytes>`
-is EXAMINE `<addr>`, DEPOSIT, and then DEPOSIT NEXT for each byte after the first, so the `PC`
-ends on the last byte written. `DEPOSIT NEXT <bytes>` adds 1 to the `PC` and writes, for each
-byte. `DEPOSIT <byte>` writes at the `PC` and does not move it. A value larger than `FF` is an
-error, and no byte is written. `DEPOSIT` now needs a processor, as `EXAMINE` does. On a machine
-with no processor, use `EDIT`, `FILL` or `LOAD`.
-
-**On a Mac with a Retina screen, the text in a video window no longer changes between normal
-and bold.** The window was drawn at half the resolution of the screen, and macOS scaled it up
-to fit. That scaling made all of the text change between a normal look and a bold look. The
-change came at random, when the mouse moved over the window, or when the window got or lost
-focus. The Sol-20 ATC game showed it at its keyboard prompt. The window is now drawn at the
-full resolution of the screen, so macOS does not scale it. The window size and the border
-around the picture do not change.
-
-**`HELP SET TERMINAL` and `HELP SET CONSOLE` now show the example for that word.** `HELP`
-with a command and a word shows the example lines of the command that contain the word. The
-`SET` help had no line for `TERMINAL` and no line for `CONSOLE`, so `HELP` printed all of the
-`SET` text. That text did not say what `TERMINAL` is. The `SET` help now has a line for
-each one and says that `TERMINAL` is the built-in terminal window. The `SHOW` help now lists
-`TERMINAL`, `JOYSTICKS` and `DEBUG` on its first line and has a `SHOW DEBUG` example.
-
-**`HELP SET CONSOLE` and `HELP CONSOLE` now give the same help.** `CONSOLE k=v` is the same
-command as `SET CONSOLE k=v`, but the two had different help. `HELP CONSOLE` listed the keys
-and what each one does. `HELP SET CONSOLE` showed one example line. `HELP SET CONSOLE` now
-prints the full help for the console keys. `HELP CONSOLE` says that `CONSOLE` is a shortcut for
-`SET CONSOLE` and `SHOW CONSOLE`, then prints the same text. `HELP DISCONNECT` now says that
-`DISCONNECT` is a shortcut for `CONNECT <id>:<u> null`. `HELP CONSOLE` sent you to `SET ... DEBUG`
-for `DEBUG=`, and the `SET` help had no text about `DEBUG`. It now sends you to `SHOW DEBUG`.
-The `SET DISPLAY` example now names `SHOW DISPLAY`, the only list of the display keys.
-
-**The help and the manual now use one name for each window.** The help called the window you
-started altairsim in "the terminal", and `SET TERMINAL` sets a different window, the built-in
-terminal window. The `SET DISPLAY focus=on` example said that the video window takes the
-keyboard "not the terminal". The help, `SHOW CONSOLE`, `SHOW DISPLAY` and the manual now call
-the window you started altairsim in the console. They say that the `[display]` settings apply to
-every window that altairsim opens, a terminal window too, and that `focus` acts when a window
-opens.
-
-**`--set` changes settings for one run.** `altairsim cpm22-buffered.toml --set "cpu0
-clock_hz=2000000"` boots the CP/M example at 2 MHz and leaves the machine file as it is. The
-text is what you type after `SET` at the prompt, and you can give `--set` more than one time:
-`--set "sio0:a connect=terminal"` puts the console in a terminal window. The settings are
-applied before the machine's `startup` commands. A `-x "SET ..."` runs after them, which is too
-late for a machine that starts by itself. A setting that fails stops the program with exit
-status 2, and the machine does not start.
-
-**`--mcp` now refuses `-x`, `-s` and `-i`.** With `--mcp` the program started the MCP server
-before it looked at these options, so it accepted them and did nothing with them. `altairsim
-mine.toml --mcp -x "SET cpu0 clock_hz=2000000"` left `clock_hz` as the machine file had it. A
-`-s` script that did not exist gave no `cannot open` message. The exit status was 0 in each
-case. The program now prints `-x cannot be used with --mcp` and stops with exit status 2. An
-MCP client sends the same commands with the `monitor` tool.
-
-**A hex number that starts with `0B` is now read as hex. Binary is written `%1010`.** The number
-parser took `0b` as the binary marker before it looked at the base of the field. In a hex field
-`B` is a digit, so two commands were wrong. `DE 0B10 AA` wrote `AA` to address `0002`, binary
-`10`, and printed no message. `DE 100 0B` was refused with `number has no digits`, although `0B`
-is the opcode of `DCX B` and is printed that way in every listing. Where the number is hex, an
-address, a port, a data byte or a hex setting, `0B10` is now the hex number 0B10. A new marker,
-`%`, gives a binary number in every field: `DE 100 %1010`. `0b1010` is still binary where the
-number is decimal, such as `STEP 0b1010`. **A machine file that sets the sense switches with
-`0b` must change**: `sense = 0b10001110` is now refused as out of range. Write
-`sense = %10001110`.
-
-**A crystal is now kept on every run, also from a script.** When the program was started from
-a script or a pipe, with no terminal, `RUN` ignored `clock_hz` and ran at full speed. A crystal
-was kept only with a console on a terminal, or a serial line on a socket or a serial port. Thus
-the same machine file kept time when you typed `RUN` and did not when a script did. `SHOW CLOCK`
-read only the crystal and printed `pacing  paced` for a run that took no real time. A machine
-with a `d7a` or `music6` board that played a 60-second song from its `startup` list reached its
-`HLT` in about one second, and all of the song went to the sound device in that second. `RUN`
-now keeps the crystal each time `clock_hz` is not 0: at the prompt, with `-x`, with `-s`, from a
-pipe, and under `--mcp`. The song takes 60 seconds, and `SHOW CLOCK` prints `paced` or `free`.
-**A script that must be fast must change if its machine sets a crystal.** The `sbc200`,
-`sbc200v` and `dazzler` machines set 4 MHz. Start such a script with `SET cpu0 clock_hz=0`, or
-give `-x "SET cpu0 clock_hz=0"` on the command line. A machine with no `clock_hz`, the default,
-is at full speed as before.
-
-**`W` uses text mode for a text file without the `T`.** `W` copies a file from CP/M to the host.
-With no mode, it used binary mode for every file, and wrote every byte of every 128-byte
-record. A text file ends at a `Ctrl-Z`, and the remainder of its last record holds more
-`Ctrl-Z` bytes or old data. Thus `W MON.HEX` put up to 127 bytes that are not part of the hex
-file after its last line on the host, unless you typed `T`. `W` now
-chooses the mode from the extension of the CP/M file when you give none. `ASM` `MAC` `Z80` `HEX`
-`PRN` `LST` `SYM` `INC` `SUB` and `TXT` are text, and each other extension, `COM` included, is
-binary. When `W` chooses text, it prints `(text, by extension)` after the file names. A wildcard
-chooses for each file, so `W *.*` copies source files and programs correctly in one command. A
-`B` or `T` that you type is always used. The utility is on the CP/M disks in `examples/`, and
-its usage text shows version 1.2.
-
-**The manual shows how to run the SSM PB1 routines from the SSM 8080 monitor.** SSM's EPROM
-programmer routines end with a jump to that monitor at `F021`, and the check routines print
-`P` or `F` through it. The `pb1` section of the boards chapter used a breakpoint at `F021`
-only. It now also gives a machine file that has the built-in ROM `ssm-8080mon` at `F000` and an
-`io4` console. On that machine you start a routine with the monitor's `G` command, and the
-routine returns to the monitor.
-
-
-**The `X` command of the built-in SSM 8080 monitor (`ssm-8080mon`) now shows the registers.**
-The plain `X` command printed the same value for every register: `A=27 B=27 C=27 … M=8700 P=8700
-S=8700`, after a cold start and after a program had run. The ROM image had `LDAX B` (`0A`)
-at `F5BC` where the monitor's printed listing has `LDAX D` (`1A`). The register dump read the
-byte at the address in BC, which holds the register size and letter, not the address of the saved
-register in DE. The image had been built from an OCR'd copy of the listing. `X` now prints each
-register as the monitor saved it, the same value that `X<reg>` shows. Only that byte changed. The CRC32 of the image is now `27636BB0`.
-
-**A setting with a list of values now works in any case.** The program accepted `media =
-"8IN"` on a `dcdd` drive. The board then compared the text exactly with its format names, which
-are in lower case. `8IN` matched no format, so the drive used `fdc8mb`, the largest one, with no error. The same
-fault was in every setting that has a list of values. `SET mem0 fill=ZERO` printed
-`mem0: fill=ZERO` and left `fill` at `random`. On the `versafloppy`, `media = "8SD"` gave
-``unknown media `8SD` ``. The program now changes the value to the spelling in the list before
-the board gets it, and `CONFIG SAVE` writes that spelling.
-
-**Board types, endpoints and command-line options are not case-sensitive.** `BOARDS ADD 2SIO`
-gave `no board type '2SIO'`. `CONNECT sio0:a Loopback` and `SOCKET:2323` gave `no endpoint`.
-`--MCP` was an unknown option, and `--mirror PTY` was read as a port number. Each of these now
-works. A file name, a host name and a serial device keep their case.
 ## 1.3.3
 
 **1.3.3 adds the Cromemco Dazzler II, a mirror on a real serial port and a start-up file in your
