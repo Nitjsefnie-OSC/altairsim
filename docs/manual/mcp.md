@@ -329,7 +329,9 @@ are the most important:
 - One serial unit holds the console. The tools type on its line and read its output. When the
   `connect` tool or `CONNECT` connects another unit to `console`, that unit takes the console.
   The unit that held it goes to `null`, and the reply says `console taken from` that unit, as
-  in the monitor. The server writes only JSON-RPC to stdout.
+  in the monitor. To take the console back after you connect its unit to another endpoint,
+  such as `pty`, connect the unit to `console` again. The server writes only JSON-RPC to
+  stdout.
 - A `run` **never blocks**. It stops when `until` matches, when the guest waits at a prompt, or
   at `timeout_ms`. `timeout_ms` is a limit, not a wait.
 - `start` returns at once and **leaves the guest running** until `stop`, a `HLT` or a

@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Under `--mcp`, the error for a lost console line now gives advice that works.** Connect the
+console unit to another endpoint, such as `CONNECT sio0:a pty`, and then to `scripted`. The
+next `run` stopped with `no console line: CONNECT a serial unit to 'scripted'`. That was the
+command you had just given, and it did not give the line back. The error now says to connect
+the unit to `console`. `CONNECT sio0:a console` gives `run` the console line again, with any
+`--mirror` and `--log`.
+
 **The Quick Start now gives the macOS step for a downloaded copy.** macOS blocks a program from
 a browser download until you remove its mark with `xattr -dr com.apple.quarantine ./altairsim`.
 Only the chapters *Running it* and *Troubleshooting* gave the command, and they quoted only the
