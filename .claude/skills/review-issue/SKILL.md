@@ -1,6 +1,7 @@
 ---
 name: review-issue
-description: How an incoming issue is reviewed — check it belongs on this tracker, read it with its comments, find the need behind the solution it proposes (and ask when that is unclear), check whether altairsim already serves it, reproduce a bug over --mcp, then post a verdict comment and a label — or, when the whole issue is only a question, have the maintainer convert it to a Discussion and post the answer there. Use when asked to review, triage, look at or answer issue #N, or to go through the open issues. Ends at the comment; it never builds anything.
+context: fork
+description: How an incoming issue is reviewed — check it belongs on this tracker, read it with its comments, find the need behind the solution it proposes (and ask when that is unclear), check whether altairsim already serves it, reproduce a bug over --mcp, then post a verdict comment and a label — or, when the whole issue is only a question, have the maintainer convert it to a Discussion and post the answer there. Use when asked to review, triage, look at or answer issue #N, or to go through the open issues. Ends at the comment; it never builds anything. Runs in its own subagent; invoke once per issue.
 ---
 
 # Review an incoming issue
@@ -21,6 +22,24 @@ The rules, set by the maintainer:
 - **An unclear need is a question, not a verdict.** I ask; I do not decide for them.
 - **A question is answered in Discussions, not on the issue.** The maintainer converts the
   issue; then I post the answer on the discussion (§5a).
+
+## Running as a subagent
+
+This skill runs in its own subagent (`context: fork`). It starts without the session's
+conversation, and its research does not come back: only the §7 report does. It cannot stop
+and ask the maintainer during the run. So:
+
+- **Check the comment before you post it.** Write the comment to a file. Then check it against
+  §6: the verdict agrees with the label, no closing keyword unless the issue is `deltecent`'s,
+  no quote of the maintainer, light `simplified-english` rules, signed `--AltairSim Claude`.
+  Post it only when every check passes. A comment that is posted is public.
+- **If you are not sure what the maintainer wants, post nothing and add no label.** Put the
+  question in the report. This is different from an unclear need: you still ask the
+  *requester* about that on the issue (§2).
+- **A question for Discussions (§5a):** put the full drafted answer in the report, because
+  nothing else of this run is kept. After the maintainer converts the issue, the session
+  invokes this skill again with the args `post converted answer for #N` and the answer text.
+  That run does only §5a steps 3–5.
 
 ## 0. Does it belong on this tracker?
 
@@ -207,11 +226,15 @@ gh issue comment <N> --body-file <file>
 To the maintainer: the issue, the verdict, the label applied, the comment posted (for a
 question moved to Discussions, the discussion comment's URL), and — for a
 "needed" or a "documentation gap" — one line on the shape of the work, so they can decide
-whether to start a `work-task`. **Do not start it.**
+whether to start a `work-task`. **Do not start it.** Also give any drafted Discussions answer
+in full, and any question for the maintainer. Give no research log: the report is all that
+reaches the session.
 
 ## Going through the backlog
 
-Reviewing several at once: **oldest first**, one comment and one label per issue, each
+Reviewing several at once: **oldest first**, one invocation of this skill per issue, so each
+subagent sees only its own issue. The session that invokes them builds the table below and
+watches for a verdict that repeats. One comment and one label per issue, each
 through steps 0–6 on its own. No batching of comments, no summary comment on a single issue
 standing in for the rest. The report at the end is one table: issue, verdict, label. A
 question goes in it as *convert → Discussions*, with its drafted answer below the table, so
