@@ -124,7 +124,7 @@ The docs are part of the change under review, not a follow-up. Update whichever 
   still gets no entry. **An entry for a fix says what the simulator did wrong** — the register,
   bit or command, and why the guest failed — then what it does now, with the guest as the
   example. "X now works" is not an entry. Check it against the commit message. CI enforces this
-  (the `Changelog entry` job in `ci.yml`), so a missing entry reds the PR rather than reaching
+  (the `Changelog entry` job in `changelog.yml`), so a missing entry reds the PR rather than reaching
   a release unannounced. **A release removes the
   `## Unreleased` header.** If it is not there, add it: below the `---` rule, above the newest
   `## X.Y.Z`.
