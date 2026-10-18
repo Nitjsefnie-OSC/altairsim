@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`DRIVING-WITH-AI.md` and the `altairsim` skill answer five more questions.** They now say
+that the prompt comes from the BIOS (`A0>` on the 8 MB Altair hard disk, not `A>`), that
+`idle = false` on the CPU board stops `run` from returning at a prompt, and that a one-key
+answer takes no `\r`. They also give a recipe to build flat out and then test a real serial
+device at 2 MHz. The `monitor` tool's description now says that the machine named on the
+command line runs no `startup`.
+
 **New tools: `tools/lbr-extract.py`, `tools/uncrunch.py` and `tools/unsqueeze.py` open CP/M
 library files.** `lbr-extract.py` lists the files in a `.LBR` file, or copies them out.
 `uncrunch.py` decodes a file that CRUNCH 2.x compressed, such as `SUPSUB13.AZM`, and writes it
