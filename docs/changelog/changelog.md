@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**`SET` and `CONNECT` now print the value as the simulator stored it.** `CONNECT sio0:a Loopback`
+printed `connected to Loopback`, and `SET mem0 fill=ZERO` printed `fill=ZERO`. The board had
+stored `loopback` and `zero`, and `SHOW` and `CONFIG SAVE` showed those words. The echo repeated
+the text that you typed, so it did not show what the board holds. Both commands now print the
+stored value: `connected to loopback` and `fill=zero`. The MCP tools `board_set` and `connect`
+report the stored value in the same way.
+
 **`SET` now takes a value with a space in it.** `SET hb0 hostdir="My Project"` stopped with
 `SET: unexpected 'with'`, because the space ended the value. The form `SET hb0 hostdir "My
 Project"` was worse. It gave no error, and it stored the path with the quote mark at its start.

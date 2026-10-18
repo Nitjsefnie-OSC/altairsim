@@ -1104,4 +1104,9 @@ bool splitMountOptions(Board& b, const std::string& unit, const KeyValues& opts,
 bool setPropertyIn(std::vector<Property> props, const std::string& who, const std::string& key,
                    const std::string& text, std::string& err);
 
+// The value a property holds NOW, as SHOW would print it -- for the echo after a SET, which
+// must show what was stored (`zero`), not what was typed (`ZERO`). A property with no getter
+// gives back `typed`.
+std::string storedText(std::vector<Property> props, const std::string& key, const std::string& typed);
+
 } // namespace altair
