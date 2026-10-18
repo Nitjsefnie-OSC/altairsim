@@ -29,6 +29,7 @@
 #include "host/pty_stream.h"    // PtyStream -- CONNECT prints the name of its link
 #include "host/terminal/stream.h"  // [terminal] transforms + the banner's console label
 #include "isa/isa.h"
+#include "platform/serial.h"  // listSerialPorts -- SHOW SERIAL
 
 #include <algorithm>
 #include <cctype>
@@ -66,6 +67,17 @@ bool guestIsWaiting(const SliceWork& w, uint64_t ratio) {
     if (w.wrote != 0) return false;   // it had something to say
     if (w.received != 0) return false;  // IT IS RECEIVING. Whatever this is, it is not a prompt.
     return w.hungry * ratio >= w.steps;
+}
+
+bool unitHoldsDevice(const std::string& state, const std::string& device) {
+    const std::string want = "serial:" + device;
+    for (size_t at = state.find(want); at != std::string::npos; at = state.find(want, at + 1)) {
+        bool startsHalf = at == 0 || state[at - 1] == '|';
+        size_t end      = at + want.size();
+        bool endsName   = end == state.size() || state[end] == '?' || state[end] == '|';
+        if (startsHalf && endsName) return true;
+    }
+    return false;
 }
 
 std::string pacingRow(bool free) {
@@ -914,7 +926,7 @@ Completions Monitor::complete(const std::string& line) {
             for (const auto& b : m_.boards()) keep(b->id);
             for (const char* kw : {"BOARD", "BOARDS", "BUS", "CONSOLE", "DEBUG", "DISPLAY",
                                    "JOYSTICKS", "MACHINE", "MACHINES", "MOUNTS", "PATHS",
-                                   "ROMS", "SYMBOLS", "TERMINAL", "VERSION"})
+                                   "ROMS", "SERIAL", "SYMBOLS", "TERMINAL", "VERSION"})
                 keep(kw);
             comp.suffix = " ";
         } else if (name == "NOBREAK") {
@@ -2199,16 +2211,18 @@ void Monitor::showTerminal(std::ostream& out) {
     showProps(TerminalStream::properties(), out);
 }
 
-// SHOW JOYSTICKS -- the host game controllers a D+7A's JS-1 consoles read from. It answers
-// the question SHOW <d7a> can only half-answer: not "which strap did I set" but "is a
+// SHOW JOYSTICKS -- the host game controllers a board can read; the D+7A's JS-1 consoles are
+// the reader today, and host/joystick.h names no board, so the text names none either. It
+// answers the question SHOW <d7a> can only half-answer: not "which strap did I set" but "is a
 // controller actually there". SDL-gated exactly like SHOW DISPLAY: a build with no SDL3 has
 // no controller service at all and says so.
 void Monitor::showJoysticks(std::ostream& out) {
-    out << "joysticks  (host game controllers for a D+7A's JS-1 consoles";
+    out << "joysticks  (host game controllers a board can read";
 #ifndef ALTAIRSIM_ENABLE_SDL
     out << " -- none in this build)\n";
     out << "\n  This binary was built without SDL3, so no USB game controllers are visible.\n"
-           "  A D+7A still runs -- each console reads centered with no buttons pressed.\n";
+           "  A board that reads joysticks still runs. Each joystick reads centered, with\n"
+           "  no buttons pressed.\n";
     return;
 #else
     out << ")\n";
@@ -2242,6 +2256,46 @@ void Monitor::showJoysticks(std::ostream& out) {
     out << "\n  A D+7A maps these onto its JS-1 consoles: SHOW <id> for the live mapping,\n"
            "  SET <id> joystick1=auto|keyboard|<index> to choose.\n";
 #endif
+}
+
+// SHOW SERIAL -- the host's serial ports, the far end a `serial:` endpoint can name. Before
+// it, the only way to see this list was to give CONNECT a wrong name and read the error. Each
+// port says which unit holds it, so a second CONNECT to a busy port is visible before it fails.
+void Monitor::showSerial(std::ostream& out) {
+    out << "serial  (host serial ports for CONNECT <id>:<u> serial:<device>)\n";
+    std::vector<std::string> ports = platform::listSerialPorts();
+    if (ports.empty()) {
+        out << "\n  (no serial ports found)\n";
+    } else {
+        struct Row { std::string device, users; };
+        std::vector<Row> rows;
+        size_t wDev = 6;  // "DEVICE"
+        for (const auto& p : ports) {
+            Row r{p, ""};
+            for (const auto& b : m_.boards())
+                for (const auto& u : b->units()) {
+                    if (u.kind != UnitKind::Serial || !unitHoldsDevice(u.state, p)) continue;
+                    if (!r.users.empty()) r.users += " ";
+                    r.users += b->id + ":" + u.name;
+                }
+            wDev = std::max(wDev, p.size());
+            rows.push_back(std::move(r));
+        }
+        char buf[512];
+        std::snprintf(buf, sizeof buf, "\n  %-*s  %s", (int)wDev, "DEVICE", "IN USE BY");
+        out << buf << "\n";
+        for (const auto& r : rows) {
+            std::snprintf(buf, sizeof buf, "  %-*s  %s", (int)wDev, r.device.c_str(),
+                          r.users.c_str());
+            std::string line = buf;
+            line.erase(line.find_last_not_of(' ') + 1);  // a free port ends at its name
+            out << line << "\n";
+        }
+    }
+    // The list is a scan for names that look like a port (platform/serial.h), not every
+    // device the host has -- so an empty list is not "this host has no port".
+    out << "\n  Only names that look like a serial port are listed. Another device path\n"
+           "  still opens with serial:<path>.\n";
 }
 
 bool Monitor::setConsoleKey(const std::string& k, const std::string& v,
@@ -3507,7 +3561,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
     if (cmd == "SHOW") {
         if (!need(2, "SHOW <id> | SHOW BOARDS | SHOW BOARD <type> | SHOW MACHINES"
                      " | SHOW MACHINE [<name>] | SHOW BUS [MAP|IO|IRQ|CONTENTION] | SHOW ROMS"
-                     " | SHOW MOUNTS | SHOW PATHS | SHOW DEBUG | SHOW JOYSTICKS"
+                     " | SHOW MOUNTS | SHOW PATHS | SHOW DEBUG | SHOW JOYSTICKS | SHOW SERIAL"
                      " | SHOW CLOCK | SHOW VERSION"))
             return true;
         // The selector resolves by prefix -- `SHOW MOU` reaches MOUNTS, `SHOW VER` VERSION --
@@ -3518,7 +3572,7 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         std::string sub = resolveKeyword(a[1],
             {"BUS", "ROMS", "MOUNTS", "MOUNT", "PATHS", "PATH", "PWD", "CONSOLE", "DEBUG",
              "VERSION", "BUILD", "DISPLAY", "VIDEO", "WINDOW", "TERMINAL", "JOYSTICKS",
-             "JOYSTICK", "JOY", "SYMBOLS", "SYMBOL", "SYM", "BOARDS", "BOARD", "MACHINES",
+             "JOYSTICK", "JOY", "SERIAL", "SYMBOLS", "SYMBOL", "SYM", "BOARDS", "BOARD", "MACHINES",
              "MACHINE", "CLOCK", "TIME"});
         if (sub.empty()) sub = upper(a[1]);
         // Reject trailing junk uniformly: a subcommand that has consumed all the arguments
@@ -3592,6 +3646,11 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         if (sub == "JOYSTICKS" || sub == "JOYSTICK" || sub == "JOY") {
             if (tooMany(2)) return true;
             showJoysticks(out);
+            return true;
+        }
+        if (sub == "SERIAL") {
+            if (tooMany(2)) return true;
+            showSerial(out);
             return true;
         }
         if (sub == "SYMBOLS" || sub == "SYMBOL" || sub == "SYM") {

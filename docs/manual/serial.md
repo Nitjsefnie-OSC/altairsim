@@ -249,9 +249,28 @@ altairsim> CONNECT sio0:a serial:COM3
 The second form is for Windows. The bytes go out of a real UART, down a real cable, to the
 device at the other end. The modem control lines (DCD, CTS and RTS) are connected too.
 
-**If you give a wrong device name, the program lists the serial ports on your computer.** A
-cable can appear under a name that is one character different from what you expected, and the
-list shows you the correct name.
+**`SHOW SERIAL` lists the serial ports on your computer.** For each port, it also shows the
+unit that holds it:
+
+```
+altairsim> SHOW SERIAL
+serial  (host serial ports for CONNECT <id>:<u> serial:<device>)
+
+  DEVICE                           IN USE BY
+  /dev/cu.Bluetooth-Incoming-Port
+  /dev/cu.debug-console
+  /dev/cu.usbmodem1121101
+  /dev/cu.usbserial-AB0NW409
+  /dev/cu.usbserial-AL009KFH
+
+  Only names that look like a serial port are listed. Another device path
+  still opens with serial:<path>.
+```
+
+The list has only the names that look like a serial port. A device with a different name still
+opens when you give its full path. If you give a wrong device name, `CONNECT` also lists the
+ports. A cable can appear under a name that is one character different from what you expected,
+and the list shows you the correct name.
 
 ### The board sets the frame on the line
 

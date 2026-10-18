@@ -1210,6 +1210,12 @@ void test_cli() {
                   ex("SHOW MOU").find("mountable") != std::string::npos,
               "SHOW MOU shows the mount table (SHOW MOUNTS), not a board lookup");
         CHECK(ex("SHOW VER").find("altairsim") != std::string::npos, "SHOW VER is SHOW VERSION");
+        // SER reaches the host port list. The ports themselves are this host's, so only the
+        // frame of the answer is checked -- never a device name.
+        CHECK(ex("SHOW SER").find("no board") == std::string::npos &&
+                  ex("SHOW SER").find("host serial ports") != std::string::npos &&
+                  ex("SHOW SER").find("still opens with serial:<path>") != std::string::npos,
+              "SHOW SER shows the host serial ports (SHOW SERIAL), not a board lookup");
         // EXACT-over-prefix through the real command: MACHINE is the live machine,
         // MACHINES is the catalog -- and the spelled-out MACHINE must not collapse
         // into the catalog just because MACHINES is checked first.
@@ -1433,6 +1439,24 @@ void test_cli() {
     // plain machine with no such board, and it covers the no-arg leaves and the ones that
     // take an argument of their own (past their ceiling) alike.
     // -----------------------------------------------------------------------
+    // SHOW SERIAL's IN USE BY column reads a unit's endpoint as it describes itself. The
+    // device has to be the whole name, at the start of the endpoint or of one half of a
+    // mirror or tap -- a unit on /dev/ttyS10 does not hold /dev/ttyS1.
+    SECTION("cli: SHOW SERIAL names the unit that holds a port");
+    {
+        const std::string d = "/dev/cu.usbserial-A6";
+        CHECK(unitHoldsDevice("serial:" + d, d), "a plain serial: endpoint holds its device");
+        CHECK(unitHoldsDevice("serial:" + d + "?baud=300", d), "options after ? do not hide it");
+        CHECK(unitHoldsDevice("serial:" + d + "|log.txt", d), "a tap on the line does not hide it");
+        CHECK(unitHoldsDevice("socket:2323|serial:" + d, d), "a serial mirror sink holds its device");
+        CHECK(unitHoldsDevice("console|serial:" + d + "?ro", d), "a watch-only mirror sink too");
+        CHECK(!unitHoldsDevice("serial:" + d + "7", d), "a longer device name is another port");
+        CHECK(!unitHoldsDevice("serial:/dev/ttyS10", "/dev/ttyS1"), "ttyS10 is not ttyS1");
+        CHECK(!unitHoldsDevice("console", d), "the console holds no port");
+        CHECK(!unitHoldsDevice("null", d), "null holds no port");
+        CHECK(!unitHoldsDevice("in:serial:" + d, d), "a file path that contains the text is not the port");
+    }
+
     SECTION("cli: SHOW rejects a trailing token instead of dropping it");
     {
         Machine mx;
@@ -1448,6 +1472,7 @@ void test_cli() {
         rejects("SHOW cpu regs", "regs");
         // A no-arg subcommand.
         rejects("SHOW MOUNTS foo", "foo");
+        rejects("SHOW SERIAL foo", "foo");
         // An arg-taking subcommand, one token past its ceiling.
         rejects("SHOW BUS MAP extra", "extra");
         rejects("SHOW BOARD acr units foo", "foo");
@@ -1518,6 +1543,7 @@ void test_cli() {
         CHECK(all.str().find("SHOW BOARD") != std::string::npos, "HELP SHOW lists BOARD");
         CHECK(all.str().find("SHOW MOUNTS") != std::string::npos, "HELP SHOW lists MOUNTS");
         CHECK(all.str().find("SHOW PATHS") != std::string::npos, "HELP SHOW lists PATHS");
+        CHECK(all.str().find("SHOW SERIAL") != std::string::npos, "HELP SHOW lists SERIAL");
 
         // HELP SHOW BOARD keeps only the board lines and drops the siblings.
         std::ostringstream bd;

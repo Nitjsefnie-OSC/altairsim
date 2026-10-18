@@ -251,6 +251,7 @@ private:
     void showDisplay(std::ostream& out);
     void showTerminal(std::ostream& out);  // the [terminal] transform chain (issue #244)
     void showJoysticks(std::ostream& out);  // the host game controllers (SDL builds)
+    void showSerial(std::ostream& out);     // the host serial ports, and who holds each
     void showDebug(std::ostream& out);  // the diagnostic channels, their flags, the sink
     void showRoms(std::ostream& out);
     void showMounts(std::ostream& out);  // every mountable unit, across every board
@@ -386,6 +387,12 @@ bool guestIsWaiting(const SliceWork& w, uint64_t ratio = 32);
 // played), and the row had a third answer for the script that had none; runMachine has
 // the history.
 std::string pacingRow(bool free);
+
+// DOES A SERIAL UNIT'S WIRE END AT HOST DEVICE `device`? `state` is the unit's endpoint as it
+// describes itself: `serial:/dev/cu.x`, with `?k=v` options after it, or `inner|sink` when the
+// line is mirrored -- and either half of a mirror can be the port. SHOW SERIAL's IN USE BY
+// column. The name has to end where the device does, so /dev/ttyS1 is not /dev/ttyS10.
+bool unitHoldsDevice(const std::string& state, const std::string& device);
 
 // MAY THE RUN LOOP NAP at an idle prompt this run?
 //

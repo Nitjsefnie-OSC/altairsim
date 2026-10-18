@@ -99,7 +99,7 @@ public:
 std::unique_ptr<SerialPort> openSerialPort(const std::string& path, const SerialConfig& c,
                                            std::string& err);
 
-// What is plugged in right now, for the error message and for tab completion. An
+// What is plugged in right now, for SHOW SERIAL and the CONNECT error messages. An
 // empty list is a legitimate answer on a machine with no serial ports.
 std::vector<std::string> listSerialPorts();
 
