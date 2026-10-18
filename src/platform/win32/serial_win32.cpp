@@ -176,7 +176,7 @@ std::vector<std::string> listSerialPorts() {
     for (int i = 1; i <= 255; ++i) {
         std::string name = "COM" + std::to_string(i);
         // QueryDosDevice succeeds only for a port that EXISTS -- which is the cheap
-        // way to enumerate without dragging in SetupAPI for a help message.
+        // way to enumerate without dragging in SetupAPI for a list.
         if (QueryDosDeviceA(name.c_str(), buf, sizeof buf) != 0) out.push_back(name);
     }
     return out;

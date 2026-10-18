@@ -12,6 +12,11 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**New command: `SHOW SERIAL` lists the serial ports on your computer.** For each port, it also
+shows the unit that holds it. Before, the only way to see the list was to give `CONNECT` a wrong
+device name and read the error. `HELP CONNECT` and the serial chapter of the *User Manual* now
+point to the command.
+
 **The CP/M example disk now has the `vi` text editor.** `examples/cpm/cpm22b23-56k.dsk` has
 `VI.COM` and its manual, `VI.DOC`. To make space, WordMaster (`WM.COM`, `WM.HLP`) and
 `OTHELLO.COM` are no longer on the disk. The disk has 8K free.

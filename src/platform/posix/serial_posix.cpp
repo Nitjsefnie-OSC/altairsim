@@ -227,7 +227,7 @@ std::vector<std::string> listSerialPorts() {
 
     // The prefixes that are a serial port on the systems this file compiles for:
     // macOS calls them cu.*/tty.*, Linux ttyUSB*/ttyACM*/ttyS*. Listing them is a
-    // convenience for the error message and for tab completion, so a prefix this
+    // convenience for SHOW SERIAL and the error messages, so a prefix this
     // misses costs a suggestion, not a capability -- the path still opens.
     static const char* kPrefixes[] = {"cu.", "ttyUSB", "ttyACM", "ttyS"};
     while (dirent* e = readdir(d)) {

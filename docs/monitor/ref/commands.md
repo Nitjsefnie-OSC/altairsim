@@ -834,7 +834,7 @@ telnet:     the same, but speaks the Telnet protocol, so a stock `telnet` client
             caller with the machine, line and port; ?banner=off stops it.
 serial:     a real port on this host. It is opened at 9600 8N1 and then
             immediately re-programmed by the board, which is the only thing that
-            knows what it is strapped to.
+            knows what it is strapped to. SHOW SERIAL lists the ports.
 pty         a pseudo-terminal (macOS and Linux only), for a terminal program.
             The simulator prints a name, /tmp/altairsim0 for the first; open it
             as a serial port (`screen /tmp/altairsim0`). pty:LINK puts the name
@@ -1196,7 +1196,7 @@ This does NOT choose which board is the console -- CONNECT does that
 ### SHOW — `SH[OW]`
 
 ```
-SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|DEBUG|SYMBOLS|CLOCK|VERSION
+SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|SERIAL|DEBUG|SYMBOLS|CLOCK|VERSION
 ```
 
 ```
@@ -1215,7 +1215,8 @@ SHOW PATHS          ; what a path resolves against -- and there is more than one
 SHOW CONSOLE        ; which unit holds the keyboard, and its transforms
 SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look
 SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, crlf, bsdel, ...)
-SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)
+SHOW JOYSTICKS      ; the host game controllers a board can read, such as a D+7A (SDL builds)
+SHOW SERIAL         ; the host serial ports for serial:, and the unit that has each
 SHOW DEBUG          ; the diagnostic channels and their flags, and where they print
 SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS
 SHOW CLOCK          ; emulated time: T-states since POWER, and what they are in seconds

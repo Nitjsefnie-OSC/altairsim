@@ -285,7 +285,8 @@ decodes, and what is in its units.
 | `SHOW MACHINE` | the whole machine |
 | `SHOW CONSOLE` | which unit has your keyboard, and which transforms apply to its bytes |
 | `SHOW DISPLAY` | the windows altairsim opens: whether a window comes to the front when it opens, where its keys go, and whether the CRT look is on |
-| `SHOW JOYSTICKS` | the host game controllers that a D+7A can read (needs an SDL3 build) |
+| `SHOW JOYSTICKS` | the host game controllers that a board can read, such as a D+7A (needs an SDL3 build) |
+| `SHOW SERIAL` | the serial ports on your computer, and the unit that holds each port |
 | `SHOW BUS` | the whole backplane at one time: `MEMORY`, `I/O` and a short `INTERRUPTS` summary |
 | `SHOW BUS MAP` | which board decodes each address, and which addresses float |
 | `SHOW BUS IO` | which board decodes each port |

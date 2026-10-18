@@ -381,7 +381,7 @@ static const std::vector<CommandDef> kCommands = {
      "                             ; (also CONTENTION=WARN|ERROR|SILENT, UNCLAIMED=WARN|HALT|SILENT)"},
     {"SHOW", true, nullptr,
      "SHOW <id>|BOARDS|BOARD <type> [UNITS]|MACHINES|MACHINE [<name>]|BUS [MAP|IO|IRQ|CONTENTION]|"
-     "ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|DEBUG|SYMBOLS|CLOCK|VERSION",
+     "ROMS|MOUNTS|PATHS|CONSOLE|DISPLAY|TERMINAL|JOYSTICKS|SERIAL|DEBUG|SYMBOLS|CLOCK|VERSION",
      "  SHOW mem0           ; regions and properties\n"
      "  SHOW BOARDS         ; the board types you can add\n"
      "  SHOW BOARD sol      ; one type's description and properties (add UNITS for just those)\n"
@@ -397,7 +397,8 @@ static const std::vector<CommandDef> kCommands = {
      "  SHOW CONSOLE        ; which unit holds the keyboard, and its transforms\n"
      "  SHOW DISPLAY        ; the windows altairsim opens: focus, keys, and the CRT look\n"
      "  SHOW TERMINAL       ; the built-in terminal's transforms (strip7out, crlf, bsdel, ...)\n"
-     "  SHOW JOYSTICKS      ; the host game controllers a D+7A can read (SDL builds)\n"
+     "  SHOW JOYSTICKS      ; the host game controllers a board can read, such as a D+7A (SDL builds)\n"
+     "  SHOW SERIAL         ; the host serial ports for serial:, and the unit that has each\n"
      "  SHOW DEBUG          ; the diagnostic channels and their flags, and where they print\n"
      "  SHOW SYMBOLS        ; the loaded symbols (SHOW SYMBOLS SIO* filters); load them with SYMBOLS\n"
      "  SHOW CLOCK          ; emulated time: T-states since POWER, and what they are in seconds\n"
@@ -716,7 +717,7 @@ static const std::vector<CommandDef> kCommands = {
      "              caller with the machine, line and port; ?banner=off stops it.\n"
      "  serial:     a real port on this host. It is opened at 9600 8N1 and then\n"
      "              immediately re-programmed by the board, which is the only thing that\n"
-     "              knows what it is strapped to.\n"
+     "              knows what it is strapped to. SHOW SERIAL lists the ports.\n"
      "  pty         a pseudo-terminal (macOS and Linux only), for a terminal program.\n"
      "              The simulator prints a name, /tmp/altairsim0 for the first; open it\n"
      "              as a serial port (`screen /tmp/altairsim0`). pty:LINK puts the name\n"
