@@ -1,6 +1,5 @@
 ---
 name: ship-change
-model: sonnet
 description: How a reviewed altairsim change is shipped — commit after the maintainer approves, open the PR only after a second approval, poll CI, merge on green, then comment on the related issues. Use when told to commit, open the PR, push, ship or merge. Every step here waits for its own approval; work-task comes first.
 ---
 
@@ -49,11 +48,15 @@ The body gives a summary, the verification done (pass lines), and for each relat
 commit message. No attribution. Any comment you post on it ends with
 `--AltairSim Claude`.
 
-## 4. Poll CI every 20 seconds
+## 4. Watch CI with one background command
 
 ```sh
-gh pr checks <N>
+gh pr checks <N> --watch --interval 20 --fail-fast
 ```
+
+Run it with `run_in_background`, and read its result once, when it exits. **Never poll with
+repeated foreground `gh pr checks` calls:** each call is one more model request, and each
+request reads the whole conversation again. One background watch wakes the session once.
 
 Wait until every leg the run started has finished. A core change runs Linux, macOS and
 Windows; any other change runs Linux only (`tools/ci-changed-code.sh` decides, and the
@@ -92,15 +95,16 @@ maintainer can `/clear` without losing anything.** Say explicitly when they are 
 
 - **Check the `master` run of a code change.** After any non-docs merge, `CI` on `master`
   builds Linux, macOS and Windows — for most PRs that is the first time macOS and Windows
-  compile the change. Poll it in the background
-  (`gh run list --workflow=ci.yml --branch master -L 1`) and read every leg's result. A red leg
+  compile the change. Find the run (`gh run list --workflow=ci.yml --branch master -L 1`), then
+  watch it with one background `gh run watch <id> --interval 20 --exit-status`, as in §4, and
+  read every leg's result. A red leg
   is reported at once with its log excerpt (`gh run view <id> --log-failed`), and its fix is the
   next change, before anything else merges.
 
 - **Wait for CI's PDF commit, then pull again.** If the change touched anything under `docs/`,
   the `Documents` workflow rebuilds `docs/*.pdf` and pushes a `Rebuild the PDFs for <sha>`
-  commit to `master` a minute or two AFTER the merge. Poll it
-  (`gh run list --workflow=docs.yml -L 1`), then `git pull --ff-only`. Skip this and the next
+  commit to `master` a minute or two AFTER the merge. Find the run
+  (`gh run list --workflow=docs.yml -L 1`), watch it the same way, then `git pull --ff-only`. Skip this and the next
   session starts a branch on a stale `master` and rediscovers it as a conflict.
 - **Confirm the branch is gone** both locally and on origin (`git fetch --prune`), and that
   `git status` is clean. A leftover branch or a stray edit is the thing a `/clear` hides.

@@ -1,6 +1,5 @@
 ---
 name: simplified-english
-model: sonnet
 description: The writing standard for altairsim — rules based on ASD-STE100 Simplified Technical English, plus a word list and the project's own terms. Use when writing, rewriting or reviewing text a user reads (docs/manual, docs/monitor, docs/debugger, QUICK-START, HELP text, the reference emitter), when asked to check a file against STE or plain English, and when writing an issue, PR or Discussion comment.
 ---
 
@@ -120,6 +119,12 @@ When a review finds a concept with two names, choose one, add a row, and report 
 ## 5. Review a file
 
 A review reports. It does not edit.
+
+**Run the review as one subagent.** A review needs only the file and this skill, not the
+session. Start one `Agent` with `model: sonnet` and effort `medium`. Give it the file path and
+tell it to follow §5 of `.claude/skills/simplified-english/SKILL.md` and return the report.
+The subagent starts with a small context, so it costs less than a review in a long session.
+Do not do this for §6. A writer must have the rules in its own context.
 
 1. Read the whole file.
 2. List the named things in the file: documents, boards, commands and settings. Check that
