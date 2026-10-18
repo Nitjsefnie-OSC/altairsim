@@ -39,14 +39,13 @@ A: SUBMIT   COM : LOAD     COM : SURVEY   COM : VIEW     COM
 A: LADDER   DAT : LUNAR    BAS : M80      COM : MAC      COM
 A: MBASIC   COM : PIP      COM : STAT     COM : DDT      COM
 A: MOVCPM8  COM : NSWP     COM : SYSGEN   COM : W        COM
-A: ACOPY    COM : OTHELLO  COM : STARTRK  BAS : TICTAK   BAS
-A: WM       COM : WM       HLP : CRC      COM : PCPUT    COM
-A: AFORMAT  COM : STARINS  BAS : IOBYTE   TXT : R        COM
-A: HDIR     COM
+A: ACOPY    COM : VI       DOC : STARTRK  BAS : TICTAK   BAS
+A: VI       COM : CRC      COM : PCPUT    COM : AFORMAT  COM
+A: STARINS  BAS : IOBYTE   TXT : R        COM : HDIR     COM
 A>
 ```
 
-There are 37 files: a macro assembler, a linker, Microsoft BASIC, `DDT`, `PIP`, a text editor, a
+There are 36 files: a macro assembler, a linker, Microsoft BASIC, `DDT`, `PIP`, a text editor, a
 disk formatter and Star Trek. It is a complete development system of 1977. `STAT *.*` gives the
 size of each file, and the space that is left:
 
@@ -60,10 +59,10 @@ A>STAT *.*
    17     4k    1 R/W A:CRC.COM
    38     6k    1 R/W A:DDT.COM
    ...
-   83    12k    1 R/W A:WM.COM
-   22     4k    1 R/W A:WM.HLP
+  168    22k    2 R/W A:VI.COM
+  123    16k    1 R/W A:VI.DOC
     6     2k    1 R/W A:XSUB.COM
-Bytes Remaining On A: 18k
+Bytes Remaining On A: 8k
 ```
 
 ### Out, and back in

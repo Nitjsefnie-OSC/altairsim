@@ -57,10 +57,9 @@ If macOS shows a message about the program, press **Done**, not **Move to Trash*
    A: LADDER   DAT : LUNAR    BAS : M80      COM : MAC      COM
    A: MBASIC   COM : PIP      COM : STAT     COM : DDT      COM
    A: MOVCPM8  COM : NSWP     COM : SYSGEN   COM : W        COM
-   A: ACOPY    COM : OTHELLO  COM : STARTRK  BAS : TICTAK   BAS
-   A: WM       COM : WM       HLP : CRC      COM : PCPUT    COM
-   A: AFORMAT  COM : STARINS  BAS : IOBYTE   TXT : R        COM
-   A: HDIR     COM
+   A: ACOPY    COM : VI       DOC : STARTRK  BAS : TICTAK   BAS
+   A: VI       COM : CRC      COM : PCPUT    COM : AFORMAT  COM
+   A: STARINS  BAS : IOBYTE   TXT : R        COM : HDIR     COM
    A>
    ```
 

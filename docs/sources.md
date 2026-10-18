@@ -206,7 +206,7 @@ shipped example carries the same image, git stores the two identical files once:
 
 | Tracked file | Upstream SHA-256 | Why this one |
 |---|---|---|
-| `tests/media/cpm/cpm22b23-56k.dsk` | `3147946a…57a2cc` | The bootable 8″ system disk. `acceptance-dcdd-readonly`, `acceptance-ddt`, `acceptance-hostbridge`, `acceptance-eberhard-roms`, and the Turnkey boot in `acceptance-media`. The shipped copy is `examples/cpm/cpm22b23-56k.dsk` (`acceptance-examples`). |
+| `tests/media/cpm/cpm22b23-56k.dsk` | `3147946a…57a2cc` | The bootable 8″ system disk. `acceptance-dcdd-readonly`, `acceptance-ddt`, `acceptance-hostbridge`, `acceptance-eberhard-roms`, and the Turnkey boot in `acceptance-media`. The shipped copy is `examples/cpm/cpm22b23-56k.dsk` (`acceptance-examples`); it is no longer the same file — see below. |
 | `mits-88mds/cpm22/CPM56K-1.DSK` | `41c87b01…32d3d` | The minidisk system disk (A:). `acceptance-minidisk`. |
 | `mits-88mds/cpm22/CPM56K-2.DSK` | `0f6480b1…586db` | Its tools disk (B:) — `cpm22-mini.toml` mounts both, so one without the other does not boot. |
 | `tests/media/diskbasic/Disk BASIC 4.1.dsk` | `e1fb7255…36b69` | Altair BASIC Rev 4.1 [Disk Extended Version], MITS 1977. `acceptance-diskbasic`. Added 2026-07-19. |
@@ -232,6 +232,11 @@ our `R.COM`, `W.COM` and `HDIR.COM` installed (26K free → 18K), so the host-br
 somewhere other than as `.HEX` in `cpm/hostbridge/`. The SHA above is the **pristine upstream** file;
 the recipe that turns it into the tracked one is `tools/install-hostbridge-utils.sh`, which is what
 makes the blob auditable rather than mysterious. Everything else on the disk is untouched.
+
+**The shipped copy, `examples/cpm/cpm22b23-56k.dsk`, differs from the test copy.** On 2026-10-17
+the maintainer took WordMaster (`WM.COM`, `WM.HLP`) and `OTHELLO.COM` off it and put `vi`
+(`VI.COM`, `VI.DOC`) on, which leaves 8K free. The copy in `tests/media/cpm/` keeps WordMaster
+and 18K free, because the acceptance tests depend on that disk.
 
 **`cpm22b23-56k-drawdemo.dsk` is derived from that tracked disk in turn**, so it has no download
 to check against. 18K free did not hold the 18K `DRAWDEMO.COM`, so `MBASIC.COM` and the four
