@@ -41,6 +41,18 @@ std::string unquote(const std::string& s) {
     return o;
 }
 
+// THE LOADER'S OWN WORDS (id, type, remove, the table names, the [machine] keys) are compared
+// in exact case, because TOML is. When a word is wrong ONLY in its case, say so: the file
+// then names the key that is wrong, and not a later symptom ("needs an `id`").
+// Returns the word as it should be written, or "" when `s` is not one of `words` in any case
+// or is already exact.
+std::string rightCase(const std::string& s, std::initializer_list<const char*> words) {
+    std::string low = lowerAscii(s);
+    for (const char* w : words)
+        if (low == w && s != w) return w;
+    return {};
+}
+
 // One [table] or [[array-of-table]] and the key/values under it.
 struct Table {
     std::string name;
@@ -144,10 +156,15 @@ bool parse(const std::string& text, std::vector<Table>& out, std::string& err,
         // A KEY WRITTEN TWICE IN ONE TABLE is a block that was pasted and not cleaned up.
         // The second one used to win silently, which is the one thing a machine file must
         // never do: look as if a setting took when a later line undid it.
+        //
+        // KEYS ARE COMPARED WITHOUT CASE. A property key ignores case (Board named()), so
+        // `port` and `PORT` set the same property, and the second one used to win with no
+        // error. TOML calls them two keys; the board cannot tell them apart.
         for (size_t i = 0; i < cur->kv.size(); ++i)
-            if (cur->kv[i].first == k) {
+            if (lowerAscii(cur->kv[i].first) == lowerAscii(k)) {
                 err = "line " + std::to_string(lineNo) + ": '" + k + "' is already set at line " +
                       std::to_string(cur->kvLine[i]);
+                if (cur->kv[i].first != k) err += ", as '" + cur->kv[i].first + "'";
                 return false;
             }
         const int keyLine = lineNo;
@@ -383,6 +400,32 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
         // board owns a list of (region, drive, socket). A table written one time takes
         // single: the four host tables, and a unit's properties. A name we do not know is
         // left for "unknown table" below.
+        //
+        // A TABLE NAME WRONG ONLY IN ITS CASE comes first, before the bracket test: `[board.Unit.b]`
+        // would otherwise fall into the list-table rule and be told to use double brackets,
+        // which is the wrong fix. The unit's own name after `unit.` keeps the case it was
+        // written in; a board finds its units without case. `region`, `drive` and the other
+        // lists a board owns are the board's to name, and loadSubUnit() reports them.
+        {
+            std::string fix = rightCase(t.name.substr(0, t.name.find('.')),
+                                        {"machine", "console", "display", "terminal", "board"});
+            if (fix.empty()) fix = t.name.substr(0, t.name.find('.'));
+            size_t d1 = t.name.find('.');
+            if (d1 != std::string::npos && fix == "board") {
+                size_t      d2  = t.name.find('.', d1 + 1);
+                std::string seg = t.name.substr(d1 + 1, d2 == std::string::npos ? d2 : d2 - d1 - 1);
+                std::string u   = rightCase(seg, {"unit"});
+                fix += "." + (u.empty() ? seg : u);
+                if (d2 != std::string::npos) fix += t.name.substr(d2);
+            } else if (d1 != std::string::npos) {
+                fix += t.name.substr(d1);
+            }
+            if (fix != t.name) {
+                std::string o = t.array ? "[[" : "[", c = t.array ? "]]" : "]";
+                err = at(t.line) + "unknown table " + o + t.name + c + "; did you mean " + o + fix + c + "?";
+                return false;
+            }
+        }
         {
             bool once1 = t.name == "machine" || t.name == "console" || t.name == "display" ||
                          t.name == "terminal" || t.name == "board.unit" ||
@@ -424,7 +467,7 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
                         err = at(t.kvLine[i]) + "base = \"" + v + "\": " + err;
                     return false;
                 }
-                for (const auto& b : m.boards()) fromBase.insert(b->id);
+                for (const auto& b : m.boards()) fromBase.insert(lowerAscii(b->id));
             }
 
             for (size_t i = 0; i < t.kv.size(); ++i) {
@@ -470,7 +513,10 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
                 } else {
                     // Not a PROPERTY (no SET reaches these), so the list is by hand.
                     // clock_hz and sense are absent on purpose: refused above, not taken.
-                    err = at(ln) + "unknown [machine] key '" + k + "'. Valid keys: base name startup";
+                    std::string fix = rightCase(k, {"base", "name", "startup"});
+                    err = at(ln) + "unknown [machine] key '" + k + "'" +
+                          (fix.empty() ? ". Valid keys: base name startup"
+                                       : "; did you mean '" + fix + "'?");
                     return false;
                 }
             }
@@ -501,10 +547,24 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
         if (t.name == "board") {
             std::string type, id;
             bool        wantRemove = false;
-            for (auto& [k, v] : t.kv) {
+            for (size_t i = 0; i < t.kv.size(); ++i) {
+                const auto& [k, v] = t.kv[i];
+                std::string fix = rightCase(k, {"type", "id", "remove"});
+                if (!fix.empty()) {
+                    err = at(t.kvLine[i]) + "unknown key `" + k + "`; did you mean `" + fix + "`?";
+                    return false;
+                }
                 if (k == "type") type = v;
                 else if (k == "id") id = v;
-                else if (k == "remove") wantRemove = (v == "true" || v == "1" || v == "yes");
+                else if (k == "remove") {
+                    // TOML booleans are lower case. `TRUE`, `yes` and `1` used to leave
+                    // the board on the bus with no error.
+                    if (v != "true" && v != "false") {
+                        err = at(t.kvLine[i]) + "`remove` takes true or false, not " + v;
+                        return false;
+                    }
+                    wantRemove = v == "true";
+                }
             }
             unitTables.clear();  // a new board: its unit tables start over
             if (id.empty()) {
@@ -532,7 +592,7 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
                     err = at(t.line) + "[[board]] " + id + ": " + err;
                     return false;
                 }
-                fromBase.erase(id);
+                fromBase.erase(lowerAscii(id));
                 current = nullptr;  // ...so a stray [[board.region]] after this is caught
                 continue;
             }
@@ -549,19 +609,19 @@ bool loadInto(const std::string& text, const std::string& source, Machine& m,
                     return false;
                 }
             } else {
-                if (fromBase.count(id) && !declared.count(id)) {
+                if (fromBase.count(lowerAscii(id)) && !declared.count(lowerAscii(id))) {
                     if (!m.remove(id, err)) {  // REPLACE: out with the base's, in with ours
                         err = at(t.line) + "[[board]] " + id + ": " + err;
                         return false;
                     }
-                    fromBase.erase(id);
+                    fromBase.erase(lowerAscii(id));
                 }
                 current = m.add(type, id, err);  // a dup WITHIN this file still lands here
                 if (!current) {
                     err = at(t.line) + err;
                     return false;
                 }
-                declared.insert(id);
+                declared.insert(lowerAscii(id));
             }
 
             // THIS FILE IS NOW THE ONE TALKING TO THIS CARD, so any path it hands over

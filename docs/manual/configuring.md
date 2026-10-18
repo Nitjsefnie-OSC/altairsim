@@ -264,6 +264,13 @@ already use its `id`?
 **Every `[[board]]` needs an `id`.** You use the `id` to name the board at the monitor, and a
 file that uses this one as its base uses the `id` to name the board.
 
+**Write `id`, `type`, `remove` and the table names in lower case.** TOML is case-sensitive, so
+`Id` is not `id` and `[[Board]]` is not `[[board]]`. The program refuses a word that has the
+wrong case, and it shows the right one. For example, ``unknown key `Id`; did you mean `id`?``
+The value of `remove` is `true` or `false`, in lower case. The names of settings and their
+values are not case-sensitive. A setting that you write two times in one table is an error,
+also when the two names have different case.
+
 ### ADD: `type` + a new id
 
 ```toml

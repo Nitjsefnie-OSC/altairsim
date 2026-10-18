@@ -19,6 +19,19 @@ command you had just given, and it did not give the line back. The error now say
 the unit to `console`. `CONNECT sio0:a console` gives `run` the console line again, with any
 `--mirror` and `--log`.
 
+**A machine file that has a word in the wrong case now gets an error that names the fix.**
+The loader reads `id`, `type`, `remove` and the table names in exact case, as TOML does. A word
+with the wrong case gave the wrong advice. `Id = "mem9"` gave "every [[board]] needs an `id`".
+`Type = "memory"` gave "Give it a `type`". `[board.Unit.b]` said to use double brackets, and
+`[[board.Drive]]` said that the board has no such table. Each case now gives a message such as
+``unknown key `Id`; did you mean `id`?`` or ``unknown table [Machine]; did you mean [machine]?``.
+Two cases loaded with no error and gave the wrong machine. `remove = TRUE` left the board on
+the bus, because only `true`, `1` and `yes` were taken. `remove` now takes `true` or `false` and
+refuses anything else. `port = 0x20` followed by `PORT = 0x30` set the port to `0x30`, because
+the check for a repeated key compared the case. It now refuses the second line, and it names the
+first line. A board with the id `SIO0` now replaces the base board `sio0`, as `MODIFY` and
+`REMOVE` already did. Before, it gave "a board with id 'SIO0' already exists".
+
 **The Quick Start now gives the macOS step for a downloaded copy.** macOS blocks a program from
 a browser download until you remove its mark with `xattr -dr com.apple.quarantine ./altairsim`.
 Only the chapters *Running it* and *Troubleshooting* gave the command, and they quoted only the
