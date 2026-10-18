@@ -259,7 +259,9 @@ Json toolList() {
                        "Run one monitor command and return its text. The escape hatch: anything "
                        "the CLI can do, in one call. RUN does NOT block here -- it sets PC and "
                        "returns, so `CONFIG LOAD <bootable.toml>` is safe (its startup runs up "
-                       "to the boot RUN, which parks); advance the guest with the `run` tool.",
+                       "to the boot RUN, which parks); advance the guest with the `run` tool. "
+                       "The machine named on the command line runs no startup at all: boot it "
+                       "with `run {from: ...}`.",
                        p, {"command"}));
     }
     {

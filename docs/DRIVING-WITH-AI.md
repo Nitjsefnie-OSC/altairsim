@@ -308,7 +308,8 @@ You do not have to memorize the monitor. Two ways to get the whole surface:
 
 ## The pattern: an expect loop
 
-One `run` per guest command, matching the prompt each time:
+One `run` per guest command, matching the prompt each time. The machine's `startup` does not
+run under `--mcp`, so `PC` is 0 until the first `run {from: …}` boots the guest:
 
 ```
 run {from: 65280, until: "A>"}                   # boot CP/M via the DBL PROM (65280 = FF00)
@@ -316,8 +317,21 @@ run {input: "DIR\r", until: "A>"}                # a command, read the reply
 run {input: "ASM FOO\r", until: "A>", timeout_ms: 20000}
 ```
 
+**Match the prompt that your BIOS prints.** The prompt comes from the BIOS, not from CP/M.
+The 8 MB Altair hard disk prints `A0>`, and `A0>` does not contain `A>`. On that disk, use
+`until: "A0>"`.
+
 `\r` submits a CP/M line. `run` also returns on its own when the guest reaches a prompt
 (`stopped: "idle"`), so you rarely need to guess a timeout for interactive commands.
+
+**`idle = false` on the CPU board turns off this stop.** A machine file that sets
+`idle = false` never gets `stopped: "idle"`: each `run` continues until `until` matches or
+`timeout_ms` ends. On such a machine, give every `run` an `until`.
+`board_set {id: "cpu0", key: "idle", value: "true"}` turns the stop on again.
+
+**A program that reads one key takes no `\r`.** A question such as `Replace? (Y/N)` reads one
+character with BDOS function 1. Send `input: "Y"`. If you send `"Y\r"`, the `\r` stays in the
+type-ahead buffer, and the next prompt reads it as its answer.
 
 **Send one line in each `run`, and wait for its output before the next.** The server gives
 `input` to the guest at the baud rate of the board, with no pause after a carriage return. A
@@ -716,6 +730,18 @@ timeout, `clock_hz=0` (flat-out, the default) burns it in microseconds. Run the 
 and its timeout shrinks below the device's actual reply latency — the read times out, retries,
 and desyncs **before the answer arrives**. Pin `clock_hz` to the clock the guest's constants
 assume — **2 MHz for classic Altair code** — unless you have measured headroom.
+
+**`clock_hz` changes on a running machine.** Build flat out, then set the period clock before
+you test against the device:
+
+```
+board_set {id: "cpu0", key: "clock_hz", value: "0"}         # build flat out
+run {input: "ASM FOO\r", until: "\nA>", timeout_ms: 300000}
+board_set {id: "cpu0", key: "clock_hz", value: "2000000"}   # then the period clock
+monitor {command: "CONNECT sio0:b serial:/dev/cu.usbserial-XXXX"}
+monitor {command: "SET sio0:b BAUD=76800"}
+run {input: "FOO\r", until: "\nA>", timeout_ms: 180000}
+```
 
 How much margin you need is timeout-vs-latency, not the clock alone. A per-transaction protocol
 (the device pauses to seek or process between requests) needs a big margin; a back-to-back

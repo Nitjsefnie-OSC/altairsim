@@ -38,6 +38,12 @@ run {input: "ASM FOO\r", until: "A>", timeout_ms: 120000}
 - **A guest with `clock_hz` set keeps real time.** `run` holds the guest to the crystal, and
   so does a monitor `RUN`, also from a script with no terminal. For speed, leave `clock_hz`
   at 0; `SHOW CLOCK` says which.
+- **Match the prompt your BIOS prints.** The 8 MB Altair hard disk prints `A0>`, which does
+  not contain `A>`.
+- **`idle = false` on the CPU board turns off the idle stop.** Then `run` returns only on
+  `until` or `timeout_ms`, so give every `run` an `until`.
+- **A one-key answer takes no `\r`.** For `Replace? (Y/N)` (BDOS function 1) send `"Y"`; a
+  trailing `\r` stays in type-ahead and answers the next prompt.
 - **Never pick an `until` that recurs.** A disk that auto-runs `PROFILE.SUB` reprints `A>`
   several times, and input sent while a SUB is running is swallowed. Match something unique
   to the state you want.

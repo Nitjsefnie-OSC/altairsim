@@ -31,6 +31,10 @@ run {input: "W FOO.COM\r", until: "\nA>"}                   # CP/M -> host, bina
 run {input: "W FOO.PRN\r", until: "\nA>"}                   # the listing, as text
 ```
 
+Use the prompt that your BIOS prints: on the 8 MB Altair hard disk it is `A0>`, so use
+`until: "\nA0>"`. To test against a real serial device after the build, set `clock_hz` on the
+running machine; the recipe is in "Driving a real serial device" in `DRIVING-WITH-AI.md`.
+
 A correct assembly prints the next free address, a `USE FACTOR` line and `END OF ASSEMBLY`,
 and no other line:
 
