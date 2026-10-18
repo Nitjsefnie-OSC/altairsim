@@ -369,7 +369,7 @@ static const std::vector<CommandDef> kCommands = {
      "  SET mem0 fill=zero\n"
      "  SET mem0 phantom=read\n"
      "  SET acr0:tape mode=record  ; the tape in the recorder, not the recorder\n"
-     "  SET hb0 hostdir=\"My Project\"  ; put quotes around a value that has a space in it\n"
+     "  SET hb0 hostdir=\"a b\"      ; put quotes around a value that has a space in it\n"
      "  SET vdm0 width=1024        ; how wide the video window opens, in pixels (auto = ~half the screen)\n"
      "  SET CONSOLE upper=on       ; change the letters you type to uppercase. HELP SET CONSOLE lists the keys.\n"
      "  SET TERMINAL bsdel=bs      ; the terminal window changes DEL to BS. SHOW TERMINAL lists the keys.\n"
