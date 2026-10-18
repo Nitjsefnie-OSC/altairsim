@@ -1,5 +1,6 @@
 ---
 name: simplified-english
+model: sonnet
 description: The writing standard for altairsim — rules based on ASD-STE100 Simplified Technical English, plus a word list and the project's own terms. Use when writing, rewriting or reviewing text a user reads (docs/manual, docs/monitor, docs/debugger, QUICK-START, HELP text, the reference emitter), when asked to check a file against STE or plain English, and when writing an issue, PR or Discussion comment.
 ---
 
