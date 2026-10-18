@@ -16,7 +16,7 @@ LICENSE-SDL3             the license of SDL3, which is built into the program.
 LICENSE-MAME-HD63484     the notice for the source of the HD63484 model's structure (MAME).
 examples/                machines that boot, with their media.
 hostbridge/              the file-transfer utilities: source, HEX and COM.
-tools/                   scripts that show a mirror in a second window.
+tools/                   scripts that show a mirror, and scripts that open LBR files.
 skills/                  the AI briefing again, and the rules for guest programs, as Agent Skills.
 ```
 
@@ -141,6 +141,15 @@ an AI assistant controls the machine: `tools/mirror-watch.sh` for macOS and Linu
 `tools/mirror-watch.ps1` for Windows. Each script waits for the mirror, shows its output, and
 connects again after the simulator starts again. `tools/README.pdf` gives the commands. The
 chapter *The MCP server* tells you how to start a mirror.
+
+## The LBR tools
+
+Much CP/M software is kept in library files (`.LBR`). The files in a library are often
+crunched (a `Z` in the extension, such as `.AZM`) or squeezed (a `Q`, such as `.AQM`).
+`tools/` has three Python 3 scripts for these files. `tools/lbr-extract.py` copies the files
+out of a library. `tools/uncrunch.py` decodes a crunched file, and `tools/unsqueeze.py` decodes
+a squeezed file. Each decoder gives the file its original name. You must install Python 3 to
+use these three scripts. `tools/README.pdf` gives the commands.
 
 ## What is *not* in the package: everything else to run
 

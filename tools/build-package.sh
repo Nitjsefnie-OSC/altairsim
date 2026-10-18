@@ -20,7 +20,8 @@
 #   examples/debugger/        /
 #   examples/ai-mcp/         /
 #   skills/altairsim/        SKILL.md + the briefing again, for a client that reads skills
-#   tools/                   the mirror-watch scripts, for a person who watches a --mirror
+#   tools/                   the mirror-watch scripts, for a person who watches a --mirror,
+#                            and the LBR tools (lbr-extract.py, uncrunch.py, unsqueeze.py)
 #
 # ONE ARCHIVE, FOR ONE PLATFORM, BUILT ON THAT PLATFORM. --target names it and picks the
 # format; it does not cross-compile, because nothing here does. See DISTRIBUTION.md 1 and 4.2.
@@ -500,7 +501,7 @@ if [ -d "$pkg/tools" ]; then
   case "$target" in
   windows-*) ;;
   *)
-    for s in "$pkg"/tools/*.sh; do
+    for s in "$pkg"/tools/*.sh "$pkg"/tools/*.py; do
       [ -e "$s" ] || continue
       if [ ! -x "$s" ]; then
         echo "build-package: NOT PACKAGED -- tools/user/$(basename "$s") is not executable." >&2

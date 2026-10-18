@@ -65,7 +65,7 @@ cheatsheet.md                         every monitor command on one page
 LICENSE                               ours (MIT)
 LICENSE-SDL3                          SDL3's zlib licence
 hostbridge/                           file-transfer utilities: source, HEX, COM
-tools/                                the mirror-watch scripts, and their README.pdf
+tools/                                the mirror-watch scripts, the LBR tools, and their README.pdf
 skills/altairsim/                     the MCP briefing as an Agent Skill
 skills/altairsim-*/                   the rules for one guest program each, as Agent Skills
 examples/...                          the shipped example machines, with their media

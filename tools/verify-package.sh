@@ -402,13 +402,15 @@ while [ "$rec_i" -lt "$nrec" ]; do
 done
 
 # THE USER TOOLS. The manual and tools/README.pdf tell a reader to run tools/mirror-watch.sh
-# (or .ps1), so both must be in the archive, with their README and their license. And where the
-# archive carries modes -- a tarball -- the .sh must be executable AND must run: a script that
+# (or .ps1) and the LBR tools, so all must be in the archive, with their README and license.
+# And where the archive carries modes -- a tarball -- every script must be executable, and the
+# .sh must run: a script that
 # refuses a bad port with its usage line has got as far as bash parsing all of it. Starting a
 # mirror for it to watch is the acceptance suite's job (tests/acceptance/mirror-watch.sh).
 total=$((total + 1))
 _tools_ok=1
-for _f in mirror-watch.sh mirror-watch.ps1 README.pdf LICENSE-mirror-watch.txt; do
+for _f in mirror-watch.sh mirror-watch.ps1 README.pdf LICENSE-mirror-watch.txt \
+          lbr-extract.py uncrunch.py unsqueeze.py; do
   if [ ! -f "$base/tools/$_f" ]; then
     echo "verify-package: FAIL -- tools/$_f is not in the package." >&2
     _tools_ok=0
@@ -417,6 +419,12 @@ done
 case $archive in
   *.tar.gz)
     if [ "$_tools_ok" -eq 1 ]; then
+      for _f in lbr-extract.py uncrunch.py unsqueeze.py; do
+        if [ ! -x "$base/tools/$_f" ]; then
+          echo "verify-package: FAIL -- tools/$_f is not executable." >&2
+          _tools_ok=0
+        fi
+      done
       if [ ! -x "$base/tools/mirror-watch.sh" ]; then
         echo "verify-package: FAIL -- tools/mirror-watch.sh is not executable." >&2
         _tools_ok=0
@@ -430,8 +438,8 @@ case $archive in
       fi
     fi ;;
 esac
-if [ "$_tools_ok" -eq 1 ]; then passed=$((passed + 1)); echo "  PASS tools/ has the mirror-watch scripts"
-else failed=$((failed + 1)); echo "  ---- FAIL tools/ (the mirror-watch scripts)"; fi
+if [ "$_tools_ok" -eq 1 ]; then passed=$((passed + 1)); echo "  PASS tools/ has the mirror-watch scripts and the LBR tools"
+else failed=$((failed + 1)); echo "  ---- FAIL tools/ (the mirror-watch scripts and the LBR tools)"; fi
 
 echo
 # A claimed test that runs nothing is worse than no test (issue #308's whole point), so an
