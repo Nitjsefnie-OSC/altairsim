@@ -338,8 +338,11 @@ else
 fi
 
 # --- 3. Build. ------------------------------------------------------------------------------
+# The processor count. A bare --parallel runs `make -j` with no limit, and that ran a 3-core
+# runner out of memory (PR #817).
+ncpu() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2; }
 if [ $parallel = yes ]; then
-  run 3 cmake --build build --config Release --parallel
+  run 3 cmake --build build --config Release --parallel "$(ncpu)"
 else
   run 3 cmake --build build --config Release
 fi

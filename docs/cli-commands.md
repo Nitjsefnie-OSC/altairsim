@@ -333,7 +333,7 @@ console  (the host keyboard and screen -- not a tty)
   What a board has instead is line coding: SHOW sio0 (baud, data_bits...).
 
 altairsim> CONSOLE stop=1D          ← make it ^]
-console: stop=1D
+console: stop=0x1D
 ```
 
 `CONSOLE k=v` sets, bare `CONSOLE` shows. (`SET CONSOLE` and `SHOW CONSOLE` are the same thing said the long way.) It used to *enter* console mode, and that was wrong twice over: a command that starts the CPU because you asked to look at a setting is a trap, and "start the machine" already has a name.
