@@ -80,9 +80,29 @@ A>W GAME.COM
 A>W GAME.COM game.com
 A>W NOTES.TXT
 A>W *.*
+A>W *.ASM SRC
 ```
 
 Wildcards work. A second argument gives the name of the file on the host side.
+
+**With a wildcard, the second argument is a host folder.** `W *.ASM SRC` writes each match into
+the folder `SRC`, and each file keeps its CP/M name:
+
+```
+A>W *.ASM SRC
+W: FOO.ASM -> SRC/FOO.ASM (text, by extension)
+```
+
+The folder must exist, because `W` does not make it. `W` checks the folder before it copies the
+first file. If the folder is not there, `W` prints one error and copies nothing:
+
+```
+A>W *.* NOPE
+W: NOPE: no such file
+```
+
+A `/` at the end of the folder name is optional. A lone `B` or `T` is a mode, not a folder. To
+use a folder that has one of these names, type `B/` or `T/`.
 
 ## `W` and text files: **B** and **T**
 
@@ -286,6 +306,7 @@ For this reason, the board does these steps, in this order:
 1. **An exact match wins.** If a file has exactly the name that you asked for, the board uses
    that file.
 2. **Otherwise, it ignores case and looks again.** `README.TXT` finds `readme.txt`.
+   The board does this for each folder in the name too. `WORK/FOO.ASM` finds `work/foo.asm`.
 3. **If more than one file matches, it REFUSES.**
 
 Step 3 is the important one. If your folder has `readme.txt`, `README.TXT` and `ReadMe.Txt`, the

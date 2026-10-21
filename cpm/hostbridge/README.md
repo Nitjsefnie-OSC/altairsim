@@ -6,6 +6,7 @@
 HDIR [pattern]                  what is on the host, ls -l style: size, date, name
 R  <hostfile> [cpmfile]         host -> CP/M      R *.ASM     R SRC/FOO.ASM
 W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.DAT T
+W  <pattern> [hostfolder] [B|T]                   W *.ASM SRC
 ```
 
 They talk to the `hostbridge` card (`docs/boards/hostbridge.md`), which is in the default

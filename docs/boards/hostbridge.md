@@ -107,6 +107,8 @@ The CP/M CCP **folds the command tail to upper case before the program runs**. `
 
 So the card compensates. An **exact** match always wins. Failing that it folds case and looks again: if exactly one host file matches, that is the one; if **several** do, it refuses with `0x08` rather than guess. A *write* of a name nobody has creates it exactly as asked.
 
+**Every part of a path folds, not only the last.** `R SRC/FOO.ASM` and `W *.ASM OUT` reach the board in upper case too, and on a case-sensitive host the folder is `src` or `out`. `RealHostDir::resolve()` walks the path one part at a time. A part that does not exist as typed is looked up with the fold, in the folder found so far. A part before the last must match a folder, and two folders that fold to one name give `0x08`. A part with no match is kept as typed, so a write still creates a new file, and a read still fails with `0x01`. Before this, only the last part folded, so `R SRC/FOO.ASM` failed on Linux when the folder was `src`. macOS and Windows hid the fault, because their file systems fold case themselves.
+
 The burden belongs on the card, not on the human: there is no switch to tell the utilities which case to look for, because nobody should have to remember which of their files are in which.
 
 The other direction is `R`'s job. A host name that comes back off a wildcard match keeps the host's case, and a CP/M directory entry holds upper case — so `R` folds the name it builds the FCB from. Without that, `R *.asm` stores `lower.asm`, and nothing in CP/M can name it again: the CCP upper-cases everything typed, so `ERA`, `DIR` and the assembler all look straight past it.
@@ -144,6 +146,7 @@ So the two answer different questions. `configDir_` answers *where does this pat
 ```
 R  <hostfile> [cpmfile]         host -> CP/M      R *.ASM     R SRC/FOO.ASM
 W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.DAT T
+W  <pattern> [hostfolder] [B|T]                   W *.ASM SRC
 HDIR [pattern]                  what is on the host
 ```
 
@@ -167,6 +170,12 @@ CP/M stores whole 128-byte records and **keeps no byte count anywhere**, so a fi
 **The list names text, not binary, and that is what makes it safe.** `W` used to refuse to look at the extension at all, and the objection was sound for the list it had in mind: a list of names that "are really binary" truncates the first binary file that is not on it. This list is the other way round. A file that is not on it is copied exactly, so a missing name costs the tail of one record and never data. Every name on it is a source, listing or hex file, which a `^Z` ends by definition. `.BAS` and `.DOC` are left off on purpose: MBASIC saves tokens unless told otherwise, and a word processor's file can hold a `1AH`.
 
 **The choice is never silent.** When the extension picked text, the transfer line says so — `W: FOO.HEX -> FOO.HEX (text, by extension)`. With a switch, or for a binary file, the line is what it always was.
+
+### `W`: a wildcard into a host folder
+
+With a wildcard, a second word is a host folder: `W *.ASM SRC` writes `SRC/FOO.ASM`, as `cp *.asm src` does. Each file keeps its own name, so a folder is the only thing the second word can name. `W` adds the `/` unless the word ends in `/` or `\`. A lone `B` or `T` is still the switch, so a folder with one of these names is typed `B/`. `W *.* OUT T` gives a folder and a switch.
+
+**The folder must exist, and `W` checks it once, before the first file.** It sends `DIR_FIRST` with the folder as the glob (`OUT/`). That listing fails on a missing folder, or on a file, and it creates and changes nothing on the host. `W` prints the board's error, `W: NOPE: no such file`, and exits without a copy. A check for each file would print one error for each match. `W` also refuses a folder name too long to leave room for a 12-character `FILENAME.EXT` in its name buffer.
 
 ### 8.3 mapping
 

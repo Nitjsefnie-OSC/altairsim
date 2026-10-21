@@ -271,6 +271,57 @@ void test_hostdir() {
         }
     }
 
+    SECTION("hostdir: THE CASE FOLD on every part of a path, folders included");
+    {
+        // The CCP upper-cases the FOLDER as well as the file: `R SRC/FOO.ASM` and
+        // `W *.* OUT` reach the card as typed in capitals, and on a case-sensitive host
+        // the folders are `src` and `out`. Folding only the last part left every
+        // lower-case folder unreachable from CP/M. On a Mac these pass on the file
+        // system's own fold; the Linux CI leg is where the card's fold is proved.
+        Sandbox sb;
+        RealHostDir d(sb.root.string());
+        HbFail err;
+        std::vector<uint8_t> back;
+
+        fs::create_directories(sb.root / "src" / "sub");
+        Sandbox::write(sb.root / "src" / "foo.asm", "in a lower-case folder");
+        Sandbox::write(sb.root / "src" / "sub" / "deep.txt", "two folders down");
+
+        CHECK(d.read("SRC/FOO.ASM", 0, back, err) && str(back) == "in a lower-case folder",
+              "an UPPER-CASE folder name finds a lower-case host folder");
+        err = {};
+        CHECK(d.read("SRC/SUB/DEEP.TXT", 0, back, err) && str(back) == "two folders down",
+              "...at every depth");
+        err = {};
+        CHECK(d.write("SRC/NEW.TXT", bytes("new"), err), "a write into a folded folder lands");
+        CHECK(sb.read(sb.root / "src" / "NEW.TXT") == "new", "...inside the existing folder");
+
+        std::vector<std::string> names;
+        err = {};
+        CHECK(d.list("SRC/*.ASM", names, err) && names.size() == 1,
+              "a glob in a folded folder lists");
+        err = {};
+        CHECK(d.list("SRC/SUB/", names, err) && names.size() == 1,
+              "a folder named last folds too (HDIR SRC/SUB/)");
+        err = {};
+        CHECK(!d.write("NOPE/X.TXT", bytes("x"), err), "a folder that is not there is a failure");
+        CHECK(!sb.exists(sb.root / "NOPE"), "...and nothing is created");
+
+        // Two folders differing only in case: needs a case-sensitive host, as above.
+        fs::create_directories(sb.root / "Two");
+        fs::create_directories(sb.root / "two");
+        Sandbox::write(sb.root / "Two" / "a.txt", "a");
+        Sandbox::write(sb.root / "two" / "a.txt", "b");
+        if (sb.read(sb.root / "Two" / "a.txt") != "a") {
+            std::printf("  SKIP  the host filesystem is case-INSENSITIVE; two folders "
+                        "differing only in case cannot exist here\n");
+        } else {
+            err = {};
+            CHECK(!d.read("TWO/A.TXT", 0, back, err) && err.code == HbError::Ambiguous,
+                  "a folder matching two host folders by fold is refused as Ambiguous");
+        }
+    }
+
     SECTION("hostdir: subdirectories -- and BOTH separators, on every host");
     {
         // One R.COM, assembled once, works against a Mac, a Linux box and a Windows box.

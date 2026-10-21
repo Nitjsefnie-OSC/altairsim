@@ -55,6 +55,9 @@ endif()
 set(work "${BIN}/hostbridge-${MODE}")   # per-mode: the two must never share a scratch dir
 file(REMOVE_RECURSE "${work}")
 file(MAKE_DIRECTORY "${work}/host/SRC")
+# LOWER CASE ON PURPOSE. The CCP folds `W MIX.* OUT` to capitals, so on a case-sensitive host
+# (the Linux leg) only the card's fold on every part of a path finds this folder.
+file(MAKE_DIRECTORY "${work}/host/out")
 
 # ---------------------------------------------------------------------------
 # THE HOST SIDE, STAGED.
@@ -173,6 +176,8 @@ cmd("R HELLO.TXT MIX.Z80")
 cmd("R HELLO.TXT MIX.SYM")
 cmd("R BIN.DAT MIX.DAT")
 cmd("W MIX.*")
+cmd("W MIX.* OUT")                      # a wildcard into a host folder: each keeps its name
+cmd("W MIX.* NOPE")                     # ...which must exist: one error, nothing written
 cmd("R ../SECRET.TXT")                  # THE SANDBOX, through the whole stack
 cmd("R SP*.TXT")                        # a wildcard: the ONLY way a space reaches R
 cmd("W SPACED1.TXT SPBACK.TXT T")       # ...and the CCP can name what R stored
@@ -462,6 +467,36 @@ if(NOT mixbin STREQUAL orig)
     "hostbridge(${MODE}): `W MIX.*` DAMAGED THE BINARY FILE IN THE SET.\n"
     "  MIX.DAT is not a text extension and must come back byte for byte.\n"
     "  sent: ${orig}\n  got : ${mixbin}")
+endif()
+
+# A WILDCARD INTO A FOLDER. `W MIX.* OUT` puts the same three files, the same bytes, into the
+# host folder `out` -- which the CCP made `OUT`, so the card had to fold the folder's name.
+foreach(ext Z80 SYM DAT)
+  want_ran("W: MIX.${ext} -> OUT/MIX.${ext}" "W did not name the folder in front of each file")
+  if(NOT EXISTS "${work}/host/out/MIX.${ext}")
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `W MIX.* OUT` did not write MIX.${ext} into host folder out.\n${ran}")
+  endif()
+endforeach()
+foreach(ext Z80 SYM)
+  file(SIZE "${work}/host/out/MIX.${ext}" mixsz)
+  if(NOT mixsz EQUAL origsz)
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `W MIX.* OUT` wrote out/MIX.${ext} as ${mixsz} bytes, not ${origsz}.")
+  endif()
+endforeach()
+file(READ "${work}/host/out/MIX.DAT" mixbin HEX)
+if(NOT mixbin STREQUAL orig)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W MIX.* OUT` DAMAGED out/MIX.DAT.\n  sent: ${orig}\n  got : ${mixbin}")
+endif()
+
+# A FOLDER THAT IS NOT THERE STOPS W BEFORE THE FIRST FILE. One error line, no file, no folder.
+want_ran("W: NOPE: no such file" "W did not refuse a host folder that does not exist")
+string(FIND "${ran}" "-> NOPE/" nope)
+if(NOT nope LESS 0 OR EXISTS "${work}/host/NOPE" OR EXISTS "${work}/host/nope")
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W MIX.* NOPE` tried to copy into a folder that does not exist.\n${ran}")
 endif()
 
 # ---------------------------------------------------------------------------

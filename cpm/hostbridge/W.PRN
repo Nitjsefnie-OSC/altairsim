@@ -4,7 +4,7 @@
                 ; W.COM -- copy a file from CP/M out to the HOST.
                 ;
                 ;       W <cpmfile> [hostfile] [B|T]
-                ;       W <pattern> [B|T]               e.g.  W *.ASM     W B:*.*
+                ;       W <pattern> [hostfolder] [B|T]  e.g.  W *.ASM     W B:*.* OUT
                 ;
                 ; Part of the altairsim Host Bridge (src/boards/hostbridge.h,
                 ; docs/boards/hostbridge.md). Assemble it INSIDE the machine:
@@ -106,31 +106,32 @@
  0000 =         CIDENT  EQU     0
  0002 =         CVOPENW EQU     2
  0003 =         CCLOSE  EQU     3
+ 0004 =         CDIRF   EQU     4
  0007 =         CERROR  EQU     7
  0008 =         CRESET  EQU     8
                 
                 ;=======================================================================
                 ; MAIN
                 ;=======================================================================
- 0100 31B10F    START:  LXI     SP,STACK
+ 0100 314A10    START:  LXI     SP,STACK
                 
                 ; RESET first -- ONE byte. This card has no undefined state to climb
                 ; out of.
  0103 3E08              MVI     A,CRESET
  0105 D3B0              OUT     HBCMD
                 
- 0107 CD4303            CALL    IDENT           ; is there even a card there? (exits if not)
- 010A CDA503            CALL    PARSE           ; the tail -> CNAME, HNAME, MODE
- 010D CD7D02            CALL    INIFCB          ; the CCP's FCB at 5CH -> ours
+ 0107 CD9803            CALL    IDENT           ; is there even a card there? (exits if not)
+ 010A CDFA03            CALL    PARSE           ; the tail -> CNAME, HNAME, MODE
+ 010D CDD502            CALL    INIFCB          ; the CCP's FCB at 5CH -> ours
                 
- 0110 3ABE0B            LDA     CNAME
+ 0110 3A570C            LDA     CNAME
  0113 B7                ORA     A
- 0114 CA8205            JZ      USAGE           ; no arguments at all
+ 0114 CAD705            JZ      USAGE           ; no arguments at all
                 
- 0117 CDA002            CALL    HASWLD          ; does the FCB name hold a '?' ...
+ 0117 CDF802            CALL    HASWLD          ; does the FCB name hold a '?' ...
  011A B7                ORA     A
  011B C22401            JNZ     MANY            ; ...yes: it is a pattern
- 011E CD8B01            CALL    ONEF            ; ...no: just the one file
+ 011E CDE001            CALL    ONEF            ; ...no: just the one file
  0121 C30000            JMP     0               ; warm boot
                 
                 ;=======================================================================
@@ -153,60 +154,136 @@
                 ; MAXN names is the cap, and hitting it is an ERROR, not a silent stop --
                 ; a backup that quietly copied the first 64 of your 200 files would be
                 ; worse than one that refused.
+                ;
+                ; A SECOND WORD IS A HOST FOLDER. Each file keeps its own name, so the
+                ; only thing a second word can say is WHERE: `W *.ASM SRC` writes
+                ; SRC/FOO.ASM, as `cp *.asm src` would. The folder must exist. W does not
+                ; make it, and it asks the card once, BEFORE the first file, so a typo
+                ; costs one error line and not one per file.
                 ;=======================================================================
- 0124 3A7D0B    MANY:   LDA     HNAME
- 0127 B7                ORA     A
- 0128 C28D05            JNZ     EWILD           ; "W *.ASM FOO.TXT" cannot mean anything
+ 0124 CD8601    MANY:   CALL    SETDIR          ; HNAME, if given -> HDIRP, "SRC/" (exits if bad)
                 
- 012B AF                XRA     A
- 012C 32AB0C            STA     NCNT
- 012F 21B10C            LXI     H,NAMES
- 0132 22AD0C            SHLD    NPTR            ; where the next match gets stashed
- 0135 22AF0C            SHLD    CPTR            ; ...and where the copy phase will read from
+ 0127 AF                XRA     A
+ 0128 32440D            STA     NCNT
+ 012B 214A0D            LXI     H,NAMES
+ 012E 22460D            SHLD    NPTR            ; where the next match gets stashed
+ 0131 22480D            SHLD    CPTR            ; ...and where the copy phase will read from
                 
- 0138 11D20A            LXI     D,BUF           ; the search results land in the DMA buffer
- 013B 0E1A              MVI     C,FSETDMA
- 013D CD0500            CALL    BDOS
+ 0134 11290B            LXI     D,BUF           ; the search results land in the DMA buffer
+ 0137 0E1A              MVI     C,FSETDMA
+ 0139 CD0500            CALL    BDOS
                 
- 0140 11590B            LXI     D,FCB
- 0143 0E11              MVI     C,FSRCHF
- 0145 CD0500            CALL    BDOS
+ 013C 11B00B            LXI     D,FCB
+ 013F 0E11              MVI     C,FSRCHF
+ 0141 CD0500            CALL    BDOS
                 
- 0148 FEFF      MN1:    CPI     0FFH
- 014A CA5E01            JZ      MN2             ; 0FFH = no (more) matches
- 014D CDB502            CALL    STASH           ; A holds the directory code -- see STASH
- 0150 DAAE05            JC      ETOOMNY
- 0153 11590B            LXI     D,FCB
- 0156 0E12              MVI     C,FSRCHN
- 0158 CD0500            CALL    BDOS
- 015B C34801            JMP     MN1
+ 0144 FEFF      MN1:    CPI     0FFH
+ 0146 CA5A01            JZ      MN2             ; 0FFH = no (more) matches
+ 0149 CD0D03            CALL    STASH           ; A holds the directory code -- see STASH
+ 014C DA0306            JC      ETOOMNY
+ 014F 11B00B            LXI     D,FCB
+ 0152 0E12              MVI     C,FSRCHN
+ 0154 CD0500            CALL    BDOS
+ 0157 C34401            JMP     MN1
                 
- 015E 3AAB0C    MN2:    LDA     NCNT
- 0161 B7                ORA     A
- 0162 CAA305            JZ      ENOMAT
+ 015A 3A440D    MN2:    LDA     NCNT
+ 015D B7                ORA     A
+ 015E CAF805            JZ      ENOMAT
                 
                 ; ---- and now the copying, with BDOS's search state safely irrelevant ----
- 0165 AF                XRA     A
- 0166 32AC0C            STA     DONE
+ 0161 AF                XRA     A
+ 0162 32450D            STA     DONE
                 
- 0169 3AAC0C    MN3:    LDA     DONE
- 016C 47                MOV     B,A
- 016D 3AAB0C            LDA     NCNT
- 0170 B8                CMP     B
- 0171 CA8801            JZ      EXIT            ; every match done
+ 0165 3A450D    MN3:    LDA     DONE
+ 0168 47                MOV     B,A
+ 0169 3A440D            LDA     NCNT
+ 016C B8                CMP     B
+ 016D CA8301            JZ      EXIT            ; every match done
                 
- 0174 CDE902            CALL    SETFCB          ; the next stashed name -> FCB
- 0177 AF                XRA     A
- 0178 327D0B            STA     HNAME           ; a FRESH host name is derived for each file:
-                                                ; the previous one is still sitting there
- 017B CD8B01            CALL    ONEF            ; (it reports its own failures and carries on)
+ 0170 CD4103            CALL    SETFCB          ; the next stashed name -> FCB
+ 0173 CDCF01            CALL    DIRHN           ; a FRESH host name for each file: the folder,
+                                                ; then the CP/M name
+ 0176 CDE001            CALL    ONEF            ; (it reports its own failures and carries on)
                 
- 017E 3AAC0C            LDA     DONE
- 0181 3C                INR     A
- 0182 32AC0C            STA     DONE
- 0185 C36901            JMP     MN3
+ 0179 3A450D            LDA     DONE
+ 017C 3C                INR     A
+ 017D 32450D            STA     DONE
+ 0180 C36501            JMP     MN3
                 
- 0188 C30000    EXIT:   JMP     0               ; warm boot
+ 0183 C30000    EXIT:   JMP     0               ; warm boot
+                
+                ;-----------------------------------------------------------------------
+                ; SETDIR -- the folder a wildcard writes into: HNAME -> HDIRP.
+                ;
+                ; No second word: HDIRP is empty, and each file lands in hostdir itself.
+                ; Otherwise a `/` goes on the end unless one is there (`\` counts too, as
+                ; it does everywhere on this card), and the card is asked to list the
+                ; folder. A folder that is not there, or is a file, fails that listing
+                ; with the host's own words, and W stops before it has copied anything.
+                ;
+                ; THE FOLDER MUST LEAVE ROOM FOR AN 8.3 NAME. HNAME holds HNMAX characters,
+                ; and the longest CP/M name, "FILENAME.EXT", is 12 of them. A longer
+                ; folder is refused here, and not cut short half way through a file name.
+                ;-----------------------------------------------------------------------
+ 0186 21D40B    SETDIR: LXI     H,HNAME
+ 0189 11150C            LXI     D,HDIRP
+ 018C 0600              MVI     B,0             ; B counts the characters copied
+ 018E 7E        SD1:    MOV     A,M
+ 018F B7                ORA     A
+ 0190 CA9A01            JZ      SD2
+ 0193 12                STAX    D
+ 0194 23                INX     H
+ 0195 13                INX     D
+ 0196 04                INR     B
+ 0197 C38E01            JMP     SD1
+                
+ 019A 78        SD2:    MOV     A,B
+ 019B B7                ORA     A
+ 019C CACD01            JZ      SD9             ; no folder: HDIRP is just the NUL
+ 019F 2B                DCX     H               ; the last character typed
+ 01A0 7E                MOV     A,M
+ 01A1 FE2F              CPI     '/'
+ 01A3 CAB001            JZ      SD3
+ 01A6 FE5C              CPI     '\'
+ 01A8 CAB001            JZ      SD3
+ 01AB 3E2F              MVI     A,'/'
+ 01AD 12                STAX    D
+ 01AE 13                INX     D
+ 01AF 04                INR     B
+ 01B0 78        SD3:    MOV     A,B
+ 01B1 FE35              CPI     HNMAX-12+1
+ 01B3 D2E205            JNC     ELONG           ; no room left for FILENAME.EXT
+ 01B6 AF                XRA     A
+ 01B7 12                STAX    D
+                
+                ; ASK THE CARD, ONCE. DIR_FIRST on "SRC/" lists the folder, and it is the
+                ; one command that fails on a folder that is not there without creating
+                ; or changing anything on the host.
+ 01B8 3E04              MVI     A,CDIRF
+ 01BA D3B0              OUT     HBCMD
+ 01BC 21150C            LXI     H,HDIRP
+ 01BF CDCC03            CALL    SENDZ
+ 01C2 DBB0              IN      HBCMD
+ 01C4 E610              ANI     HERR
+ 01C6 C8                RZ                      ; the folder is there
+ 01C7 CDD503            CALL    REPERR          ; "W: NOPE: no such file"
+ 01CA C30000            JMP     0
+                
+ 01CD 12        SD9:    STAX    D               ; A is 0
+ 01CE C9                RET
+                
+                ;-----------------------------------------------------------------------
+                ; DIRHN -- HNAME = the folder in HDIRP, then the name in the FCB.
+                ;-----------------------------------------------------------------------
+ 01CF 21150C    DIRHN:  LXI     H,HDIRP
+ 01D2 11D40B            LXI     D,HNAME
+ 01D5 7E        DH1:    MOV     A,M
+ 01D6 B7                ORA     A
+ 01D7 CA6903            JZ      FCB2HN          ; tail call: DE is where the name goes
+ 01DA 12                STAX    D
+ 01DB 23                INX     H
+ 01DC 13                INX     D
+ 01DD C3D501            JMP     DH1
                 
                 ;=======================================================================
                 ; ONEF -- copy the CP/M file described by FCB out to the host.
@@ -214,20 +291,20 @@
                 ; The FCB is already built -- by INIFCB from the command line, or by SETFCB
                 ; from a directory entry. HNAME is the host name, or empty to derive one.
                 ;=======================================================================
- 018B CD4202    ONEF:   CALL    PICKMD          ; B or T for THIS file -- a wildcard asks again
+ 01E0 CD9A02    ONEF:   CALL    PICKMD          ; B or T for THIS file -- a wildcard asks again
                                                 ; for each match
- 018E 210000            LXI     H,0
- 0191 22540B            SHLD    RECS
+ 01E3 210000            LXI     H,0
+ 01E6 22AB0B            SHLD    RECS
                 
                 ; A FRESH FCB FOR EVERY OPEN. Extent, the two system bytes, the record
                 ; count and the current record must all be zero, and after a wildcard's
                 ; second file the FCB we are handed is the one BDOS left behind.
- 0194 AF                XRA     A
- 0195 32650B            STA     FCB+12          ; ex
- 0198 32660B            STA     FCB+13          ; s1
- 019B 32670B            STA     FCB+14          ; s2
- 019E 32680B            STA     FCB+15          ; rc
- 01A1 32790B            STA     FCB+32          ; cr -- the sequential record cursor
+ 01E9 AF                XRA     A
+ 01EA 32BC0B            STA     FCB+12          ; ex
+ 01ED 32BD0B            STA     FCB+13          ; s1
+ 01F0 32BE0B            STA     FCB+14          ; s2
+ 01F3 32BF0B            STA     FCB+15          ; rc
+ 01F6 32D00B            STA     FCB+32          ; cr -- the sequential record cursor
                 
                 ; OPEN THE CP/M FILE FIRST, BEFORE TOUCHING THE HOST.
                 ;
@@ -236,56 +313,57 @@
                 ; creating it first would mean that `W TYPPO.TXT` -- a name that is not on
                 ; the disk -- DESTROYS the host file of the same name and leaves an empty
                 ; one behind. Fail first, destroy nothing.
- 01A4 11590B            LXI     D,FCB
- 01A7 0E0F              MVI     C,FOPEN
- 01A9 CD0500            CALL    BDOS
- 01AC FEFF              CPI     0FFH
- 01AE CAB905            JZ      ENOCPM
+ 01F9 11B00B            LXI     D,FCB
+ 01FC 0E0F              MVI     C,FOPEN
+ 01FE CD0500            CALL    BDOS
+ 0201 FEFF              CPI     0FFH
+ 0203 CA0E06            JZ      ENOCPM
                 
- 01B1 AF                XRA     A
- 01B2 32790B            STA     FCB+32          ; BDOS OPEN does not promise to clear cr
+ 0206 AF                XRA     A
+ 0207 32D00B            STA     FCB+32          ; BDOS OPEN does not promise to clear cr
                 
- 01B5 3A7D0B            LDA     HNAME
- 01B8 B7                ORA     A
- 01B9 C2BF01            JNZ     OF1             ; the user said what to call it
- 01BC CD1103            CALL    FCB2HN          ; ...or we name it after the CP/M file
+ 020A 3AD40B            LDA     HNAME
+ 020D B7                ORA     A
+ 020E C21702            JNZ     OF1             ; the user said what to call it
+ 0211 11D40B            LXI     D,HNAME
+ 0214 CD6903            CALL    FCB2HN          ; ...or we name it after the CP/M file
                 OF1:
                 
                 ;---- Open the host file ----------------------------------------------
- 01BF 3E02              MVI     A,CVOPENW
- 01C1 D3B0              OUT     HBCMD
- 01C3 217D0B            LXI     H,HNAME
- 01C6 CD7703            CALL    SENDZ           ; the NUL is what commits it
+ 0217 3E02              MVI     A,CVOPENW
+ 0219 D3B0              OUT     HBCMD
+ 021B 21D40B            LXI     H,HNAME
+ 021E CDCC03            CALL    SENDZ           ; the NUL is what commits it
                 
- 01C9 DBB0              IN      HBCMD
- 01CB E610              ANI     HERR
- 01CD C2EE01            JNZ     ONEBAD          ; read-only card, outside the sandbox, bad name
+ 0221 DBB0              IN      HBCMD
+ 0223 E610              ANI     HERR
+ 0225 C24602            JNZ     ONEBAD          ; read-only card, outside the sandbox, bad name
                 
- 01D0 CD4F04            CALL    SAYXFR          ; "W: FOO.ASM -> FOO.ASM"
+ 0228 CDA404            CALL    SAYXFR          ; "W: FOO.ASM -> FOO.ASM"
                 
- 01D3 11D20A            LXI     D,BUF
- 01D6 0E1A              MVI     C,FSETDMA
- 01D8 CD0500            CALL    BDOS            ; where BDOS puts each record it reads
+ 022B 11290B            LXI     D,BUF
+ 022E 0E1A              MVI     C,FSETDMA
+ 0230 CD0500            CALL    BDOS            ; where BDOS puts each record it reads
                 
- 01DB CDF201            CALL    COPY            ; <-- the actual transfer
- 01DE D8                RC                      ; carry = it failed and has already said so
+ 0233 CD4A02            CALL    COPY            ; <-- the actual transfer
+ 0236 D8                RC                      ; carry = it failed and has already said so
                 
                 ;---- CLOSE IS WHAT COMMITS THE HOST FILE ------------------------------
                 ; Not politeness: the card holds the whole file in memory and writes it in
                 ; one go here. An unclosed write is DISCARDED -- which is precisely why a
                 ; program that dies half way through a transfer cannot leave a truncated
                 ; file on your host disk.
- 01DF 3E03              MVI     A,CCLOSE
- 01E1 D3B0              OUT     HBCMD
- 01E3 DBB0              IN      HBCMD
- 01E5 E610              ANI     HERR
- 01E7 C2EE01            JNZ     ONEBAD          ; the host disk is full, or is read-only
+ 0237 3E03              MVI     A,CCLOSE
+ 0239 D3B0              OUT     HBCMD
+ 023B DBB0              IN      HBCMD
+ 023D E610              ANI     HERR
+ 023F C24602            JNZ     ONEBAD          ; the host disk is full, or is read-only
                 
- 01EA CD7F04            CALL    SAYREC          ; "  3 records"
- 01ED C9                RET
+ 0242 CDD404            CALL    SAYREC          ; "  3 records"
+ 0245 C9                RET
                 
- 01EE CD8003    ONEBAD: CALL    REPERR
- 01F1 C9                RET
+ 0246 CDD503    ONEBAD: CALL    REPERR
+ 0249 C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; COPY -- CP/M records -> the host stream. Returns CY on failure.
@@ -295,58 +373,58 @@
                 ; always take the next byte, and a wait loop would be waiting for something
                 ; that has already happened.
                 ;-----------------------------------------------------------------------
- 01F2 210000    COPY:   LXI     H,0
- 01F5 22540B            SHLD    RECS
- 01F8 22560B            SHLD    BYTES           ; the TRUE byte count too -- 24 bits, because in T
- 01FB AF                XRA     A               ; mode we stop mid-record and RECS*128 would lie
- 01FC 32580B            STA     BYTES+2
+ 024A 210000    COPY:   LXI     H,0
+ 024D 22AB0B            SHLD    RECS
+ 0250 22AD0B            SHLD    BYTES           ; the TRUE byte count too -- 24 bits, because in T
+ 0253 AF                XRA     A               ; mode we stop mid-record and RECS*128 would lie
+ 0254 32AF0B            STA     BYTES+2
                 
- 01FF 11590B    CP0:    LXI     D,FCB
- 0202 0E14              MVI     C,FREAD
- 0204 CD0500            CALL    BDOS
- 0207 B7                ORA     A
- 0208 C23B02            JNZ     CPEND           ; 1 = end of file. Anything else is also an
+ 0257 11B00B    CP0:    LXI     D,FCB
+ 025A 0E14              MVI     C,FREAD
+ 025C CD0500            CALL    BDOS
+ 025F B7                ORA     A
+ 0260 C29302            JNZ     CPEND           ; 1 = end of file. Anything else is also an
                                                 ; end, and there is nothing useful to say
                                                 ; about it that CP/M has not already said.
                 
- 020B 2A540B            LHLD    RECS            ; count it now: in text mode we may stop half
- 020E 23                INX     H               ; way through this record, and it was still
- 020F 22540B            SHLD    RECS            ; read
+ 0263 2AAB0B            LHLD    RECS            ; count it now: in text mode we may stop half
+ 0266 23                INX     H               ; way through this record, and it was still
+ 0267 22AB0B            SHLD    RECS            ; read
                 
- 0212 21D20A            LXI     H,BUF
- 0215 0680              MVI     B,RECLEN
+ 026A 21290B            LXI     H,BUF
+ 026D 0680              MVI     B,RECLEN
                 
- 0217 7E        CP1:    MOV     A,M
- 0218 4F                MOV     C,A             ; stash the byte -- LDA is about to eat A
- 0219 3A520B            LDA     XMODE
- 021C FE54              CPI     'T'
- 021E 79                MOV     A,C             ; ...and give it back
- 021F C22702            JNZ     CP2             ; binary: send everything, always
- 0222 FE1A              CPI     CPMEOF
- 0224 CA3B02            JZ      CPEND           ; text: the FIRST ^Z ends the file
+ 026F 7E        CP1:    MOV     A,M
+ 0270 4F                MOV     C,A             ; stash the byte -- LDA is about to eat A
+ 0271 3AA90B            LDA     XMODE
+ 0274 FE54              CPI     'T'
+ 0276 79                MOV     A,C             ; ...and give it back
+ 0277 C27F02            JNZ     CP2             ; binary: send everything, always
+ 027A FE1A              CPI     CPMEOF
+ 027C CA9302            JZ      CPEND           ; text: the FIRST ^Z ends the file
                 
- 0227 D3B1      CP2:    OUT     HBDATA
- 0229 CD9804            CALL    INCBYT          ; one more byte actually sent to the host -- count it
- 022C 23                INX     H
- 022D 05                DCR     B
- 022E C21702            JNZ     CP1
+ 027F D3B1      CP2:    OUT     HBDATA
+ 0281 CDED04            CALL    INCBYT          ; one more byte actually sent to the host -- count it
+ 0284 23                INX     H
+ 0285 05                DCR     B
+ 0286 C26F02            JNZ     CP1
                 
                 ; ASK ONCE PER RECORD, NOT ONCE PER BYTE. The only way a write can fail
                 ; while it is still streaming is the card's 8 MB size cap, and a CP/M
                 ; volume cannot be pushed past that in less than 65,536 records. Checking
                 ; here costs one IN per 128 bytes and catches it long before we have
                 ; shovelled a whole disk into a buffer that is never going to be written.
- 0231 DBB0              IN      HBCMD
- 0233 E610              ANI     HERR
- 0235 C23D02            JNZ     CPERR
- 0238 C3FF01            JMP     CP0
+ 0289 DBB0              IN      HBCMD
+ 028B E610              ANI     HERR
+ 028D C29502            JNZ     CPERR
+ 0290 C35702            JMP     CP0
                 
- 023B AF        CPEND:  XRA     A               ; ...which also CLEARS CARRY: success
- 023C C9                RET
+ 0293 AF        CPEND:  XRA     A               ; ...which also CLEARS CARRY: success
+ 0294 C9                RET
                 
- 023D CD8003    CPERR:  CALL    REPERR
- 0240 37                STC
- 0241 C9                RET
+ 0295 CDD503    CPERR:  CALL    REPERR
+ 0298 37                STC
+ 0299 C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; PICKMD -- set XMODE, the mode for the file the FCB names.
@@ -361,41 +439,41 @@
                 ; the FCB the CCP built for a single file never had them. The mask costs
                 ; one instruction and means this routine does not care which it was given.
                 ;-----------------------------------------------------------------------
- 0242 AF        PICKMD: XRA     A
- 0243 32530B            STA     AUTO
- 0246 3AD905            LDA     MODSET
- 0249 B7                ORA     A
- 024A 3AD805            LDA     MODE            ; (LDA leaves the flags alone)
- 024D C27902            JNZ     PM9             ; the user said: that is the end of it
+ 029A AF        PICKMD: XRA     A
+ 029B 32AA0B            STA     AUTO
+ 029E 3A2E06            LDA     MODSET
+ 02A1 B7                ORA     A
+ 02A2 3A2D06            LDA     MODE            ; (LDA leaves the flags alone)
+ 02A5 C2D102            JNZ     PM9             ; the user said: that is the end of it
                 
- 0250 11DA05            LXI     D,EXTTAB
- 0253 1A        PM1:    LDAX    D
- 0254 B7                ORA     A
- 0255 3E42              MVI     A,'B'           ; (so does MVI)
- 0257 CA7902            JZ      PM9             ; off the end of the table: every byte
+ 02A8 112F06            LXI     D,EXTTAB
+ 02AB 1A        PM1:    LDAX    D
+ 02AC B7                ORA     A
+ 02AD 3E42              MVI     A,'B'           ; (so does MVI)
+ 02AF CAD102            JZ      PM9             ; off the end of the table: every byte
                 
- 025A 21620B            LXI     H,FCB+9         ; the three extension characters
- 025D 0603              MVI     B,3
- 025F 0E00              MVI     C,0             ; C collects every bit that differs
- 0261 1A        PM2:    LDAX    D
- 0262 AE                XRA     M
- 0263 E67F              ANI     7FH
- 0265 B1                ORA     C
- 0266 4F                MOV     C,A
- 0267 23                INX     H
- 0268 13                INX     D
- 0269 05                DCR     B
- 026A C26102            JNZ     PM2             ; all three, always: DE must end on the next
+ 02B2 21B90B            LXI     H,FCB+9         ; the three extension characters
+ 02B5 0603              MVI     B,3
+ 02B7 0E00              MVI     C,0             ; C collects every bit that differs
+ 02B9 1A        PM2:    LDAX    D
+ 02BA AE                XRA     M
+ 02BB E67F              ANI     7FH
+ 02BD B1                ORA     C
+ 02BE 4F                MOV     C,A
+ 02BF 23                INX     H
+ 02C0 13                INX     D
+ 02C1 05                DCR     B
+ 02C2 C2B902            JNZ     PM2             ; all three, always: DE must end on the next
                                                 ; entry whether this one matched or not
- 026D 79                MOV     A,C
- 026E B7                ORA     A
- 026F C25302            JNZ     PM1
+ 02C5 79                MOV     A,C
+ 02C6 B7                ORA     A
+ 02C7 C2AB02            JNZ     PM1
                 
- 0272 3E01              MVI     A,1
- 0274 32530B            STA     AUTO
- 0277 3E54              MVI     A,'T'
- 0279 32520B    PM9:    STA     XMODE
- 027C C9                RET
+ 02CA 3E01              MVI     A,1
+ 02CC 32AA0B            STA     AUTO
+ 02CF 3E54              MVI     A,'T'
+ 02D1 32A90B    PM9:    STA     XMODE
+ 02D4 C9                RET
                 
                 ;=======================================================================
                 ; THE CP/M DIRECTORY
@@ -413,26 +491,26 @@
                 ; 8.3 name -- with `*` already expanded to `?` by the CCP, which is exactly
                 ; the form BDOS SEARCH wants. The rest of the FCB must start at zero.
                 ;-----------------------------------------------------------------------
- 027D 21590B    INIFCB: LXI     H,FCB
- 0280 0624              MVI     B,36
- 0282 3600      IF0:    MVI     M,0
- 0284 23                INX     H
- 0285 05                DCR     B
- 0286 C28202            JNZ     IF0
+ 02D5 21B00B    INIFCB: LXI     H,FCB
+ 02D8 0624              MVI     B,36
+ 02DA 3600      IF0:    MVI     M,0
+ 02DC 23                INX     H
+ 02DD 05                DCR     B
+ 02DE C2DA02            JNZ     IF0
                 
- 0289 215C00            LXI     H,TFCB
- 028C 11590B            LXI     D,FCB
- 028F 060C              MVI     B,12
- 0291 7E        IF1:    MOV     A,M
- 0292 12                STAX    D
- 0293 23                INX     H
- 0294 13                INX     D
- 0295 05                DCR     B
- 0296 C29102            JNZ     IF1
+ 02E1 215C00            LXI     H,TFCB
+ 02E4 11B00B            LXI     D,FCB
+ 02E7 060C              MVI     B,12
+ 02E9 7E        IF1:    MOV     A,M
+ 02EA 12                STAX    D
+ 02EB 23                INX     H
+ 02EC 13                INX     D
+ 02ED 05                DCR     B
+ 02EE C2E902            JNZ     IF1
                 
- 0299 3A590B            LDA     FCB             ; remember the drive: a wildcard rebuilds the
- 029C 32F905            STA     DRIVE           ; FCB for each match and must put it back
- 029F C9                RET
+ 02F1 3AB00B            LDA     FCB             ; remember the drive: a wildcard rebuilds the
+ 02F4 324E06            STA     DRIVE           ; FCB for each match and must put it back
+ 02F7 C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; HASWLD -- A=1 if the FCB name holds a '?', else A=0.
@@ -441,18 +519,18 @@
                 ; expansion: it turned `*.ASM` into `????????ASM` before we ever ran. So
                 ; `?` is the only wildcard character that still exists by the time we look.
                 ;-----------------------------------------------------------------------
- 02A0 215A0B    HASWLD: LXI     H,FCB+1
- 02A3 060B              MVI     B,11
- 02A5 7E        HW1:    MOV     A,M
- 02A6 FE3F              CPI     '?'
- 02A8 CAB202            JZ      HWYES
- 02AB 23                INX     H
- 02AC 05                DCR     B
- 02AD C2A502            JNZ     HW1
- 02B0 AF                XRA     A
- 02B1 C9                RET
- 02B2 3E01      HWYES:  MVI     A,1
- 02B4 C9                RET
+ 02F8 21B10B    HASWLD: LXI     H,FCB+1
+ 02FB 060B              MVI     B,11
+ 02FD 7E        HW1:    MOV     A,M
+ 02FE FE3F              CPI     '?'
+ 0300 CA0A03            JZ      HWYES
+ 0303 23                INX     H
+ 0304 05                DCR     B
+ 0305 C2FD02            JNZ     HW1
+ 0308 AF                XRA     A
+ 0309 C9                RET
+ 030A 3E01      HWYES:  MVI     A,1
+ 030C C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; STASH -- copy the name of the directory entry BDOS just found.
@@ -463,103 +541,103 @@
                 ;
                 ; Returns CY if the table is full.
                 ;-----------------------------------------------------------------------
- 02B5 4F        STASH:  MOV     C,A             ; the directory code, before anything eats it
+ 030D 4F        STASH:  MOV     C,A             ; the directory code, before anything eats it
                 
- 02B6 3AAB0C            LDA     NCNT
- 02B9 FE40              CPI     MAXN
- 02BB D2E702            JNC     STFULL
- 02BE 3C                INR     A
- 02BF 32AB0C            STA     NCNT
+ 030E 3A440D            LDA     NCNT
+ 0311 FE40              CPI     MAXN
+ 0313 D23F03            JNC     STFULL
+ 0316 3C                INR     A
+ 0317 32440D            STA     NCNT
                 
- 02C2 79                MOV     A,C
- 02C3 E603              ANI     3               ; belt and braces: it is documented as 0..3
- 02C5 87                ADD     A               ; *2
- 02C6 87                ADD     A               ; *4
- 02C7 87                ADD     A               ; *8
- 02C8 87                ADD     A               ; *16
- 02C9 87                ADD     A               ; *32 -- at most 96, so it stays in 8 bits
- 02CA 5F                MOV     E,A
- 02CB 1600              MVI     D,0
- 02CD 21D20A            LXI     H,BUF
- 02D0 19                DAD     D
- 02D1 23                INX     H               ; -> the eleven name characters (past the
+ 031A 79                MOV     A,C
+ 031B E603              ANI     3               ; belt and braces: it is documented as 0..3
+ 031D 87                ADD     A               ; *2
+ 031E 87                ADD     A               ; *4
+ 031F 87                ADD     A               ; *8
+ 0320 87                ADD     A               ; *16
+ 0321 87                ADD     A               ; *32 -- at most 96, so it stays in 8 bits
+ 0322 5F                MOV     E,A
+ 0323 1600              MVI     D,0
+ 0325 21290B            LXI     H,BUF
+ 0328 19                DAD     D
+ 0329 23                INX     H               ; -> the eleven name characters (past the
                                                 ; user-number byte at offset 0)
- 02D2 EB                XCHG                    ; DE = source
- 02D3 2AAD0C            LHLD    NPTR            ; HL = where it goes
- 02D6 060B              MVI     B,11
- 02D8 1A        ST1:    LDAX    D
- 02D9 E67F              ANI     7FH             ; STRIP THE ATTRIBUTE BITS. CP/M keeps R/O,
+ 032A EB                XCHG                    ; DE = source
+ 032B 2A460D            LHLD    NPTR            ; HL = where it goes
+ 032E 060B              MVI     B,11
+ 0330 1A        ST1:    LDAX    D
+ 0331 E67F              ANI     7FH             ; STRIP THE ATTRIBUTE BITS. CP/M keeps R/O,
                                                 ; SYSTEM and ARCHIVE in the HIGH BIT of three
                                                 ; of the name characters, so a read-only
                                                 ; FOO.COM has an 0C3H where its 'M' should be.
                                                 ; Hand that to OPEN unmasked and it does not
                                                 ; find the file it just told you about.
- 02DB 77                MOV     M,A
- 02DC 13                INX     D
- 02DD 23                INX     H
- 02DE 05                DCR     B
- 02DF C2D802            JNZ     ST1
- 02E2 22AD0C            SHLD    NPTR
- 02E5 B7                ORA     A               ; ORA also CLEARS CARRY -- that is the point
- 02E6 C9                RET
+ 0333 77                MOV     M,A
+ 0334 13                INX     D
+ 0335 23                INX     H
+ 0336 05                DCR     B
+ 0337 C23003            JNZ     ST1
+ 033A 22460D            SHLD    NPTR
+ 033D B7                ORA     A               ; ORA also CLEARS CARRY -- that is the point
+ 033E C9                RET
                 
- 02E7 37        STFULL: STC
- 02E8 C9                RET
+ 033F 37        STFULL: STC
+ 0340 C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; SETFCB -- the next stashed name -> FCB, and advance the cursor.
                 ;-----------------------------------------------------------------------
- 02E9 21590B    SETFCB: LXI     H,FCB
- 02EC 0624              MVI     B,36
- 02EE 3600      SF0:    MVI     M,0
- 02F0 23                INX     H
- 02F1 05                DCR     B
- 02F2 C2EE02            JNZ     SF0
+ 0341 21B00B    SETFCB: LXI     H,FCB
+ 0344 0624              MVI     B,36
+ 0346 3600      SF0:    MVI     M,0
+ 0348 23                INX     H
+ 0349 05                DCR     B
+ 034A C24603            JNZ     SF0
                 
- 02F5 3AF905            LDA     DRIVE           ; the drive the user asked for. The directory
- 02F8 32590B            STA     FCB             ; entry does not carry one -- it is a fact
+ 034D 3A4E06            LDA     DRIVE           ; the drive the user asked for. The directory
+ 0350 32B00B            STA     FCB             ; entry does not carry one -- it is a fact
                                                 ; about the disk it was found on, and the
                                                 ; entry has a USER NUMBER in that byte instead
                 
- 02FB 2AAF0C            LHLD    CPTR
- 02FE EB                XCHG                    ; DE = the stashed name
- 02FF 215A0B            LXI     H,FCB+1
- 0302 060B              MVI     B,11
- 0304 1A        SF1:    LDAX    D
- 0305 77                MOV     M,A
- 0306 13                INX     D
- 0307 23                INX     H
- 0308 05                DCR     B
- 0309 C20403            JNZ     SF1
- 030C EB                XCHG                    ; HL = one past the name...
- 030D 22AF0C            SHLD    CPTR            ; ...which is the next one
- 0310 C9                RET
+ 0353 2A480D            LHLD    CPTR
+ 0356 EB                XCHG                    ; DE = the stashed name
+ 0357 21B10B            LXI     H,FCB+1
+ 035A 060B              MVI     B,11
+ 035C 1A        SF1:    LDAX    D
+ 035D 77                MOV     M,A
+ 035E 13                INX     D
+ 035F 23                INX     H
+ 0360 05                DCR     B
+ 0361 C25C03            JNZ     SF1
+ 0364 EB                XCHG                    ; HL = one past the name...
+ 0365 22480D            SHLD    CPTR            ; ...which is the next one
+ 0368 C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; FCB2HN -- name the host file after the CP/M one: FOO.ASM -> "FOO.ASM".
                 ;
+                ; DE = where the name goes: HNAME, or the end of a folder already in it.
                 ; The FCB pads both fields with SPACES, and no CP/M name may contain one,
                 ; so a blank simply ends the field.
                 ;-----------------------------------------------------------------------
- 0311 215A0B    FCB2HN: LXI     H,FCB+1
- 0314 117D0B            LXI     D,HNAME
- 0317 0608              MVI     B,8
- 0319 CD3503            CALL    FLD
+ 0369 21B10B    FCB2HN: LXI     H,FCB+1
+ 036C 0608              MVI     B,8
+ 036E CD8A03            CALL    FLD
                 
- 031C 3A620B            LDA     FCB+9
- 031F E67F              ANI     7FH             ; an attribute bit, not a letter -- see FLD
- 0321 FE20              CPI     ' '
- 0323 CA3203            JZ      F2Z             ; no extension: no dot either
- 0326 3E2E              MVI     A,'.'
- 0328 12                STAX    D
- 0329 13                INX     D
- 032A 21620B            LXI     H,FCB+9
- 032D 0603              MVI     B,3
- 032F CD3503            CALL    FLD
+ 0371 3AB90B            LDA     FCB+9
+ 0374 E67F              ANI     7FH             ; an attribute bit, not a letter -- see FLD
+ 0376 FE20              CPI     ' '
+ 0378 CA8703            JZ      F2Z             ; no extension: no dot either
+ 037B 3E2E              MVI     A,'.'
+ 037D 12                STAX    D
+ 037E 13                INX     D
+ 037F 21B90B            LXI     H,FCB+9
+ 0382 0603              MVI     B,3
+ 0384 CD8A03            CALL    FLD
                 
- 0332 AF        F2Z:    XRA     A
- 0333 12                STAX    D               ; NUL-terminated: that is what SENDZ wants
- 0334 C9                RET
+ 0387 AF        F2Z:    XRA     A
+ 0388 12                STAX    D               ; NUL-terminated: that is what SENDZ wants
+ 0389 C9                RET
                 
                 ; Copy up to B characters from (HL) to (DE), stopping at the first blank.
                 ;
@@ -568,16 +646,16 @@
                 ; R/O, SYSTEM and ARCHIVE bits back into the high bit of the FCB's name
                 ; characters. A read-only HELP.COM came back as HELP.0C3H'OM', which is
                 ; no name a host will create.
- 0335 7E        FLD:    MOV     A,M
- 0336 E67F              ANI     7FH
- 0338 FE20              CPI     ' '
- 033A C8                RZ
- 033B 12                STAX    D
- 033C 13                INX     D
- 033D 23                INX     H
- 033E 05                DCR     B
- 033F C23503            JNZ     FLD
- 0342 C9                RET
+ 038A 7E        FLD:    MOV     A,M
+ 038B E67F              ANI     7FH
+ 038D FE20              CPI     ' '
+ 038F C8                RZ
+ 0390 12                STAX    D
+ 0391 13                INX     D
+ 0392 23                INX     H
+ 0393 05                DCR     B
+ 0394 C28A03            JNZ     FLD
+ 0397 C9                RET
                 
                 ;=======================================================================
                 ; THE HOST BRIDGE
@@ -593,37 +671,37 @@
                 ; announce a host error for a card that is not there. "Permission denied"
                 ; is a much worse thing to tell someone than "there is no bridge".
                 ;-----------------------------------------------------------------------
- 0343 3E00      IDENT:  MVI     A,CIDENT
- 0345 D3B0              OUT     HBCMD
+ 0398 3E00      IDENT:  MVI     A,CIDENT
+ 039A D3B0              OUT     HBCMD
                 
- 0347 21810C            LXI     H,IDBUF
- 034A 0620              MVI     B,IDMAX
- 034C DBB1      ID1:    IN      HBDATA
- 034E 77                MOV     M,A
- 034F B7                ORA     A
- 0350 CA5A03            JZ      ID2             ; got the terminator
- 0353 23                INX     H
- 0354 05                DCR     B
- 0355 C24C03            JNZ     ID1
- 0358 3600              MVI     M,0             ; never terminated -- 0FFH forever, i.e. no card
+ 039C 211A0D            LXI     H,IDBUF
+ 039F 0620              MVI     B,IDMAX
+ 03A1 DBB1      ID1:    IN      HBDATA
+ 03A3 77                MOV     M,A
+ 03A4 B7                ORA     A
+ 03A5 CAAF03            JZ      ID2             ; got the terminator
+ 03A8 23                INX     H
+ 03A9 05                DCR     B
+ 03AA C2A103            JNZ     ID1
+ 03AD 3600              MVI     M,0             ; never terminated -- 0FFH forever, i.e. no card
                 
- 035A 21810C    ID2:    LXI     H,IDBUF
- 035D 11C305            LXI     D,IDWANT
- 0360 1A        ID3:    LDAX    D
- 0361 B7                ORA     A
- 0362 C8                RZ                      ; matched to the end of what we wanted: ours.
+ 03AF 211A0D    ID2:    LXI     H,IDBUF
+ 03B2 111806            LXI     D,IDWANT
+ 03B5 1A        ID3:    LDAX    D
+ 03B6 B7                ORA     A
+ 03B7 C8                RZ                      ; matched to the end of what we wanted: ours.
                                                 ; A PREFIX compare, so a later card that says
                                                 ; "... 2" still works with this .COM
- 0363 BE                CMP     M
- 0364 C26C03            JNZ     IDBAD
- 0367 23                INX     H
- 0368 13                INX     D
- 0369 C36003            JMP     ID3
+ 03B8 BE                CMP     M
+ 03B9 C2C103            JNZ     IDBAD
+ 03BC 23                INX     H
+ 03BD 13                INX     D
+ 03BE C3B503            JMP     ID3
                 
- 036C 11FA05    IDBAD:  LXI     D,MNOHB
- 036F 0E09              MVI     C,PRSTR
- 0371 CD0500            CALL    BDOS
- 0374 C30000            JMP     0               ; nothing else in this program can work
+ 03C1 114F06    IDBAD:  LXI     D,MNOHB
+ 03C4 0E09              MVI     C,PRSTR
+ 03C6 CD0500            CALL    BDOS
+ 03C9 C30000            JMP     0               ; nothing else in this program can work
                 
                 ;-----------------------------------------------------------------------
                 ; SENDZ -- send the NUL-terminated string at HL to the data port.
@@ -632,12 +710,12 @@
                 ; lands the card has created nothing, so we could still change our mind by
                 ; writing a different command byte.
                 ;-----------------------------------------------------------------------
- 0377 7E        SENDZ:  MOV     A,M
- 0378 D3B1              OUT     HBDATA
- 037A B7                ORA     A
- 037B C8                RZ                      ; that was the terminator: done
- 037C 23                INX     H
- 037D C37703            JMP     SENDZ
+ 03CC 7E        SENDZ:  MOV     A,M
+ 03CD D3B1              OUT     HBDATA
+ 03CF B7                ORA     A
+ 03D0 C8                RZ                      ; that was the terminator: done
+ 03D1 23                INX     H
+ 03D2 C3CC03            JMP     SENDZ
                 
                 ;-----------------------------------------------------------------------
                 ; REPERR -- print what actually went wrong.
@@ -646,25 +724,25 @@
                 ; words ("FOO.TXT: permission denied"). We print the message and drop the
                 ; code: a number the user has to go and look up is not an error report.
                 ;-----------------------------------------------------------------------
- 0380 3E07      REPERR: MVI     A,CERROR
- 0382 D3B0              OUT     HBCMD
- 0384 DBB1              IN      HBDATA          ; the code byte -- read it and discard it
+ 03D5 3E07      REPERR: MVI     A,CERROR
+ 03D7 D3B0              OUT     HBCMD
+ 03D9 DBB1              IN      HBDATA          ; the code byte -- read it and discard it
                 
- 0386 117F09            LXI     D,MERR
- 0389 0E09              MVI     C,PRSTR
- 038B CD0500            CALL    BDOS
+ 03DB 111F0A            LXI     D,MERR
+ 03DE 0E09              MVI     C,PRSTR
+ 03E0 CD0500            CALL    BDOS
                 
- 038E DBB1      RPE1:   IN      HBDATA          ; ...then the text, a character at a time.
- 0390 B7                ORA     A               ; Nothing is live across the BDOS call below,
- 0391 CA9D03            JZ      RPE2            ; because the next byte comes from the PORT.
- 0394 5F                MOV     E,A
- 0395 0E02              MVI     C,CONOUT
- 0397 CD0500            CALL    BDOS
- 039A C38E03            JMP     RPE1
+ 03E3 DBB1      RPE1:   IN      HBDATA          ; ...then the text, a character at a time.
+ 03E5 B7                ORA     A               ; Nothing is live across the BDOS call below,
+ 03E6 CAF203            JZ      RPE2            ; because the next byte comes from the PORT.
+ 03E9 5F                MOV     E,A
+ 03EA 0E02              MVI     C,CONOUT
+ 03EC CD0500            CALL    BDOS
+ 03EF C3E303            JMP     RPE1
                 
- 039D 118309    RPE2:   LXI     D,MCRLF
- 03A0 0E09              MVI     C,PRSTR
- 03A2 C30500            JMP     BDOS            ; tail call: BDOS returns to OUR caller
+ 03F2 11230A    RPE2:   LXI     D,MCRLF
+ 03F5 0E09              MVI     C,PRSTR
+ 03F7 C30500            JMP     BDOS            ; tail call: BDOS returns to OUR caller
                 
                 ;=======================================================================
                 ; THE COMMAND TAIL
@@ -678,12 +756,14 @@
                 ;       W *.* B                   a wildcard takes the switch too
                 ;       W FOO.TXT BAR.TXT         CNAME=FOO.TXT HNAME=BAR.TXT
                 ;       W FOO.TXT SRC/BAR.TXT T   ...and a subdirectory of hostdir
+                ;       W *.ASM SRC               with a wildcard: HNAME is a folder
                 ;
                 ; A LONE `B` OR `T` IN THE SECOND SLOT IS THE SWITCH, NOT A HOST NAME, and
                 ; that is an ambiguity we are choosing rather than one we are missing: a
                 ; host file really called `T` exists somewhere. Write it as `./T` and the
                 ; card drops the `.` component -- so the escape hatch costs two characters
-                ; and no one has to learn a new syntax.
+                ; and no one has to learn a new syntax. A FOLDER called `B` or `T` is
+                ; written `B/`, which is two characters and is not a switch.
                 ;
                 ; The FCB comes from the CCP (see TFCB), so CNAME here is only ever used to
                 ; answer "did the user type anything at all".
@@ -695,264 +775,264 @@
                 ; which always writes its NUL; HNAME is the one that is only written when
                 ; the user gave a second word. Leave it and `W *.HEX` reads the corpse of
                 ; the last program's data as a host name and refuses the wildcard.
- 03A5 AF        PARSE:  XRA     A
- 03A6 327D0B            STA     HNAME
+ 03FA AF        PARSE:  XRA     A
+ 03FB 32D40B            STA     HNAME
                 
- 03A9 218000            LXI     H,TAIL
- 03AC 46                MOV     B,M             ; length of the tail
- 03AD 23                INX     H               ; -> the first character
+ 03FE 218000            LXI     H,TAIL
+ 0401 46                MOV     B,M             ; length of the tail
+ 0402 23                INX     H               ; -> the first character
                 
- 03AE CD2704            CALL    SKIPSP
- 03B1 11BE0B            LXI     D,CNAME
- 03B4 0E40              MVI     C,HNMAX
- 03B6 CD3304            CALL    TOKEN
+ 0403 CD7C04            CALL    SKIPSP
+ 0406 11570C            LXI     D,CNAME
+ 0409 0E40              MVI     C,HNMAX
+ 040B CD8804            CALL    TOKEN
                 
- 03B9 CD2704            CALL    SKIPSP
- 03BC 11FF0B            LXI     D,TOK2
- 03BF 0E40              MVI     C,HNMAX
- 03C1 CD3304            CALL    TOKEN
+ 040E CD7C04            CALL    SKIPSP
+ 0411 11980C            LXI     D,TOK2
+ 0414 0E40              MVI     C,HNMAX
+ 0416 CD8804            CALL    TOKEN
                 
- 03C4 CD2704            CALL    SKIPSP
- 03C7 11400C            LXI     D,TOK3
- 03CA 0E40              MVI     C,HNMAX
- 03CC CD3304            CALL    TOKEN
+ 0419 CD7C04            CALL    SKIPSP
+ 041C 11D90C            LXI     D,TOK3
+ 041F 0E40              MVI     C,HNMAX
+ 0421 CD8804            CALL    TOKEN
                 
- 03CF 3A400C            LDA     TOK3
- 03D2 B7                ORA     A
- 03D3 CAE203            JZ      PA2             ; only two words (or fewer)
+ 0424 3AD90C            LDA     TOK3
+ 0427 B7                ORA     A
+ 0428 CA3704            JZ      PA2             ; only two words (or fewer)
                 
                 ; Three words: the second is the host name and the third is the switch.
- 03D6 21FF0B            LXI     H,TOK2
- 03D9 CD1B04            CALL    CPYHN
- 03DC 21400C            LXI     H,TOK3
- 03DF C30704            JMP     SETMOD
+ 042B 21980C            LXI     H,TOK2
+ 042E CD7004            CALL    CPYHN
+ 0431 21D90C            LXI     H,TOK3
+ 0434 C35C04            JMP     SETMOD
                 
- 03E2 3AFF0B    PA2:    LDA     TOK2
- 03E5 B7                ORA     A
- 03E6 C8                RZ                      ; one word: nothing more to work out
+ 0437 3A980C    PA2:    LDA     TOK2
+ 043A B7                ORA     A
+ 043B C8                RZ                      ; one word: nothing more to work out
                 
- 03E7 3A000C            LDA     TOK2+1
- 03EA B7                ORA     A
- 03EB C20104            JNZ     PA3             ; longer than one character -> a host name
- 03EE 3AFF0B            LDA     TOK2
- 03F1 FE42              CPI     'B'
- 03F3 CAFB03            JZ      PA2S
- 03F6 FE54              CPI     'T'
- 03F8 C20104            JNZ     PA3
- 03FB 21FF0B    PA2S:   LXI     H,TOK2
- 03FE C30704            JMP     SETMOD
+ 043C 3A990C            LDA     TOK2+1
+ 043F B7                ORA     A
+ 0440 C25604            JNZ     PA3             ; longer than one character -> a host name
+ 0443 3A980C            LDA     TOK2
+ 0446 FE42              CPI     'B'
+ 0448 CA5004            JZ      PA2S
+ 044B FE54              CPI     'T'
+ 044D C25604            JNZ     PA3
+ 0450 21980C    PA2S:   LXI     H,TOK2
+ 0453 C35C04            JMP     SETMOD
                 
- 0401 21FF0B    PA3:    LXI     H,TOK2
- 0404 C31B04            JMP     CPYHN           ; tail call
+ 0456 21980C    PA3:    LXI     H,TOK2
+ 0459 C37004            JMP     CPYHN           ; tail call
                 
- 0407 7E        SETMOD: MOV     A,M
- 0408 FE42              CPI     'B'
- 040A CA1204            JZ      SM1
- 040D FE54              CPI     'T'
- 040F C29805            JNZ     EBADSW
- 0412 32D805    SM1:    STA     MODE
- 0415 3E01              MVI     A,1
- 0417 32D905            STA     MODSET          ; a switch was given: PICKMD does not look
- 041A C9                RET                     ; at the extension
+ 045C 7E        SETMOD: MOV     A,M
+ 045D FE42              CPI     'B'
+ 045F CA6704            JZ      SM1
+ 0462 FE54              CPI     'T'
+ 0464 C2ED05            JNZ     EBADSW
+ 0467 322D06    SM1:    STA     MODE
+ 046A 3E01              MVI     A,1
+ 046C 322E06            STA     MODSET          ; a switch was given: PICKMD does not look
+ 046F C9                RET                     ; at the extension
                 
- 041B 117D0B    CPYHN:  LXI     D,HNAME
- 041E 7E        CH1:    MOV     A,M
- 041F 12                STAX    D
- 0420 B7                ORA     A
- 0421 C8                RZ                      ; the NUL is copied too
- 0422 23                INX     H
- 0423 13                INX     D
- 0424 C31E04            JMP     CH1
+ 0470 11D40B    CPYHN:  LXI     D,HNAME
+ 0473 7E        CH1:    MOV     A,M
+ 0474 12                STAX    D
+ 0475 B7                ORA     A
+ 0476 C8                RZ                      ; the NUL is copied too
+ 0477 23                INX     H
+ 0478 13                INX     D
+ 0479 C37304            JMP     CH1
                 
- 0427 78        SKIPSP: MOV     A,B
- 0428 B7                ORA     A
- 0429 C8                RZ                      ; nothing left
- 042A 7E                MOV     A,M
- 042B FE20              CPI     ' '
- 042D C0                RNZ
- 042E 23                INX     H
- 042F 05                DCR     B
- 0430 C32704            JMP     SKIPSP
+ 047C 78        SKIPSP: MOV     A,B
+ 047D B7                ORA     A
+ 047E C8                RZ                      ; nothing left
+ 047F 7E                MOV     A,M
+ 0480 FE20              CPI     ' '
+ 0482 C0                RNZ
+ 0483 23                INX     H
+ 0484 05                DCR     B
+ 0485 C37C04            JMP     SKIPSP
                 
                 ; Copy one space-delimited word from (HL) to (DE), NUL-terminated.
                 ;   B = characters left in the tail   C = room at DE, including the NUL
                 ; Always writes the NUL -- so "no word here" comes out as an empty string,
                 ; which is exactly what the callers test for.
- 0433 79        TOKEN:  MOV     A,C
- 0434 FE01              CPI     1
- 0436 CA4C04            JZ      TOKEND          ; only room for the terminator
- 0439 78                MOV     A,B
- 043A B7                ORA     A
- 043B CA4C04            JZ      TOKEND
- 043E 7E                MOV     A,M
- 043F FE20              CPI     ' '
- 0441 CA4C04            JZ      TOKEND
- 0444 12                STAX    D
- 0445 23                INX     H
- 0446 13                INX     D
- 0447 05                DCR     B
- 0448 0D                DCR     C
- 0449 C33304            JMP     TOKEN
- 044C AF        TOKEND: XRA     A
- 044D 12                STAX    D
- 044E C9                RET
+ 0488 79        TOKEN:  MOV     A,C
+ 0489 FE01              CPI     1
+ 048B CAA104            JZ      TOKEND          ; only room for the terminator
+ 048E 78                MOV     A,B
+ 048F B7                ORA     A
+ 0490 CAA104            JZ      TOKEND
+ 0493 7E                MOV     A,M
+ 0494 FE20              CPI     ' '
+ 0496 CAA104            JZ      TOKEND
+ 0499 12                STAX    D
+ 049A 23                INX     H
+ 049B 13                INX     D
+ 049C 05                DCR     B
+ 049D 0D                DCR     C
+ 049E C38804            JMP     TOKEN
+ 04A1 AF        TOKEND: XRA     A
+ 04A2 12                STAX    D
+ 04A3 C9                RET
                 
                 ;=======================================================================
                 ; TALKING TO THE USER
                 ;=======================================================================
                 
                 ; "W: FOO.ASM -> SRC/FOO.ASM"
- 044F 114C09    SAYXFR: LXI     D,MPFX
- 0452 0E09              MVI     C,PRSTR
- 0454 CD0500            CALL    BDOS
- 0457 CD0505            CALL    PRFCB
- 045A 115009            LXI     D,MARROW
- 045D 0E09              MVI     C,PRSTR
- 045F CD0500            CALL    BDOS
- 0462 217D0B            LXI     H,HNAME
- 0465 CDF604            CALL    PSTR
- 0468 3A530B            LDA     AUTO
- 046B B7                ORA     A
- 046C CA7704            JZ      SX1
- 046F 115509            LXI     D,MBYEXT        ; " (text, by extension)"
- 0472 0E09              MVI     C,PRSTR
- 0474 CD0500            CALL    BDOS
- 0477 118309    SX1:    LXI     D,MCRLF
- 047A 0E09              MVI     C,PRSTR
- 047C C30500            JMP     BDOS
+ 04A4 11EC09    SAYXFR: LXI     D,MPFX
+ 04A7 0E09              MVI     C,PRSTR
+ 04A9 CD0500            CALL    BDOS
+ 04AC CD5A05            CALL    PRFCB
+ 04AF 11F009            LXI     D,MARROW
+ 04B2 0E09              MVI     C,PRSTR
+ 04B4 CD0500            CALL    BDOS
+ 04B7 21D40B            LXI     H,HNAME
+ 04BA CD4B05            CALL    PSTR
+ 04BD 3AAA0B            LDA     AUTO
+ 04C0 B7                ORA     A
+ 04C1 CACC04            JZ      SX1
+ 04C4 11F509            LXI     D,MBYEXT        ; " (text, by extension)"
+ 04C7 0E09              MVI     C,PRSTR
+ 04C9 CD0500            CALL    BDOS
+ 04CC 11230A    SX1:    LXI     D,MCRLF
+ 04CF 0E09              MVI     C,PRSTR
+ 04D1 C30500            JMP     BDOS
                 
                 ; "  12 records, 1493 bytes"
- 047F 2A540B    SAYREC: LHLD    RECS
- 0482 CD4B05            CALL    PRDEC
- 0485 116B09            LXI     D,MRECS         ; " records, "
- 0488 0E09              MVI     C,PRSTR
- 048A CD0500            CALL    BDOS
- 048D CDA904            CALL    PRBYT           ; the exact number of bytes we sent to the host
- 0490 117609            LXI     D,MBYTES        ; " bytes",CR,LF
- 0493 0E09              MVI     C,PRSTR
- 0495 C30500            JMP     BDOS
+ 04D4 2AAB0B    SAYREC: LHLD    RECS
+ 04D7 CDA005            CALL    PRDEC
+ 04DA 110B0A            LXI     D,MRECS         ; " records, "
+ 04DD 0E09              MVI     C,PRSTR
+ 04DF CD0500            CALL    BDOS
+ 04E2 CDFE04            CALL    PRBYT           ; the exact number of bytes we sent to the host
+ 04E5 11160A            LXI     D,MBYTES        ; " bytes",CR,LF
+ 04E8 0E09              MVI     C,PRSTR
+ 04EA C30500            JMP     BDOS
                 
                 ;-----------------------------------------------------------------------
                 ; INCBYT -- add one to the 24-bit counter at BYTES. Touches only HL (saved
                 ; and restored) and the flags, so A, B and C survive the copy loop.
                 ;-----------------------------------------------------------------------
- 0498 E5        INCBYT: PUSH    H
- 0499 21560B            LXI     H,BYTES
- 049C 34                INR     M
- 049D C2A704            JNZ     IB1             ; no carry out of the low byte -- done
- 04A0 23                INX     H
- 04A1 34                INR     M
- 04A2 C2A704            JNZ     IB1
- 04A5 23                INX     H
- 04A6 34                INR     M
- 04A7 E1        IB1:    POP     H
- 04A8 C9                RET
+ 04ED E5        INCBYT: PUSH    H
+ 04EE 21AD0B            LXI     H,BYTES
+ 04F1 34                INR     M
+ 04F2 C2FC04            JNZ     IB1             ; no carry out of the low byte -- done
+ 04F5 23                INX     H
+ 04F6 34                INR     M
+ 04F7 C2FC04            JNZ     IB1
+ 04FA 23                INX     H
+ 04FB 34                INR     M
+ 04FC E1        IB1:    POP     H
+ 04FD C9                RET
                 
                 ;-----------------------------------------------------------------------
                 ; PRBYT -- print the 24-bit value at BYTES in decimal, the same backwards-
                 ; into-the-buffer way PRDEC prints HL. Divides BYTES by ten in place.
                 ;-----------------------------------------------------------------------
- 04A9 11AA0C    PRBYT:  LXI     D,NUMEND
- 04AC 3E24              MVI     A,'$'
- 04AE 12                STAX    D
- 04AF 1B        PRB1:   DCX     D
- 04B0 D5                PUSH    D               ; DIV10T eats DE
- 04B1 CDC904            CALL    DIV10T          ; BYTES = BYTES/10, A = the remainder
- 04B4 D1                POP     D
- 04B5 C630              ADI     '0'
- 04B7 12                STAX    D
- 04B8 3A560B            LDA     BYTES           ; anything left?
- 04BB 21570B            LXI     H,BYTES+1
- 04BE B6                ORA     M
- 04BF 23                INX     H
- 04C0 B6                ORA     M
- 04C1 C2AF04            JNZ     PRB1
- 04C4 0E09              MVI     C,PRSTR
- 04C6 C30500            JMP     BDOS
+ 04FE 11430D    PRBYT:  LXI     D,NUMEND
+ 0501 3E24              MVI     A,'$'
+ 0503 12                STAX    D
+ 0504 1B        PRB1:   DCX     D
+ 0505 D5                PUSH    D               ; DIV10T eats DE
+ 0506 CD1E05            CALL    DIV10T          ; BYTES = BYTES/10, A = the remainder
+ 0509 D1                POP     D
+ 050A C630              ADI     '0'
+ 050C 12                STAX    D
+ 050D 3AAD0B            LDA     BYTES           ; anything left?
+ 0510 21AE0B            LXI     H,BYTES+1
+ 0513 B6                ORA     M
+ 0514 23                INX     H
+ 0515 B6                ORA     M
+ 0516 C20405            JNZ     PRB1
+ 0519 0E09              MVI     C,PRSTR
+ 051B C30500            JMP     BDOS
                 
                 ; DIV10T -- BYTES (24-bit) = BYTES/10, remainder returned in A. Long
                 ; division from the top byte down: a running remainder r<10 makes
                 ; r*256+byte < 2560, which fits in DE, so each byte is one small divide.
- 04C9 AF        DIV10T: XRA     A               ; the running remainder starts at 0
- 04CA 21580B            LXI     H,BYTES+2       ; most significant byte first
- 04CD CDD804            CALL    DT1
- 04D0 2B                DCX     H
- 04D1 CDD804            CALL    DT1
- 04D4 2B                DCX     H
- 04D5 C3D804            JMP     DT1             ; tail: A = the final remainder
+ 051E AF        DIV10T: XRA     A               ; the running remainder starts at 0
+ 051F 21AF0B            LXI     H,BYTES+2       ; most significant byte first
+ 0522 CD2D05            CALL    DT1
+ 0525 2B                DCX     H
+ 0526 CD2D05            CALL    DT1
+ 0529 2B                DCX     H
+ 052A C32D05            JMP     DT1             ; tail: A = the final remainder
                 
                 ; DT1 -- acc = A*256 + (HL); (HL) = acc/10; A = acc MOD 10.  HL is left
                 ; where it was, so DIV10T just steps it down a byte between calls.
- 04D8 57        DT1:    MOV     D,A             ; DE = acc, D the high byte (< 10)
- 04D9 5E                MOV     E,M
- 04DA 0600              MVI     B,0             ; the quotient byte
- 04DC 7A        DT2:    MOV     A,D
- 04DD B7                ORA     A
- 04DE C2E704            JNZ     DT3             ; high byte set -> acc >= 256, so >= 10
- 04E1 7B                MOV     A,E
- 04E2 FE0A              CPI     10
- 04E4 DAF304            JC      DT4             ; acc < 10 -> E is the remainder
- 04E7 7B        DT3:    MOV     A,E
- 04E8 D60A              SUI     10
- 04EA 5F                MOV     E,A
- 04EB 7A                MOV     A,D
- 04EC DE00              SBI     0
- 04EE 57                MOV     D,A
- 04EF 04                INR     B
- 04F0 C3DC04            JMP     DT2
- 04F3 70        DT4:    MOV     M,B             ; store the quotient byte back in place
- 04F4 7B                MOV     A,E             ; the remainder feeds the next byte down
- 04F5 C9                RET
+ 052D 57        DT1:    MOV     D,A             ; DE = acc, D the high byte (< 10)
+ 052E 5E                MOV     E,M
+ 052F 0600              MVI     B,0             ; the quotient byte
+ 0531 7A        DT2:    MOV     A,D
+ 0532 B7                ORA     A
+ 0533 C23C05            JNZ     DT3             ; high byte set -> acc >= 256, so >= 10
+ 0536 7B                MOV     A,E
+ 0537 FE0A              CPI     10
+ 0539 DA4805            JC      DT4             ; acc < 10 -> E is the remainder
+ 053C 7B        DT3:    MOV     A,E
+ 053D D60A              SUI     10
+ 053F 5F                MOV     E,A
+ 0540 7A                MOV     A,D
+ 0541 DE00              SBI     0
+ 0543 57                MOV     D,A
+ 0544 04                INR     B
+ 0545 C33105            JMP     DT2
+ 0548 70        DT4:    MOV     M,B             ; store the quotient byte back in place
+ 0549 7B                MOV     A,E             ; the remainder feeds the next byte down
+ 054A C9                RET
                 
                 ; PSTR -- print the NUL-terminated string at HL.
                 ; HL is pushed around the BDOS call because BDOS EATS EVERY REGISTER.
- 04F6 7E        PSTR:   MOV     A,M
- 04F7 B7                ORA     A
- 04F8 C8                RZ
- 04F9 E5                PUSH    H
- 04FA 5F                MOV     E,A
- 04FB 0E02              MVI     C,CONOUT
- 04FD CD0500            CALL    BDOS
- 0500 E1                POP     H
- 0501 23                INX     H
- 0502 C3F604            JMP     PSTR
+ 054B 7E        PSTR:   MOV     A,M
+ 054C B7                ORA     A
+ 054D C8                RZ
+ 054E E5                PUSH    H
+ 054F 5F                MOV     E,A
+ 0550 0E02              MVI     C,CONOUT
+ 0552 CD0500            CALL    BDOS
+ 0555 E1                POP     H
+ 0556 23                INX     H
+ 0557 C34B05            JMP     PSTR
                 
                 ; PRFCB -- print the FCB as "d:NAME.EXT".
- 0505 3A590B    PRFCB:  LDA     FCB
- 0508 B7                ORA     A
- 0509 CA1605            JZ      PF1             ; drive 0 = "the current one"; do not print it
- 050C C640              ADI     'A'-1
- 050E CD4505            CALL    PUTCH
- 0511 3E3A              MVI     A,':'
- 0513 CD4505            CALL    PUTCH
- 0516 215A0B    PF1:    LXI     H,FCB+1
- 0519 0608              MVI     B,8
- 051B CD3005            CALL    PFLD
- 051E 3A620B            LDA     FCB+9
- 0521 E67F              ANI     7FH             ; an attribute bit, not a letter -- see FLD
- 0523 FE20              CPI     ' '
- 0525 C8                RZ                      ; no extension: nothing to print
- 0526 3E2E              MVI     A,'.'
- 0528 CD4505            CALL    PUTCH
- 052B 21620B            LXI     H,FCB+9
- 052E 0603              MVI     B,3
- 0530 7E        PFLD:   MOV     A,M             ; print B characters at HL, skipping the
- 0531 E67F              ANI     7FH             ; (no attribute bits -- see FLD)
- 0533 FE20              CPI     ' '             ; blanks an FCB pads with
- 0535 CA3F05            JZ      PFL2
- 0538 C5                PUSH    B
- 0539 E5                PUSH    H
- 053A CD4505            CALL    PUTCH
- 053D E1                POP     H
- 053E C1                POP     B
- 053F 23        PFL2:   INX     H
- 0540 05                DCR     B
- 0541 C23005            JNZ     PFLD
- 0544 C9                RET
+ 055A 3AB00B    PRFCB:  LDA     FCB
+ 055D B7                ORA     A
+ 055E CA6B05            JZ      PF1             ; drive 0 = "the current one"; do not print it
+ 0561 C640              ADI     'A'-1
+ 0563 CD9A05            CALL    PUTCH
+ 0566 3E3A              MVI     A,':'
+ 0568 CD9A05            CALL    PUTCH
+ 056B 21B10B    PF1:    LXI     H,FCB+1
+ 056E 0608              MVI     B,8
+ 0570 CD8505            CALL    PFLD
+ 0573 3AB90B            LDA     FCB+9
+ 0576 E67F              ANI     7FH             ; an attribute bit, not a letter -- see FLD
+ 0578 FE20              CPI     ' '
+ 057A C8                RZ                      ; no extension: nothing to print
+ 057B 3E2E              MVI     A,'.'
+ 057D CD9A05            CALL    PUTCH
+ 0580 21B90B            LXI     H,FCB+9
+ 0583 0603              MVI     B,3
+ 0585 7E        PFLD:   MOV     A,M             ; print B characters at HL, skipping the
+ 0586 E67F              ANI     7FH             ; (no attribute bits -- see FLD)
+ 0588 FE20              CPI     ' '             ; blanks an FCB pads with
+ 058A CA9405            JZ      PFL2
+ 058D C5                PUSH    B
+ 058E E5                PUSH    H
+ 058F CD9A05            CALL    PUTCH
+ 0592 E1                POP     H
+ 0593 C1                POP     B
+ 0594 23        PFL2:   INX     H
+ 0595 05                DCR     B
+ 0596 C28505            JNZ     PFLD
+ 0599 C9                RET
                 
- 0545 5F        PUTCH:  MOV     E,A
- 0546 0E02              MVI     C,CONOUT
- 0548 C30500            JMP     BDOS
+ 059A 5F        PUTCH:  MOV     E,A
+ 059B 0E02              MVI     C,CONOUT
+ 059D C30500            JMP     BDOS
                 
                 ;-----------------------------------------------------------------------
                 ; PRDEC -- print HL in decimal.
@@ -960,43 +1040,43 @@
                 ; Built backwards from the end of a buffer, so no digit reversal is needed,
                 ; and terminated with '$' so BDOS 9 prints the whole thing in one call.
                 ;-----------------------------------------------------------------------
- 054B 11AA0C    PRDEC:  LXI     D,NUMEND
- 054E 3E24              MVI     A,'$'
- 0550 12                STAX    D
- 0551 1B        PD1:    DCX     D
- 0552 CD6205            CALL    DIV10           ; HL = HL/10, A = the remainder
- 0555 C630              ADI     '0'
- 0557 12                STAX    D
- 0558 7C                MOV     A,H
- 0559 B5                ORA     L
- 055A C25105            JNZ     PD1             ; ...until nothing is left
- 055D 0E09              MVI     C,PRSTR
- 055F C30500            JMP     BDOS            ; DE already points at the first digit
+ 05A0 11430D    PRDEC:  LXI     D,NUMEND
+ 05A3 3E24              MVI     A,'$'
+ 05A5 12                STAX    D
+ 05A6 1B        PD1:    DCX     D
+ 05A7 CDB705            CALL    DIV10           ; HL = HL/10, A = the remainder
+ 05AA C630              ADI     '0'
+ 05AC 12                STAX    D
+ 05AD 7C                MOV     A,H
+ 05AE B5                ORA     L
+ 05AF C2A605            JNZ     PD1             ; ...until nothing is left
+ 05B2 0E09              MVI     C,PRSTR
+ 05B4 C30500            JMP     BDOS            ; DE already points at the first digit
                 
                 ; DIV10 -- HL = HL/10, A = the remainder. The 8080 has no divide, so this
                 ; is repeated subtraction. A record count is small and this is not a hot
                 ; loop.
- 0562 C5        DIV10:  PUSH    B
- 0563 010000            LXI     B,0
- 0566 7C        DV1:    MOV     A,H
- 0567 B7                ORA     A
- 0568 C27105            JNZ     DV2             ; H nonzero -> definitely >= 10
- 056B 7D                MOV     A,L
- 056C FE0A              CPI     10
- 056E DA7D05            JC      DV3             ; < 10: what is left is the remainder
- 0571 7D        DV2:    MOV     A,L
- 0572 D60A              SUI     10
- 0574 6F                MOV     L,A
- 0575 7C                MOV     A,H
- 0576 DE00              SBI     0
- 0578 67                MOV     H,A
- 0579 03                INX     B
- 057A C36605            JMP     DV1
- 057D 7D        DV3:    MOV     A,L             ; the remainder -- grab it BEFORE clobbering L
- 057E 60                MOV     H,B
- 057F 69                MOV     L,C             ; HL = the quotient
- 0580 C1                POP     B
- 0581 C9                RET
+ 05B7 C5        DIV10:  PUSH    B
+ 05B8 010000            LXI     B,0
+ 05BB 7C        DV1:    MOV     A,H
+ 05BC B7                ORA     A
+ 05BD C2C605            JNZ     DV2             ; H nonzero -> definitely >= 10
+ 05C0 7D                MOV     A,L
+ 05C1 FE0A              CPI     10
+ 05C3 DAD205            JC      DV3             ; < 10: what is left is the remainder
+ 05C6 7D        DV2:    MOV     A,L
+ 05C7 D60A              SUI     10
+ 05C9 6F                MOV     L,A
+ 05CA 7C                MOV     A,H
+ 05CB DE00              SBI     0
+ 05CD 67                MOV     H,A
+ 05CE 03                INX     B
+ 05CF C3BB05            JMP     DV1
+ 05D2 7D        DV3:    MOV     A,L             ; the remainder -- grab it BEFORE clobbering L
+ 05D3 60                MOV     H,B
+ 05D4 69                MOV     L,C             ; HL = the quotient
+ 05D5 C1                POP     B
+ 05D6 C9                RET
                 
                 ;=======================================================================
                 ; ERRORS
@@ -1005,129 +1085,130 @@
                 ; ARE JUMP TARGETS AND NOT SUBROUTINES. The stack is empty there, so a RET
                 ; would pop garbage and execute it. ENOCPM is the only one reached from
                 ; inside ONEF -- which WAS called -- so it is the only one that may return.
- 0582 116006    USAGE:  LXI     D,MUSAGE
- 0585 0E09              MVI     C,PRSTR
- 0587 CD0500            CALL    BDOS
- 058A C30000            JMP     0
+ 05D7 11B506    USAGE:  LXI     D,MUSAGE
+ 05DA 0E09              MVI     C,PRSTR
+ 05DC CD0500            CALL    BDOS
+ 05DF C30000            JMP     0
                 
- 058D 118609    EWILD:  LXI     D,MEWILD
- 0590 0E09              MVI     C,PRSTR
- 0592 CD0500            CALL    BDOS
- 0595 C30000            JMP     0
+ 05E2 11260A    ELONG:  LXI     D,MELONG
+ 05E5 0E09              MVI     C,PRSTR
+ 05E7 CD0500            CALL    BDOS
+ 05EA C30000            JMP     0
                 
- 0598 11F109    EBADSW: LXI     D,MEBADSW
- 059B 0E09              MVI     C,PRSTR
- 059D CD0500            CALL    BDOS
- 05A0 C30000            JMP     0
+ 05ED 11480A    EBADSW: LXI     D,MEBADSW
+ 05F0 0E09              MVI     C,PRSTR
+ 05F2 CD0500            CALL    BDOS
+ 05F5 C30000            JMP     0
                 
- 05A3 11300A    ENOMAT: LXI     D,MENOMAT
- 05A6 0E09              MVI     C,PRSTR
- 05A8 CD0500            CALL    BDOS
- 05AB C30000            JMP     0
+ 05F8 11870A    ENOMAT: LXI     D,MENOMAT
+ 05FB 0E09              MVI     C,PRSTR
+ 05FD CD0500            CALL    BDOS
+ 0600 C30000            JMP     0
                 
- 05AE 114B0A    ETOOMNY:LXI     D,METOOM
- 05B1 0E09              MVI     C,PRSTR
- 05B3 CD0500            CALL    BDOS
- 05B6 C30000            JMP     0
+ 0603 11A20A    ETOOMNY:LXI     D,METOOM
+ 0606 0E09              MVI     C,PRSTR
+ 0608 CD0500            CALL    BDOS
+ 060B C30000            JMP     0
                 
                 ; Print the message, return with CARRY SET so a wildcard walk can go on to
                 ; the next file instead of giving up on all of them.
- 05B9 11BA0A    ENOCPM: LXI     D,MENOCPM
- 05BC 0E09              MVI     C,PRSTR
- 05BE CD0500            CALL    BDOS
- 05C1 37                STC
- 05C2 C9                RET
+ 060E 11110B    ENOCPM: LXI     D,MENOCPM
+ 0611 0E09              MVI     C,PRSTR
+ 0613 CD0500            CALL    BDOS
+ 0616 37                STC
+ 0617 C9                RET
                 
                 ;=======================================================================
                 ; DATA
                 ;=======================================================================
- 05C3 414C544149IDWANT: DB      'ALTAIRSIM HOSTBRIDGE',0
+ 0618 414C544149IDWANT: DB      'ALTAIRSIM HOSTBRIDGE',0
                 
- 05D8 42        MODE:   DB      'B'             ; the switch, when one was given
- 05D9 00        MODSET: DB      0               ; 1 = a switch was given. A DB, not a DS: it
+ 062D 42        MODE:   DB      'B'             ; the switch, when one was given
+ 062E 00        MODSET: DB      0               ; 1 = a switch was given. A DB, not a DS: it
                                                 ; must be 0 when we start, and a DS is not
                                                 ; in the .COM file at all
                 
                 ; The extensions that mean TEXT when no switch is given. Three characters
                 ; each, and a 0 ends the table. See the top for why it lists text and not
                 ; binary, and why .BAS and .DOC are not here.
- 05DA 41534D4D41EXTTAB: DB      'ASM','MAC','Z80','HEX','PRN'
- 05E9 4C53545359        DB      'LST','SYM','INC','SUB','TXT'
- 05F8 00                DB      0
- 05F9 00        DRIVE:  DB      0
+ 062F 41534D4D41EXTTAB: DB      'ASM','MAC','Z80','HEX','PRN'
+ 063E 4C53545359        DB      'LST','SYM','INC','SUB','TXT'
+ 064D 00                DB      0
+ 064E 00        DRIVE:  DB      0
                 
- 05FA 0D0A573A20MNOHB:  DB      CR,LF,'W: no host bridge at B0H.',CR,LF
- 0617 5468697320        DB      'This machine has no `hostbridge` card in it, or it is at'
- 064F 20616E6F74        DB      ' another port.',CR,LF,'$'
+ 064F 0D0A573A20MNOHB:  DB      CR,LF,'W: no host bridge at B0H.',CR,LF
+ 066C 5468697320        DB      'This machine has no `hostbridge` card in it, or it is at'
+ 06A4 20616E6F74        DB      ' another port.',CR,LF,'$'
                 
- 0660 0D0A57202DMUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.2)',CR,LF,CR,LF
- 0698 2020205720        DB      '   W <cpmfile> [hostfile] [B|T]',CR,LF
- 06B9 2020205720        DB      '   W <pattern> [B|T]',CR,LF,CR,LF
- 06D1 4578616D70        DB      'Examples',CR,LF
- 06DB 2020205720        DB      '   W FOO.ASM            CP/M FOO.ASM -> host FOO.ASM',CR,LF
- 0711 2020205720        DB      '   W FOO.ASM SRC/F.ASM  ...into a subdirectory of hostdir',CR,LF
- 074C 2020205720        DB      '   W FOO.DAT T          stop at the first ^Z',CR,LF
- 077A 2020205720        DB      '   W *.*                every match, each under its own name'
- 07B6 0D0A0D0A          DB      CR,LF,CR,LF
- 07BA 4220636F70        DB      'B copies every byte of every record, so a text file arrives'
- 07F5 2077697468        DB      ' with',CR,LF
- 07FC 7468652072        DB      'the rest of its last record: a ^Z and whatever follows it.'
- 0836 0D0A              DB      CR,LF
- 0838 542073746F        DB      'T stops at the first ^Z, which TRUNCATES anything binary.'
- 0871 0D0A              DB      CR,LF
- 0873 5769746820        DB      'With neither, the extension decides. These are text:',CR,LF
- 08A9 2020204153        DB      '   ASM MAC Z80 HEX PRN LST SYM INC SUB TXT',CR,LF
- 08D5 4576657279        DB      'Every other file, a .COM included, is copied byte for byte.'
- 0910 0D0A              DB      CR,LF
- 0912 4844495220        DB      'HDIR lists what is on the host. R copies the other way.'
- 0949 0D0A24            DB      CR,LF,'$'
+ 06B5 0D0A57202DMUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.3)',CR,LF,CR,LF
+ 06ED 2020205720        DB      '   W <cpmfile> [hostfile] [B|T]',CR,LF
+ 070E 2020205720        DB      '   W <pattern> [hostfolder] [B|T]',CR,LF,CR,LF
+ 0733 4578616D70        DB      'Examples',CR,LF
+ 073D 2020205720        DB      '   W FOO.ASM            CP/M FOO.ASM -> host FOO.ASM',CR,LF
+ 0773 2020205720        DB      '   W FOO.ASM SRC/F.ASM  ...into a subdirectory of hostdir',CR,LF
+ 07AE 2020205720        DB      '   W FOO.DAT T          stop at the first ^Z',CR,LF
+ 07DC 2020205720        DB      '   W *.*                every match, each under its own name'
+ 0818 0D0A              DB      CR,LF
+ 081A 2020205720        DB      '   W *.ASM SRC          ...into folder SRC, which must exist'
+ 0856 0D0A0D0A          DB      CR,LF,CR,LF
+ 085A 4220636F70        DB      'B copies every byte of every record, so a text file arrives'
+ 0895 2077697468        DB      ' with',CR,LF
+ 089C 7468652072        DB      'the rest of its last record: a ^Z and whatever follows it.'
+ 08D6 0D0A              DB      CR,LF
+ 08D8 542073746F        DB      'T stops at the first ^Z, which TRUNCATES anything binary.'
+ 0911 0D0A              DB      CR,LF
+ 0913 5769746820        DB      'With neither, the extension decides. These are text:',CR,LF
+ 0949 2020204153        DB      '   ASM MAC Z80 HEX PRN LST SYM INC SUB TXT',CR,LF
+ 0975 4576657279        DB      'Every other file, a .COM included, is copied byte for byte.'
+ 09B0 0D0A              DB      CR,LF
+ 09B2 4844495220        DB      'HDIR lists what is on the host. R copies the other way.'
+ 09E9 0D0A24            DB      CR,LF,'$'
                 
- 094C 573A2024  MPFX:   DB      'W: $'
- 0950 202D3E2024MARROW: DB      ' -> $'
- 0955 2028746578MBYEXT: DB      ' (text, by extension)$'
- 096B 207265636FMRECS:  DB      ' records, $'
- 0976 2062797465MBYTES: DB      ' bytes',CR,LF,'$'
- 097F 573A2024  MERR:   DB      'W: $'
- 0983 0D0A24    MCRLF:  DB      CR,LF,'$'
+ 09EC 573A2024  MPFX:   DB      'W: $'
+ 09F0 202D3E2024MARROW: DB      ' -> $'
+ 09F5 2028746578MBYEXT: DB      ' (text, by extension)$'
+ 0A0B 207265636FMRECS:  DB      ' records, $'
+ 0A16 2062797465MBYTES: DB      ' bytes',CR,LF,'$'
+ 0A1F 573A2024  MERR:   DB      'W: $'
+ 0A23 0D0A24    MCRLF:  DB      CR,LF,'$'
                 
- 0986 573A206120MEWILD: DB      'W: a wildcard copies each file under its own name -- so a'
- 09BF 207365636F        DB      ' second name',CR,LF,'   cannot mean anything. Drop it.'
- 09EE 0D0A24            DB      CR,LF,'$'
- 09F1 573A207468MEBADSW:DB      'W: the switch is B (every byte) or T (stop at the first ^Z).'
- 0A2D 0D0A24            DB      CR,LF,'$'
- 0A30 573A206E6FMENOMAT:DB      'W: no CP/M file matches.',CR,LF,'$'
- 0A4B 573A206D6FMETOOM: DB      'W: more than 64 files match. Narrow the pattern.',CR,LF
- 0A7D 2020204E6F        DB      '   Nothing was copied -- half a backup is worse than none.'
- 0AB7 0D0A24            DB      CR,LF,'$'
- 0ABA 573A206E6FMENOCPM:DB      'W: no such CP/M file.',CR,LF,'$'
+ 0A26 573A207468MELONG: DB      'W: the folder name is too long.',CR,LF,'$'
+ 0A48 573A207468MEBADSW:DB      'W: the switch is B (every byte) or T (stop at the first ^Z).'
+ 0A84 0D0A24            DB      CR,LF,'$'
+ 0A87 573A206E6FMENOMAT:DB      'W: no CP/M file matches.',CR,LF,'$'
+ 0AA2 573A206D6FMETOOM: DB      'W: more than 64 files match. Narrow the pattern.',CR,LF
+ 0AD4 2020204E6F        DB      '   Nothing was copied -- half a backup is worse than none.'
+ 0B0E 0D0A24            DB      CR,LF,'$'
+ 0B11 573A206E6FMENOCPM:DB      'W: no such CP/M file.',CR,LF,'$'
                 
                 ;---- Variables -------------------------------------------------------
                 ; THE DMA BUFFER -- one CP/M record. BDOS reads each record INTO here (we
                 ; point it at this with FSETDMA), and COPY hands it to the card a byte at a
                 ; time. BDOS SEARCH also uses it, for the directory sector it found.
- 0AD2           BUF:    DS      RECLEN
+ 0B29           BUF:    DS      RECLEN
                 
- 0B52           XMODE:  DS      1               ; B or T for the file in flight -- see PICKMD
- 0B53           AUTO:   DS      1               ; 1 = the extension chose T, so SAYXFR says so
- 0B54           RECS:   DS      2               ; records read from CP/M
- 0B56           BYTES:  DS      3               ; and the true byte count, 24 bits: even the card's
+ 0BA9           XMODE:  DS      1               ; B or T for the file in flight -- see PICKMD
+ 0BAA           AUTO:   DS      1               ; 1 = the extension chose T, so SAYXFR says so
+ 0BAB           RECS:   DS      2               ; records read from CP/M
+ 0BAD           BYTES:  DS      3               ; and the true byte count, 24 bits: even the card's
                                                 ; 8 MB ceiling needs more than RECS's 16
- 0B59           FCB:    DS      36              ; ours, copied out of the CCP's -- see INIFCB
- 0B7D           HNAME:  DS      HNMAX+1         ; the host name (given, or derived)
- 0BBE           CNAME:  DS      HNMAX+1         ; the first word of the tail, as typed
- 0BFF           TOK2:   DS      HNMAX+1
- 0C40           TOK3:   DS      HNMAX+1
- 0C81           IDBUF:  DS      IDMAX+1         ; what the card said its name was
- 0CA2           NUMBUF: DS      8               ; wide enough for a 24-bit count: 16777215 is 8 digits
- 0CAA           NUMEND: DS      1               ; PRDEC and PRBYT build backwards from here
+ 0BB0           FCB:    DS      36              ; ours, copied out of the CCP's -- see INIFCB
+ 0BD4           HNAME:  DS      HNMAX+1         ; the host name (given, or derived)
+ 0C15           HDIRP:  DS      HNMAX+2         ; a wildcard's host folder, "SRC/" -- see SETDIR
+ 0C57           CNAME:  DS      HNMAX+1         ; the first word of the tail, as typed
+ 0C98           TOK2:   DS      HNMAX+1
+ 0CD9           TOK3:   DS      HNMAX+1
+ 0D1A           IDBUF:  DS      IDMAX+1         ; what the card said its name was
+ 0D3B           NUMBUF: DS      8               ; wide enough for a 24-bit count: 16777215 is 8 digits
+ 0D43           NUMEND: DS      1               ; PRDEC and PRBYT build backwards from here
                 
- 0CAB           NCNT:   DS      1               ; how many wildcard matches we found
- 0CAC           DONE:   DS      1               ; how many of them we have copied
- 0CAD           NPTR:   DS      2               ; the collect cursor into NAMES
- 0CAF           CPTR:   DS      2               ; the copy cursor into NAMES
- 0CB1           NAMES:  DS      MAXN*11         ; eleven characters each, no dot, no drive
+ 0D44           NCNT:   DS      1               ; how many wildcard matches we found
+ 0D45           DONE:   DS      1               ; how many of them we have copied
+ 0D46           NPTR:   DS      2               ; the collect cursor into NAMES
+ 0D48           CPTR:   DS      2               ; the copy cursor into NAMES
+ 0D4A           NAMES:  DS      MAXN*11         ; eleven characters each, no dot, no drive
                 
- 0F71                   DS      64              ; stack: BDOS is the deepest thing we call
- 0FB1 =         STACK   EQU     $
+ 100A                   DS      64              ; stack: BDOS is the deepest thing we call
+ 104A =         STACK   EQU     $
                 
- 0FB1                   END     START
+ 104A                   END     START

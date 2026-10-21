@@ -175,7 +175,7 @@ static void fromErrno(const std::error_code& ec, HbFail& err) {
 // that CP/M's CCP destroys the case of the name before the guest program runs, so an
 // exact-match-only card could never open `readme.txt` from a CP/M prompt.
 bool RealHostDir::findCaseInsensitive(const std::string& canonRoot, const std::string& name,
-                                      std::string& out, HbFail& err) const {
+                                      bool dirsOnly, std::string& out, HbFail& err) const {
     std::error_code ec;
 
     auto foldeq = [](const std::string& a, const std::string& b) {
@@ -188,7 +188,9 @@ bool RealHostDir::findCaseInsensitive(const std::string& canonRoot, const std::s
     std::vector<std::string> hits;
     for (fs::directory_iterator it(canonRoot, ec), end; !ec && it != end; it.increment(ec)) {
         std::error_code ec2;
-        if (!fs::is_regular_file(it->path(), ec2) || ec2) continue;
+        const bool isDir = fs::is_directory(it->path(), ec2) && !ec2;
+        const bool isFile = !dirsOnly && fs::is_regular_file(it->path(), ec2) && !ec2;
+        if (!isDir && !isFile) continue;
         std::string have = it->path().filename().string();
         if (foldeq(have, name)) hits.push_back(have);
     }
@@ -258,32 +260,35 @@ bool RealHostDir::resolve(const std::string& name, bool mustExist, std::string& 
 
     // Build the path a component at a time. `parts` has already been proved free of
     // `..`, of absolutes and of drive letters, so this can only ever go DOWN.
-    fs::path target = canonRoot;
-    for (const std::string& p : parts) target /= p;
-
-    // THE CASE-FOLDED FALLBACK (hostdir.h). An exact match always wins; only when
-    // there is none do we fold and look again -- so a host that HAS `README.TXT` is
-    // never surprised, and a host that only has `readme.txt` is still reachable from a
-    // CP/M prompt that cannot type it.
     //
-    // The fold applies to the FINAL component, in whatever directory the earlier
-    // components landed in. That is enough for the case CP/M actually creates (the CCP
-    // upper-cased the name the user typed); folding intermediate directories too would
-    // multiply the directory scans for a case nobody has hit.
-    if (!fs::exists(target, ec)) {
-        std::string found;
-        HbFail      f;
-        if (findCaseInsensitive(target.parent_path().string(), parts.back(), found, f)) {
-            target = fs::path(found);
-        } else if (f.code == HbError::Ambiguous) {
-            err = f;  // never guess between two files
-            return false;
-        } else if (mustExist) {
-            err = f;  // NotFound, and it names the file
-            return false;
+    // THE CASE-FOLDED FALLBACK (hostdir.h), ON EVERY PART. An exact match always wins;
+    // only when there is none do we fold and look again -- so a host that HAS
+    // `README.TXT` is never surprised, and a host that only has `readme.txt` is still
+    // reachable from a CP/M prompt that cannot type it. The folders on the way fold
+    // too: the CCP upper-cased `src` in `R SRC/FOO.ASM` just as it did `foo.asm`, and
+    // folding only the last part made every folder unreachable on a case-sensitive host
+    // unless its name was already upper case.
+    fs::path target = canonRoot;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const bool last = i + 1 == parts.size();
+        fs::path   next = target / parts[i];
+        if (!fs::exists(next, ec)) {
+            std::string found;
+            HbFail      f;
+            if (findCaseInsensitive(target.string(), parts[i], !last, found, f)) {
+                next = fs::path(found);
+            } else if (f.code == HbError::Ambiguous) {
+                err = f;  // never guess between two files, or two folders
+                return false;
+            } else if (mustExist) {
+                err = f;  // NotFound, and it names the part that is missing
+                return false;
+            }
+            // else: a WRITE of a name that does not exist in any case. That is a new
+            // file, and it gets the name the guest asked for, exactly as asked. (A
+            // missing folder on the way stays as typed too, and the write fails there.)
         }
-        // else: a WRITE of a name that does not exist in any case. That is a new file,
-        // and it gets the name the guest asked for, exactly as asked.
+        target = next;
     }
 
     // THE SYMLINK GATE, AND IT IS THE ONLY THING THAT CATCHES ONE.

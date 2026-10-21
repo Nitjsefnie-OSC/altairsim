@@ -18,6 +18,16 @@ whose name starts with `.`, such as `.DS_Store`. `R *.*` copied the file to the 
 file was hard to erase. Now a wildcard skips these files, as a host shell does. `HDIR .*`
 lists them, and `R .gitignore GITIGNOR.TXT` copies one.
 
+**`W` copies a wildcard into a host folder.** `W *.ASM SRC` writes each match into the host
+folder `SRC`, under its own name. Before, `W` refused a second word after a wildcard. The folder
+must exist. When it does not, `W` prints one error and copies nothing.
+
+**Host bridge folder names ignore case on Linux.** The board ignored case only in the last
+part of a host path. The CP/M command line is in upper case, so `R SRC/FOO.ASM` did not find
+the folder `src` on a case-sensitive host, and the copy failed. Now each
+part of the path ignores case, with the same rules as a file name. macOS and Windows were
+not affected.
+
 **The 88-VI/RTC keeps real time.** The board counted its 60 Hz and 10 kHz intervals in
 processor T-states. At flat out (`clock_hz = 0`, the default), the clock ticked as fast as the
 host ran the guest, and the MP/M II time of day ran fast. A guest that counted ticks for 2

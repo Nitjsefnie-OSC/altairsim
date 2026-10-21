@@ -2,7 +2,7 @@
 ; W.COM -- copy a file from CP/M out to the HOST.
 ;
 ;       W <cpmfile> [hostfile] [B|T]
-;       W <pattern> [B|T]               e.g.  W *.ASM     W B:*.*
+;       W <pattern> [hostfolder] [B|T]  e.g.  W *.ASM     W B:*.* OUT
 ;
 ; Part of the altairsim Host Bridge (src/boards/hostbridge.h,
 ; docs/boards/hostbridge.md). Assemble it INSIDE the machine:
@@ -104,6 +104,7 @@ HERR    EQU     10H             ; the last operation failed
 CIDENT  EQU     0
 CVOPENW EQU     2
 CCLOSE  EQU     3
+CDIRF   EQU     4
 CERROR  EQU     7
 CRESET  EQU     8
 
@@ -151,10 +152,14 @@ START:  LXI     SP,STACK
 ; MAXN names is the cap, and hitting it is an ERROR, not a silent stop --
 ; a backup that quietly copied the first 64 of your 200 files would be
 ; worse than one that refused.
+;
+; A SECOND WORD IS A HOST FOLDER. Each file keeps its own name, so the
+; only thing a second word can say is WHERE: `W *.ASM SRC` writes
+; SRC/FOO.ASM, as `cp *.asm src` would. The folder must exist. W does not
+; make it, and it asks the card once, BEFORE the first file, so a typo
+; costs one error line and not one per file.
 ;=======================================================================
-MANY:   LDA     HNAME
-        ORA     A
-        JNZ     EWILD           ; "W *.ASM FOO.TXT" cannot mean anything
+MANY:   CALL    SETDIR          ; HNAME, if given -> HDIRP, "SRC/" (exits if bad)
 
         XRA     A
         STA     NCNT
@@ -194,9 +199,8 @@ MN3:    LDA     DONE
         JZ      EXIT            ; every match done
 
         CALL    SETFCB          ; the next stashed name -> FCB
-        XRA     A
-        STA     HNAME           ; a FRESH host name is derived for each file:
-                                ; the previous one is still sitting there
+        CALL    DIRHN           ; a FRESH host name for each file: the folder,
+                                ; then the CP/M name
         CALL    ONEF            ; (it reports its own failures and carries on)
 
         LDA     DONE
@@ -205,6 +209,79 @@ MN3:    LDA     DONE
         JMP     MN3
 
 EXIT:   JMP     0               ; warm boot
+
+;-----------------------------------------------------------------------
+; SETDIR -- the folder a wildcard writes into: HNAME -> HDIRP.
+;
+; No second word: HDIRP is empty, and each file lands in hostdir itself.
+; Otherwise a `/` goes on the end unless one is there (`\` counts too, as
+; it does everywhere on this card), and the card is asked to list the
+; folder. A folder that is not there, or is a file, fails that listing
+; with the host's own words, and W stops before it has copied anything.
+;
+; THE FOLDER MUST LEAVE ROOM FOR AN 8.3 NAME. HNAME holds HNMAX characters,
+; and the longest CP/M name, "FILENAME.EXT", is 12 of them. A longer
+; folder is refused here, and not cut short half way through a file name.
+;-----------------------------------------------------------------------
+SETDIR: LXI     H,HNAME
+        LXI     D,HDIRP
+        MVI     B,0             ; B counts the characters copied
+SD1:    MOV     A,M
+        ORA     A
+        JZ      SD2
+        STAX    D
+        INX     H
+        INX     D
+        INR     B
+        JMP     SD1
+
+SD2:    MOV     A,B
+        ORA     A
+        JZ      SD9             ; no folder: HDIRP is just the NUL
+        DCX     H               ; the last character typed
+        MOV     A,M
+        CPI     '/'
+        JZ      SD3
+        CPI     '\'
+        JZ      SD3
+        MVI     A,'/'
+        STAX    D
+        INX     D
+        INR     B
+SD3:    MOV     A,B
+        CPI     HNMAX-12+1
+        JNC     ELONG           ; no room left for FILENAME.EXT
+        XRA     A
+        STAX    D
+
+; ASK THE CARD, ONCE. DIR_FIRST on "SRC/" lists the folder, and it is the
+; one command that fails on a folder that is not there without creating
+; or changing anything on the host.
+        MVI     A,CDIRF
+        OUT     HBCMD
+        LXI     H,HDIRP
+        CALL    SENDZ
+        IN      HBCMD
+        ANI     HERR
+        RZ                      ; the folder is there
+        CALL    REPERR          ; "W: NOPE: no such file"
+        JMP     0
+
+SD9:    STAX    D               ; A is 0
+        RET
+
+;-----------------------------------------------------------------------
+; DIRHN -- HNAME = the folder in HDIRP, then the name in the FCB.
+;-----------------------------------------------------------------------
+DIRHN:  LXI     H,HDIRP
+        LXI     D,HNAME
+DH1:    MOV     A,M
+        ORA     A
+        JZ      FCB2HN          ; tail call: DE is where the name goes
+        STAX    D
+        INX     H
+        INX     D
+        JMP     DH1
 
 ;=======================================================================
 ; ONEF -- copy the CP/M file described by FCB out to the host.
@@ -246,6 +323,7 @@ ONEF:   CALL    PICKMD          ; B or T for THIS file -- a wildcard asks again
         LDA     HNAME
         ORA     A
         JNZ     OF1             ; the user said what to call it
+        LXI     D,HNAME
         CALL    FCB2HN          ; ...or we name it after the CP/M file
 OF1:
 
@@ -536,11 +614,11 @@ SF1:    LDAX    D
 ;-----------------------------------------------------------------------
 ; FCB2HN -- name the host file after the CP/M one: FOO.ASM -> "FOO.ASM".
 ;
+; DE = where the name goes: HNAME, or the end of a folder already in it.
 ; The FCB pads both fields with SPACES, and no CP/M name may contain one,
 ; so a blank simply ends the field.
 ;-----------------------------------------------------------------------
 FCB2HN: LXI     H,FCB+1
-        LXI     D,HNAME
         MVI     B,8
         CALL    FLD
 
@@ -676,12 +754,14 @@ RPE2:   LXI     D,MCRLF
 ;       W *.* B                   a wildcard takes the switch too
 ;       W FOO.TXT BAR.TXT         CNAME=FOO.TXT HNAME=BAR.TXT
 ;       W FOO.TXT SRC/BAR.TXT T   ...and a subdirectory of hostdir
+;       W *.ASM SRC               with a wildcard: HNAME is a folder
 ;
 ; A LONE `B` OR `T` IN THE SECOND SLOT IS THE SWITCH, NOT A HOST NAME, and
 ; that is an ambiguity we are choosing rather than one we are missing: a
 ; host file really called `T` exists somewhere. Write it as `./T` and the
 ; card drops the `.` component -- so the escape hatch costs two characters
-; and no one has to learn a new syntax.
+; and no one has to learn a new syntax. A FOLDER called `B` or `T` is
+; written `B/`, which is two characters and is not a switch.
 ;
 ; The FCB comes from the CCP (see TFCB), so CNAME here is only ever used to
 ; answer "did the user type anything at all".
@@ -1008,7 +1088,7 @@ USAGE:  LXI     D,MUSAGE
         CALL    BDOS
         JMP     0
 
-EWILD:  LXI     D,MEWILD
+ELONG:  LXI     D,MELONG
         MVI     C,PRSTR
         CALL    BDOS
         JMP     0
@@ -1058,14 +1138,16 @@ MNOHB:  DB      CR,LF,'W: no host bridge at B0H.',CR,LF
         DB      'This machine has no `hostbridge` card in it, or it is at'
         DB      ' another port.',CR,LF,'$'
 
-MUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.2)',CR,LF,CR,LF
+MUSAGE: DB      CR,LF,'W -- copy a file from CP/M out to the host.  (1.3)',CR,LF,CR,LF
         DB      '   W <cpmfile> [hostfile] [B|T]',CR,LF
-        DB      '   W <pattern> [B|T]',CR,LF,CR,LF
+        DB      '   W <pattern> [hostfolder] [B|T]',CR,LF,CR,LF
         DB      'Examples',CR,LF
         DB      '   W FOO.ASM            CP/M FOO.ASM -> host FOO.ASM',CR,LF
         DB      '   W FOO.ASM SRC/F.ASM  ...into a subdirectory of hostdir',CR,LF
         DB      '   W FOO.DAT T          stop at the first ^Z',CR,LF
         DB      '   W *.*                every match, each under its own name'
+        DB      CR,LF
+        DB      '   W *.ASM SRC          ...into folder SRC, which must exist'
         DB      CR,LF,CR,LF
         DB      'B copies every byte of every record, so a text file arrives'
         DB      ' with',CR,LF
@@ -1088,9 +1170,7 @@ MBYTES: DB      ' bytes',CR,LF,'$'
 MERR:   DB      'W: $'
 MCRLF:  DB      CR,LF,'$'
 
-MEWILD: DB      'W: a wildcard copies each file under its own name -- so a'
-        DB      ' second name',CR,LF,'   cannot mean anything. Drop it.'
-        DB      CR,LF,'$'
+MELONG: DB      'W: the folder name is too long.',CR,LF,'$'
 MEBADSW:DB      'W: the switch is B (every byte) or T (stop at the first ^Z).'
         DB      CR,LF,'$'
 MENOMAT:DB      'W: no CP/M file matches.',CR,LF,'$'
@@ -1112,6 +1192,7 @@ BYTES:  DS      3               ; and the true byte count, 24 bits: even the car
                                 ; 8 MB ceiling needs more than RECS's 16
 FCB:    DS      36              ; ours, copied out of the CCP's -- see INIFCB
 HNAME:  DS      HNMAX+1         ; the host name (given, or derived)
+HDIRP:  DS      HNMAX+2         ; a wildcard's host folder, "SRC/" -- see SETDIR
 CNAME:  DS      HNMAX+1         ; the first word of the tail, as typed
 TOK2:   DS      HNMAX+1
 TOK3:   DS      HNMAX+1

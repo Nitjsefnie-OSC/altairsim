@@ -188,8 +188,13 @@ private:
     // `Makefile` and `makefile` in one directory -- we refuse with Ambiguous rather
     // than silently picking one, because there is no defensible way to choose and the
     // wrong choice is a corrupted transfer that looks like a successful one.
+    //
+    // EVERY PART OF A PATH FOLDS, not only the last: `W *.* OUT` and `R SRC/FOO.ASM`
+    // arrive upper-cased too, and on a case-sensitive host the folder is `out` or
+    // `src`. `dirsOnly` is set for a part that must be a folder (all but the last);
+    // the last part may be a file or a folder (`HDIR SRC/` names a folder last).
     bool findCaseInsensitive(const std::string& canonRoot, const std::string& name,
-                             std::string& out, HbFail& err) const;
+                             bool dirsOnly, std::string& out, HbFail& err) const;
 
     std::string root_;
 };
