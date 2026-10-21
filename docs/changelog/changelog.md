@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Host bridge wildcards skip dot files.** A wildcard in `R` and `HDIR` matched a host file
+whose name starts with `.`, such as `.DS_Store`. `R *.*` copied the file to the CP/M disk as
+` .DS_`, a name with an empty first part. You cannot type that name at the `A>` prompt, so the
+file was hard to erase. Now a wildcard skips these files, as a host shell does. `HDIR .*`
+lists them, and `R .gitignore GITIGNOR.TXT` copies one.
+
 **The 88-VI/RTC keeps real time.** The board counted its 60 Hz and 10 kHz intervals in
 processor T-states. At flat out (`clock_hz = 0`, the default), the clock ticked as fast as the
 host ran the guest, and the MP/M II time of day ran fast. A guest that counted ticks for 2

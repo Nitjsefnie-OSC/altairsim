@@ -144,6 +144,15 @@ void test_hostdir() {
         CHECK(!hostGlobMatch("*.ASM", "FOO.COM"), "*.ASM does not match FOO.COM");
         CHECK(!hostGlobMatch("R.ASM", "RW.ASM"), "a literal does not match a longer name");
         CHECK(hostGlobMatch("*O*.A*", "FOO.ASM"), "several stars backtrack correctly");
+
+        // A DOT FILE needs a glob that starts with a dot (issue #829). R would fold
+        // `.DS_Store` to ` .DS_`, a CP/M name nobody can type at the CCP.
+        CHECK(!hostGlobMatch("*.*", ".DS_Store"), "*.* skips a dot file");
+        CHECK(!hostGlobMatch("*", ".HIDDEN"), "* skips a dot file");
+        CHECK(!hostGlobMatch("", ".HIDDEN"), "the empty glob skips a dot file");
+        CHECK(!hostGlobMatch("?HIDDEN", ".HIDDEN"), "? does not match the leading dot");
+        CHECK(hostGlobMatch(".*", ".HIDDEN"), ".* finds a dot file");
+        CHECK(hostGlobMatch(".HIDDEN", ".hidden"), "a dot file named in full matches, folded");
     }
 
     SECTION("hostdir: an ordinary round trip");
@@ -173,6 +182,14 @@ void test_hostdir() {
 
         CHECK(d.list("*.TXT", names, err) && names.size() == 1 && names[0] == "HELLO.TXT",
               "the glob filters");
+
+        CHECK(d.write(".HIDDEN", bytes, err), "a dot file writes");
+        CHECK(d.list("", names, err) && names.size() == 2, "the empty glob does not list it");
+        CHECK(d.list("*.*", names, err) && names.size() == 2, "*.* does not list it");
+        CHECK(d.list(".*", names, err) && names.size() == 1 && names[0] == ".HIDDEN",
+              ".* lists it");
+        CHECK(d.read(".HIDDEN", 0, back, err) && back == bytes, "...and it still reads by name");
+        CHECK(d.remove(".HIDDEN", err), "...and deletes by name");
 
         CHECK(d.remove("HELLO.TXT", err), "delete works");
         CHECK(!sb.exists(sb.root / "HELLO.TXT"), "...and the file is gone");

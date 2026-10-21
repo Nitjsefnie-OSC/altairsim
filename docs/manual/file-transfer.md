@@ -54,6 +54,11 @@ number of files in the host folder, which can be much more than a CP/M disk hold
 does not print the 8.3 names that CP/M will see. That is the purpose of `HDIR`. When you cannot
 find the name of a file, ask `HDIR`.
 
+**A wildcard does not match a host file whose name starts with `.`**, such as `.DS_Store` or
+`.gitignore`. This is the rule of a host shell. `HDIR` and `R *.*` skip these files. To see
+them, type `HDIR .*`. To copy one, type its name and a CP/M name for it:
+`R .gitignore GITIGNOR.TXT`.
+
 ### `R`: host to CP/M
 
 ```
@@ -63,7 +68,8 @@ A>R SRC/FOO.ASM
 A>R SRC/FOO.ASM WORK.ASM
 ```
 
-Wildcards work. Folders work, and **`/` and `\` both work on every host**, so you do not have to
+Wildcards work, and they skip host files whose names start with `.`. Folders work, and
+**`/` and `\` both work on every host**, so you do not have to
 remember which computer you use. A second argument gives the name of the file on the CP/M side,
 instead of the automatic name.
 

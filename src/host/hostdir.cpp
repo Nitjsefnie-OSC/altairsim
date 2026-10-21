@@ -126,7 +126,11 @@ bool validateHostName(const std::string& name, HbFail& err) {
 // Glob. `*` and `?`, folded case.
 // ---------------------------------------------------------------------------
 bool hostGlobMatch(const std::string& glob, const std::string& name) {
-    if (glob.empty()) return true;  // no pattern means everything
+    // A DOT FILE MATCHES ONLY A GLOB THAT STARTS WITH A DOT -- the shell's rule. R folds
+    // `.DS_Store` to ` .DS_`, a CP/M name with an empty first part that the CCP cannot
+    // type, so `R *.*` must not reach it (issue #829). `R .*` still does.
+    if (!name.empty() && name[0] == '.' && (glob.empty() || glob[0] != '.')) return false;
+    if (glob.empty()) return true;  // no pattern means everything else
 
     // The classic two-pointer backtracking matcher: linear in practice, no
     // recursion, and it cannot blow the stack on a pathological pattern.

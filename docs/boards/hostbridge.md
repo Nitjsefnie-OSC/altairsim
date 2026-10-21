@@ -111,6 +111,8 @@ The burden belongs on the card, not on the human: there is no switch to tell the
 
 The other direction is `R`'s job. A host name that comes back off a wildcard match keeps the host's case, and a CP/M directory entry holds upper case — so `R` folds the name it builds the FCB from. Without that, `R *.asm` stores `lower.asm`, and nothing in CP/M can name it again: the CCP upper-cases everything typed, so `ERA`, `DIR` and the assembler all look straight past it.
 
+**A host name that starts with `.` matches only a glob that starts with `.`**, as in a shell. `R` drops the `.` from a CP/M name, so `.DS_Store` would become ` .DS_`. That CP/M name has an empty first part, and the CCP cannot type it. `*.*`, `*` and the empty glob therefore skip dot files, in `R` and in `HDIR`. `.*` and a full name such as `.gitignore` still reach them. Give `R` a second argument for the CP/M name, as in `R .gitignore GITIGNOR.TXT`. The rule is in `hostGlobMatch()`, so the real and the in-memory host directory agree (issue #829).
+
 ## Properties
 
 | Property | Default | Notes |

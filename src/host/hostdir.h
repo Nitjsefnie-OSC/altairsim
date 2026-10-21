@@ -100,6 +100,9 @@ bool validateHostName(const std::string& name, HbFail& err);
 // `R *.ASM` silently miss every file on a Linux host. The host names themselves are
 // reported exactly as they are on disk (see list()) -- we fold the COMPARISON, never
 // the name.
+//
+// A name that starts with `.` matches only a glob that starts with `.`, as in a shell:
+// `*.*` and the empty glob skip `.DS_Store`, and `.*` finds it.
 bool hostGlobMatch(const std::string& glob, const std::string& name);
 
 // ---------------------------------------------------------------------------
@@ -120,7 +123,7 @@ public:
                        HbFail& err) = 0;
     virtual bool remove(const std::string& name, HbFail& err) = 0;
 
-    // Sorted. An empty glob means everything. The glob may carry a directory --
+    // Sorted. An empty glob means everything but dot files. The glob may carry a directory --
     // `SRC/*.ASM` lists SRC -- and the names handed back carry it too, so the guest can
     // feed one straight back to read(). A DIRECTORY comes back with a trailing '/', so
     // HDIR can show it and R's wildcard loop can skip it.
