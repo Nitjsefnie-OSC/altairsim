@@ -1087,6 +1087,8 @@ Nothing in the simulator may call `std::chrono::now()` except this. Time is meas
 
 The crystal is on the **CPU card** (§3, §8), so the card publishes its `clock_hz` here. A board converting a real-world rate (a baud rate, a disk RPM) into T-states asks the clock, and never has to go hunting through the backplane for whichever card holds the oscillator — or discover there isn't one.
 
+**A board's real-time source is not the CPU's crystal** (issue #825). The crystal does not leave the CPU board. The one exception is the bus's 2 MHz CLOCK (pin 49), which every CPU board supplies at 2 MHz at any processor speed. A source that keeps real time, such as the 60 Hz mains or a divider off the bus CLOCK, therefore counts host time. The board reads host time through an injected function, and a test sets it. The 88-VI/RTC is the first board on this rule. With a crystal set, its tick is a `Clock` deadline at the exact T-state, because the run loop holds T-states to real time. Flat out, `pump()` sets the tick when host time says it is due. `docs/boards/mits-88virtc.md` has the details.
+
 ```cpp
 class Clock {
 public:

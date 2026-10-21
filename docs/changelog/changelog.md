@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The 88-VI/RTC keeps real time.** The board counted its 60 Hz and 10 kHz intervals in
+processor T-states. At flat out (`clock_hz = 0`, the default), the clock ticked as fast as the
+host ran the guest, and the MP/M II time of day ran fast. A guest that counted ticks for 2
+seconds counted 17,384, not 120. Now both `rtc_source` settings keep real time at every
+`clock_hz`. A write to port `0xFE` without bit 5 also restarted the divider. The service
+routine writes the port on every tick, so each tick came late by the time the routine took.
+Now only bit 5 restarts the divider.
+
 **The macOS packages are signed and notarized.** The program in both macOS archives is signed
 with a Developer ID, and Apple has notarized it. macOS starts it with no message, also when
 the package comes from a browser. Before, macOS refused to start the program, and you removed

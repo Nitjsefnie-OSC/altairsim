@@ -36,6 +36,10 @@ struct Rig {
     MemoryBoard*    mem = nullptr;
     ScriptedStream* tty = nullptr;
 
+    // The host's clock, in nanoseconds, as the RTC sees it. It moves only when a test
+    // moves it -- the RTC keeps real time (issue #825), and a test says what time it is.
+    uint64_t hostNs = 1000000000;
+
     Rig() {
         std::string err;
 
@@ -55,6 +59,7 @@ struct Rig {
 
         m.add("8080", "cpu0", err);
         vi  = dynamic_cast<VirtcBoard*>(m.add("virtc", "vi0", err));
+        vi->setHostNs([this] { return hostNs; });
         sio = dynamic_cast<Sio2Board*>(m.add("2sio", "sio0", err));
         setProperty(*sio, "port", "10", err);  // hex: a port is on the wire
 
@@ -147,8 +152,9 @@ void test_virtc() {
         g.ctl(0xC0);  // VI structure on, RTC interrupt on, level register not live
         CHECK(!g.m.bus.intPending(), "nothing yet -- the interval has not elapsed");
 
-        // 60 Hz at 2 MHz is 33,333 T-states. Step past one.
-        for (int i = 0; i < 40; ++i) g.m.clock.advance(1000);
+        // 60 Hz is 16.67 ms of REAL time. Let it pass, and give the board its slice.
+        g.hostNs += 17000000;
+        g.vi->pump();
 
         CHECK(g.m.bus.intPending(), "the interval elapsed: the RTC pulls VI0, the 88-VI pulls pin 73");
         CHECK(g.vi->winner() == 0, "and VI0 is the winner");
@@ -158,6 +164,135 @@ void test_virtc() {
         // the flip-flop. Nothing else does it -- not reading a port, not time passing.
         g.ctl(0xC0 | 0x10);
         CHECK(!g.m.bus.intPending(), "bit 4 clears the RTC's flip-flop and drops the line");
+    }
+
+    // ---- THE RTC KEEPS REAL TIME, NOT CPU TIME (issue #825). ----
+    //
+    // Both sources are off the CPU board: the 60 Hz mains, and 10 kHz off the bus's
+    // 2 MHz CLOCK, which every CPU board supplies at 2 MHz whatever it runs at. Flat
+    // out (the default) T-states are however fast the host goes, so they must move the
+    // RTC not at all -- and host time must move it. Both directions are asserted: the
+    // first alone would pass against a dead RTC, the second against the old one.
+    auto strapped = [](Rig& g, const char* source, const char* divide) {
+        std::string err;
+        setProperty(*g.vi, "rtc_interrupt", "vi0", err);
+        setProperty(*g.vi, "rtc_source", source, err);
+        setProperty(*g.vi, "rtc_divide", divide, err);
+        g.ctl(0xC0 | 0x20);  // VI on, RTC on, divider cleared
+    };
+    auto ack = [](Rig& g) { g.ctl(0xC0 | 0x10); };  // the ISR: clear the flip-flop
+
+    {
+        Rig g;
+        strapped(g, "line", "1");
+
+        // Ten seconds of a 2 MHz machine, with the host's clock standing still.
+        for (int i = 0; i < 2000; ++i) {
+            g.m.clock.advance(10000);
+            if (i % 2 == 0) g.vi->pump();
+        }
+        CHECK(!g.m.bus.intPending(), "flat out, 20 million T-states move the 60 Hz line not at all");
+        CHECK(g.m.clock.queued() != 0,
+              "...but its deadline stays armed, so a guest that HALTs for its clock waits");
+
+        g.hostNs += 16000000;
+        g.vi->pump();
+        CHECK(!g.m.bus.intPending(), "16 ms of real time: not yet");
+        g.hostNs += 1000000;
+        g.vi->pump();
+        CHECK(g.m.bus.intPending(), "17 ms of real time: one 60 Hz tick");
+
+        // Sixty ticks in one second, slice by slice. No drift: the schedule is exact.
+        ack(g);
+        int ticks = 1;
+        for (int ms = 17; ms < 1000; ++ms) {
+            g.hostNs += 1000000;
+            g.m.clock.advance(1000000);  // a fast host: a millisecond is 1M T-states
+            g.vi->pump();
+            if (g.m.bus.intPending()) {
+                ++ticks;
+                ack(g);
+            }
+        }
+        CHECK(ticks == 60, "sixty 60 Hz ticks in one second of real time, at any host speed");
+    }
+
+    {
+        Rig g;
+        strapped(g, "clock", "1");
+        g.hostNs += 99000;
+        g.vi->pump();
+        CHECK(!g.m.bus.intPending(), "10 kHz / 1: 99 us is not a tick");
+        g.hostNs += 1000;
+        g.vi->pump();
+        CHECK(g.m.bus.intPending(), "...100 us is -- the bus CLOCK's 10 kHz is real time too");
+    }
+
+    {
+        Rig g;
+        strapped(g, "clock", "1000");
+        g.hostNs += 99000000;
+        g.vi->pump();
+        CHECK(!g.m.bus.intPending(), "10 kHz / 1000: 99 ms is not a tick");
+        g.hostNs += 1000000;
+        g.vi->pump();
+        CHECK(g.m.bus.intPending(), "...100 ms is");
+    }
+
+    // ---- the ISR writes the port on every tick; that must not restart the chain. ----
+    {
+        Rig g;
+        strapped(g, "line", "1");
+        g.hostNs += 10000000;
+        ack(g);  // a write with bit 5 clear, 10 ms into the interval
+        g.hostNs += 7000000;
+        g.vi->pump();
+        CHECK(g.m.bus.intPending(),
+              "17 ms after the clear, the tick is there: only bit 5 restarts the divider");
+    }
+
+    // ---- PACED, the tick lands on its exact T-state. ----
+    //
+    // With a crystal set, the run loop holds T-states to real time, so the deadline
+    // delivers the tick at the instruction it belongs to. Host time is held still to
+    // prove it is the deadline doing it.
+    for (long long hz : {2000000LL, 10000000LL}) {
+        Rig g;
+        g.m.clock.setHz(hz);
+        strapped(g, "line", "1");
+        const uint64_t period = (uint64_t)(hz / 60);
+        g.m.clock.advance(period - 1);
+        g.vi->pump();
+        CHECK(!g.m.bus.intPending(), "paced: one T-state short of the interval, no tick");
+        g.m.clock.advance(1);
+        CHECK(g.m.bus.intPending(), "paced: the tick lands on exactly hz/60 T-states");
+    }
+
+    // ---- PACED, but the host fell behind its crystal. ----
+    //
+    // Host time is the truth; the T-states are only how it reaches the guest. When the
+    // host cannot keep up, real time gets ahead of the T-states, and pump() delivers
+    // the tick anyway.
+    {
+        Rig g;
+        g.m.clock.setHz(2000000);
+        strapped(g, "line", "1");
+        // The first rollover is at 16.67 ms. pump() leaves it alone until host time is
+        // 100 ms past it -- a sleep that overshot is not a host that fell behind.
+        g.hostNs += 110000000;
+        g.vi->pump();
+        CHECK(!g.m.bus.intPending(), "paced, 93 ms late: still the deadline's to deliver");
+        g.hostNs += 20000000;
+        g.vi->pump();
+        CHECK(g.m.bus.intPending(), "paced, 113 ms late: pump() delivers the tick");
+
+        // Host-now is 130 ms; the next real rollover is 133.33 ms -- 6,666 T-states at
+        // 2 MHz, where a T-state period on would be 33,333.
+        ack(g);
+        g.m.clock.advance(6000);
+        CHECK(!g.m.bus.intPending(), "...and re-aims the deadline at the next real rollover");
+        g.m.clock.advance(1000);
+        CHECK(g.m.bus.intPending(), "...which arrives 3.33 ms of crystal later, not 16.67");
     }
 
     // ---- the RI strap will not accept `int`, because the hardware cannot. ----
