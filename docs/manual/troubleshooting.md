@@ -277,16 +277,28 @@ plug, and the program keeps that difference.
 
 ## macOS refuses to run the program
 
-Newer versions of macOS (seen on macOS 27) show *"altairsim" Not Opened* and *Apple could not
-verify "altairsim" is free of malware*. Older versions show *"cannot be opened because the
-developer cannot be verified"*.
+macOS checks the program with Apple the first time that you start a new copy. If the Mac is
+offline, the check fails. macOS then shows one of these messages:
 
-**Press Done. Do not press Move to Trash**, because that button deletes the program.
-After you press Done, type:
+- Newer versions of macOS: a dialog with the title *"altairsim" Not Opened* and the text
+  *Apple could not verify "altairsim" is free of malware*.
+- Older versions: *"altairsim" cannot be opened because the developer cannot be verified.*
+
+**Press Done. Do not press Move to Trash.** Move to Trash is the default button, so the Return
+key deletes the program.
+
+Connect the Mac to the internet, and start the program again. If you cannot connect it, remove
+the mark that macOS put on the download:
 
 ```
 $ xattr -dr com.apple.quarantine ./altairsim
 ```
 
-Do this one time for each download. Each new archive has the mark again. The chapter
-*Running it* tells you more.
+You can also allow the program in System Settings. This way needs an administrator password.
+
+1. Press **Done** in the first dialog.
+2. In System Settings, open Privacy & Security.
+3. Press **Allow Anyway**.
+4. Start the program again. A second dialog asks if you want to open it.
+5. Press **Open Anyway**. Do not press Move to Trash. It is the default button in this dialog
+   also.

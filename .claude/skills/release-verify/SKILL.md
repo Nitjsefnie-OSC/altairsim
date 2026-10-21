@@ -1,6 +1,6 @@
 ---
 name: release-verify
-description: Prove an altairsim release archive works as downloaded — unpack it outside any repository, check the version, check that SDL3 is linked in statically (not headless, not by absolute path), and hand a person the window checklist. Use when asked to verify, check or test a release package or archive before (or after) it is published, or to run DISTRIBUTION.md §7.
+description: Prove an altairsim release archive works as downloaded — unpack it outside any repository, check the version, check that SDL3 is linked in statically (not headless, not by absolute path), check that a macOS program is signed and notarized, and hand a person the window checklist. Use when asked to verify, check or test a release package or archive before (or after) it is published, or to run DISTRIBUTION.md §7.
 ---
 
 # Verify a release archive
@@ -54,6 +54,23 @@ Use `nm`, not `strings`: `SDL_CreateWindow` is a symbol, not a string, and `stri
 **macOS only:** `vtool -show-build altairsim | grep minos` must report `11.0`, not the build
 machine's own OS version.
 
+## macOS: is it signed and notarized?
+
+A macOS package must start with no `xattr` step. Check it:
+
+```sh
+codesign --verify --strict --verbose=2 altairsim
+codesign -dv --verbose=2 altairsim 2>&1 | grep -E '^(Authority|Timestamp)='
+spctl --assess --type open --context context:primary-signature --verbose=2 altairsim
+```
+
+PASS is `valid on disk`, a first `Authority=Developer ID Application: …`, and from `spctl`
+`accepted` with `source=Notarized Developer ID`. FAIL is an ad hoc signature (no `Authority`
+line) or `rejected`. Use the `spctl` form above. `--type execute` judges only an app bundle,
+and rejects every plain program as "not an app".
+
+`spctl` asks Apple online, so a Mac with no internet gives a false FAIL.
+
 ## The window checklist — for a PERSON
 
 The `video` row says SDL3 is compiled in; it does not say a window reached a screen. **An
@@ -65,6 +82,7 @@ needing live pixels uses `sol20`, whose SOLOS loops.
 
 | | do this | pass is |
 |---|---|---|
+| **H0** | macOS: download the archive from the release page **with Safari**, open it in Finder, and in Terminal run `./altairsim --version` in the folder | the version prints, and macOS shows **no** *"altairsim" Not Opened* dialog. A dialog means the package is not notarized |
 | **H1** | `altairsim vdm1` | a window shows `PROCESSOR TECHNOLOGY VDM-1 READY` in a blocky font, **sharp-edged** (blurred means the scaler is wrong) |
 | **H2** | `altairsim sol20`; wait for the SOLOS `>` in the window | a cursor blinking about once a second, steadily |
 | **H3** | `altairsim sol20`; at the `>` in the window, click it and type `HELLO` | the characters appear **in the window** — the only proof the window gets the keyboard |
@@ -85,4 +103,5 @@ Things that look like bugs and are not:
 ## Report
 
 Per target: the `--version` line, the `video` row, the dependency check result, `nm` count,
-`minos` (macOS), the two boots, and the person's H1–H6 answers (or "not yet run").
+`minos` (macOS), the signature and `spctl` lines (macOS), the two boots, and the person's
+H0–H6 answers (or "not yet run").

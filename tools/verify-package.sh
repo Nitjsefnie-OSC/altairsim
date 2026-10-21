@@ -55,10 +55,15 @@
 # -- a failed boot is a finding, not a script error -- so failures are handled explicitly and
 # tallied, and the script's own exit status is the count of findings.
 #
-#   usage: tools/verify-package.sh [--keep] <archive>
+#   usage: tools/verify-package.sh [--keep] [--require-notarized] <archive>
 #
 #     --keep     Leave the scratch extraction directory instead of deleting it, to debug a
 #                failure by hand (the message names the directory).
+#     --require-notarized
+#                macOS: the program must be signed with a Developer ID, Apple must have
+#                notarized it, and it must start with the quarantine mark a browser adds.
+#                tools/release-worker.sh passes it; the CI leg, which signs ad hoc, does not.
+#                Without it, a macOS package still gets `codesign --verify --strict`.
 #     <archive>  dist/altairsim-X.Y.Z-<target>.tar.gz or .zip -- what build-package.sh wrote.
 
 set -u
@@ -68,11 +73,13 @@ map=$root/docs/package.map
 manual=$root/docs/manual
 
 keep=0
+notarized=0
 archive=""
 while [ $# -gt 0 ]; do
   case $1 in
     --keep) keep=1; shift ;;
-    -h|--help) echo "usage: tools/verify-package.sh [--keep] <archive>"; exit 0 ;;
+    --require-notarized) notarized=1; shift ;;
+    -h|--help) echo "usage: tools/verify-package.sh [--keep] [--require-notarized] <archive>"; exit 0 ;;
     -*) echo "verify-package: unknown option $1" >&2; exit 1 ;;
     *)  [ -z "$archive" ] || { echo "verify-package: only one archive, got '$archive' and '$1'" >&2; exit 1; }
         archive=$1; shift ;;
@@ -82,6 +89,10 @@ done
 [ -n "$archive" ] || { echo "verify-package: no archive given. usage: tools/verify-package.sh [--keep] <archive>" >&2; exit 1; }
 [ -f "$archive" ] || { echo "verify-package: $archive does not exist" >&2; exit 1; }
 [ -f "$map" ]     || { echo "verify-package: $map is missing -- run from a checkout of the repo" >&2; exit 1; }
+case $notarized:$archive in
+  1:*-macos-*.tar.gz|0:*) ;;
+  *) echo "verify-package: --require-notarized is for a macOS package, not $archive" >&2; exit 1 ;;
+esac
 
 have_expect=0
 if command -v expect > /dev/null 2>&1; then have_expect=1; fi
@@ -442,6 +453,51 @@ case $archive in
 esac
 if [ "$_tools_ok" -eq 1 ]; then passed=$((passed + 1)); echo "  PASS tools/ has the mirror-watch scripts and the LBR tools"
 else failed=$((failed + 1)); echo "  ---- FAIL tools/ (the mirror-watch scripts and the LBR tools)"; fi
+
+# THE macOS SIGNATURE (tools/macos-sign.sh). Every macOS package must carry a valid one; a
+# release package must also be a Developer ID one that Apple notarized, and must START with the
+# quarantine mark on it -- the state a browser download is in, which is what a user has.
+case $archive in
+  *-macos-*.tar.gz)
+    total=$((total + 1))
+    _sig_ok=1
+    if ! _out=$(codesign --verify --strict --verbose=2 "$bin" 2>&1); then
+      echo "verify-package: FAIL -- the program's signature is not valid:" >&2
+      echo "$_out" | sed 's/^/    /' >&2
+      _sig_ok=0
+    elif [ "$notarized" -eq 1 ]; then
+      _auth=$(codesign --display --verbose=2 "$bin" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)
+      case $_auth in
+        "Developer ID Application:"*) ;;
+        *) echo "verify-package: FAIL -- signed by '${_auth:-nobody: an ad hoc signature}', not a Developer ID Application identity" >&2
+           _sig_ok=0 ;;
+      esac
+      # spctl asks Gatekeeper, which looks the notary ticket up online. `--type execute`
+      # assesses only an app bundle and rejects a bare program as "not an app"; this form is
+      # the one that judges a plain executable.
+      _gk=$(spctl --assess --type open --context context:primary-signature --verbose=2 "$bin" 2>&1)
+      case $_gk in
+        *"source=Notarized Developer ID"*) ;;
+        *) echo "verify-package: FAIL -- Gatekeeper does not accept the program as notarized:" >&2
+           echo "$_gk" | sed 's/^/    /' >&2
+           _sig_ok=0 ;;
+      esac
+      if [ "$_sig_ok" -eq 1 ]; then
+        xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$bin"
+        if ! _out=$("$bin" --version 2>&1); then
+          echo "verify-package: FAIL -- with the quarantine mark on it, the program did not start:" >&2
+          echo "$_out" | sed 's/^/    /' >&2
+          _sig_ok=0
+        fi
+        xattr -d com.apple.quarantine "$bin" 2>/dev/null || true
+      fi
+    fi
+    if [ "$_sig_ok" -eq 1 ]; then
+      passed=$((passed + 1))
+      if [ "$notarized" -eq 1 ]; then echo "  PASS the program is notarized and starts with the quarantine mark"
+      else echo "  PASS the program's signature is valid (notarization not required)"; fi
+    else failed=$((failed + 1)); echo "  ---- FAIL the program's signature"; fi ;;
+esac
 
 echo
 # A claimed test that runs nothing is worse than no test (issue #308's whole point), so an

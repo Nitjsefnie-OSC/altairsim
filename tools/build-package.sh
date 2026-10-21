@@ -39,7 +39,7 @@
 # PACKAGE rather than quietly shipping a folder with a machine file and no machine in it --
 # which would boot to a dead prompt and look like our bug.
 #
-#   usage: tools/build-package.sh [--target <target>] [--pdf <file>] [outdir]
+#   usage: tools/build-package.sh [--target <target>] [--pdf <file>] [<signing>] [outdir]
 #
 #     --target   macos-arm64 | macos-x86_64 | linux-x86_64 | windows-x86_64
 #                Names the archive and picks its format (.tar.gz, or .zip for Windows).
@@ -48,6 +48,9 @@
 #                choice and never cross-compilation.
 #     --pdf      Use THIS manual instead of rebuilding one. See below -- it is the flag
 #                that keeps four machines shipping the SAME document.
+#     <signing>  macOS only: --sign <identity> --notary-profile <name> --keychain <path>
+#                --keychain-pass-file <file>, all four, handed to tools/macos-sign.sh. Without
+#                them a macOS package is signed ad hoc and NOT notarized. DISTRIBUTION.md 4.3.
 
 set -eu
 
@@ -57,16 +60,23 @@ map=$root/docs/package.map
 target=""
 pdf=""
 out=""
+sign_identity=""
+sign_profile=""
+sign_keychain=""
+sign_passfile=""
 
 usage() {
   cat <<'USAGE'
-usage: tools/build-package.sh [--target <target>] [--pdf <file>] [outdir]
+usage: tools/build-package.sh [--target <target>] [--pdf <file>] [<signing>] [outdir]
 
   --target   macos-arm64 | macos-x86_64 | linux-x86_64 | windows-x86_64
              Names the archive and picks its format (.tar.gz, or .zip for Windows).
              Defaults to this host.
   --pdf      Use THIS manual instead of rebuilding one. Pass the manual the
              coordinator built; see DISTRIBUTION.md 4.2 step 6.
+  <signing>  macOS only: --sign <identity> --notary-profile <name>
+             --keychain <path> --keychain-pass-file <file>. Without them the
+             package is signed ad hoc and not notarized. See DISTRIBUTION.md 4.3.
   outdir     Where to stage and write the archive. Default: dist/
 USAGE
   exit "${1:-0}"
@@ -81,6 +91,15 @@ while [ $# -gt 0 ]; do
               # wiped and rebuilt, so a mistyped path costs a rebuild to discover.
               [ -f "$2" ] || { echo "build-package: --pdf $2 does not exist" >&2; exit 1; }
               pdf=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
+              shift 2 ;;
+    --sign|--notary-profile|--keychain|--keychain-pass-file)
+              [ $# -ge 2 ] || { echo "build-package: $1 needs a value" >&2; exit 1; }
+              case $1 in
+                --sign)               sign_identity=$2 ;;
+                --notary-profile)     sign_profile=$2 ;;
+                --keychain)           sign_keychain=$2 ;;
+                --keychain-pass-file) sign_passfile=$2 ;;
+              esac
               shift 2 ;;
     -h|--help) usage 0 ;;
     -*)       echo "build-package: unknown option $1" >&2; usage 1 ;;
@@ -108,6 +127,13 @@ if [ -z "$target" ]; then
     echo "Pass one explicitly: --target macos-arm64|macos-x86_64|linux-x86_64|windows-x86_64" >&2
     exit 1
   }
+fi
+
+if [ -n "$sign_identity$sign_profile$sign_keychain$sign_passfile" ]; then
+  case $target in
+    macos-*) ;;
+    *) echo "build-package: --sign and its options are for a macos-* target, not $target" >&2; exit 1 ;;
+  esac
 fi
 
 case $target in
@@ -537,6 +563,18 @@ fi
 # same text the package's own cheatsheet.md is -- not a second read of the tree that could be
 # a different generation of it.
 cp "$pkg/cheatsheet.md" "$pkg/skills/altairsim/cheatsheet.md"
+
+# SIGN THE macOS PACKAGE, NOW THAT IT IS COMPLETE: notarization uploads the whole directory,
+# so nothing may be added after this. tools/macos-sign.sh says why, and what ad hoc means.
+case $target in
+  macos-*)
+    if [ -n "$sign_identity$sign_profile$sign_keychain$sign_passfile" ]; then
+      "$root/tools/macos-sign.sh" --sign "$sign_identity" --notary-profile "$sign_profile" \
+          --keychain "$sign_keychain" --keychain-pass-file "$sign_passfile" "$pkg"
+    else
+      "$root/tools/macos-sign.sh" "$pkg"
+    fi ;;
+esac
 
 name=altairsim-$ver-$target
 archive=$out/$name.$ext

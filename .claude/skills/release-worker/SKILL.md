@@ -30,6 +30,10 @@ after you hand it over; the next stop is a user's download.
     machine with 16 GB or more.
   - `<TARGET>_PATH` — becomes `--path`.
   - `<TARGET>_SERIAL_A` / `_SERIAL_B` — the null-modem pair, if this box has one.
+  - `<TARGET>_SIGN_IDENTITY`, `_NOTARY_PROFILE`, `_KEYCHAIN`, `_KEYCHAIN_PASS_FILE`, on a
+    Mac only. They become `--sign`, `--notary-profile`, `--keychain` and `--keychain-pass-file`.
+    Without them a Mac release STOPs before step 1. Do not use `--unsigned` to get past that
+    STOP. Report it.
   - `COORDINATOR_USER`, `COORDINATOR_HOST`, `COORDINATOR_DIST` — where step 8 delivers. If you
     do not have them, leave `--deliver` off and report that you did not deliver.
 
@@ -78,6 +82,8 @@ Add what the site values say:
 | `--serial-a PORT --serial-b PORT` | This box has the null-modem pair. Give both or neither. |
 | no `--deliver` | You are the coordinator (the archive is in `dist/` already), or you have no delivery values. |
 | `--skip-slow` | A dry run only. A release runs the CPU exercisers. |
+| `--sign ID --notary-profile P --keychain K --keychain-pass-file F` | A Mac. Step 6 signs and notarizes. Step 7 requires both. |
+| `--unsigned` | A Mac, a dry run only. The package gets an ad hoc signature, and a user must clear the quarantine mark by hand. |
 
 The coordinator starts this for you over ssh with `tools/release-drive.sh`; then you do
 nothing here.
@@ -101,8 +107,8 @@ two machines built again for nothing.
 | 4b | `serial-hw` and `tnfs-hw`. | **A warning, never a STOP.** See below. |
 | 4c | `ctest -L slow`: the CPU exercisers. | CHECK the pass line. These run here, not in CI on the tag: the four build machines are the four compilers that ship, and the Intel Mac has no CI runner. |
 | 5 | `altairsim --version`. | CHECK the one line `AltairSim X.Y.Z`. STOP on a `-N-gsha` suffix (not on the tag) or `(modified)` (dirty tree): the binary cannot be traced to the release. |
-| 6 | `tools/build-package.sh --pdf docs/altairsim-manual.pdf`. | The manual is the one CI built; the tag's tree holds it, and pandoc never runs. STOP if it refuses (headless binary, SDL linked by absolute path — it says which). |
-| 7 | `tools/verify-package.sh <archive>`. | CHECK `verify-package: PASS -- N/N manual commands reached their documented prompt`. It extracts the archive outside the repo and runs the manual's own commands. |
+| 6 | `tools/build-package.sh --pdf docs/altairsim-manual.pdf`, with the signing options on a Mac. | The manual is the one CI built; the tag's tree holds it, and pandoc never runs. STOP if it refuses (headless binary, SDL linked by absolute path — it says which). On a Mac, CHECK `macos-sign: SIGNED Developer ID Application: … -- notarized (Accepted)`. A status other than `Accepted` is a STOP. The notary log is printed above it. |
+| 7 | `tools/verify-package.sh <archive>`, with `--require-notarized` on a signed Mac package. | CHECK `verify-package: PASS -- N/N manual commands reached their documented prompt`. It extracts the archive outside the repo and runs the manual's own commands. On a Mac it also proves the signature, that Gatekeeper accepts the program as notarized, and that the program starts with the quarantine mark on it. A browser download has that mark. |
 | 8 | `scp` to the coordinator's `dist/`. | The worker's only credential is the delivery key; it never touches GitHub. |
 
 **The hardware tests (4b).** Each of `serial-hw` and `tnfs-hw` is reported Passed, Skipped or
@@ -142,6 +148,7 @@ exercisers    100% tests passed out of N in <time>
 serial-hw     Passed | Skipped | Failed      (+ ports used)
 tnfs-hw       Passed | Skipped | Failed
 SDL3          3.4.12                          (~/opt/sdl3-static/.altairsim-sdl3-version)
+signed        Developer ID Application: … -- notarized (Accepted) | ad hoc | n/a (not macOS)
 verify        verify-package: PASS -- N/N ... (verbatim)
 archive       altairsim-X.Y.Z-<target>.tar.gz  sha256 <hash>
 delivered     yes | no -- <why>
@@ -166,6 +173,9 @@ Done once, not at release time. If any is missing, STOP and report which.
   list, and `libxtst-dev` is required.
 - **Windows:** `tools\windows\RUN-ME-setup-windows-worker.bat` installs and checks all of it
   (Visual Studio 2026 Build Tools, Git + Git Bash, OpenSSH Server, static SDL3).
+- **macOS: the signing keychain.** `tools/macos-signing-setup.sh`, run one time with the
+  Developer ID `.p12` and the App Store Connect API key. DISTRIBUTION.md §4.1 has the steps.
+  It prints the four `<TARGET>_…` values for `distribution.conf`.
 - **Linux:** build on the oldest glibc you can — the binary will not start on a distro older
   than the one it was built on.
 - **The delivery key.** A passphrase-less ed25519 key, `~/.ssh/altairsim_deploy`, used for

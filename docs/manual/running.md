@@ -22,37 +22,12 @@ runs until you start one.
 
 ## macOS: the first run
 
-macOS marks a file that comes from the internet. It does not run a marked program that is not
-signed. The first time that you start the program, macOS shows one of these messages:
+The macOS program is signed with a Developer ID, and Apple has checked it (notarized it). macOS
+starts it with no message, also when you got the package with a browser.
 
-- Newer versions of macOS (seen on macOS 27): a dialog with the title *"altairsim" Not Opened*
-  and the text *Apple could not verify "altairsim" is free of malware that may harm your Mac or
-  compromise your privacy.*
-- Older versions: *"altairsim" cannot be opened because the developer cannot be verified.*
-
-**Press Done. Do not press Move to Trash.** Move to Trash is the default button, so the Return
-key deletes the program. After you press Done, remove the mark:
-
-```
-$ xattr -dr com.apple.quarantine ./altairsim
-```
-
-Start the program again. macOS does not show the message again for this copy.
-
-Do this one time for each download. Each new archive has a new mark, so you do it again for
-each release.
-
-You can also allow the program in System Settings. This way needs an administrator password.
-
-1. Press **Done** in the first dialog.
-2. In System Settings, open Privacy & Security.
-3. Press **Allow Anyway**.
-4. Start the program again. A second dialog asks if you want to open it.
-5. Press **Open Anyway**. Do not press Move to Trash. It is the default button in this dialog
-   also.
-
-A browser or a mail client adds the mark. If you got the archive with `curl` or `scp`, the file
-may have no mark. In that case, the `xattr` command does nothing, and that is correct.
+The first time that you start a new copy, macOS asks Apple about the program. This check needs
+the internet. If the Mac is offline, macOS can refuse to start the program. The chapter
+*Troubleshooting* tells you what to do.
 
 ## Getting help, and getting out
 
