@@ -86,7 +86,11 @@ So we asked the only real client of this card that exists — **the PS2 monitor'
 - **`assertsInt()`** — pin 73, pulled when the structure is enabled and `winner() >= 0`.
 - **`assertsVi()`** — the card **pulls a VI line itself**, when the RTC fires and `RI` is strapped. The RTC's interrupt goes out onto the backplane and comes back in through the priority encoder like any other card's, which is what the schematic does. No back door.
 - **`watchesVi()`** — the only board in the tree that returns `true`. The bus calls `intChanged()` on it whenever any VI line moves, because its `pINT` is a function of eight wires it does not own.
-- **The RTC timer** is a cancel-and-re-arm one-shot on the `Clock` queue (the `Sio2Board::refresh()` idiom). Period is computed in **T-states**, not hertz: `tStatesPer(base) * divide`, because three of the eight jumper combinations are fractional (60 Hz ÷ 1000 = 0.06 Hz) and would round to nothing.
+- **The RTC timer keeps its schedule in host time** (issue #825). Both sources are real time: the 60 Hz mains, and 10 kHz off the bus's 2 MHz CLOCK, which every CPU board supplies at 2 MHz. The CPU's crystal is neither. The board reads host time through `setHostNs()`, and a test sets it. The tick reaches the guest by one of two routes:
+  - **Paced** (`clock_hz` set): a cancel-and-re-arm one-shot on the `Clock` queue (the `Sio2Board::refresh()` idiom) fires the tick at the exact T-state. The run loop holds T-states to real time, so one interval is `tStatesPer(base) * divide` T-states. It is in T-states, not hertz, because three of the eight jumper combinations are fractional (60 Hz ÷ 1000 = 0.06 Hz).
+  - **Flat out, or late:** `pump()` reads host time once a run slice, and sets the flip-flop when the schedule is due. Paced, `pump()` does this only when host time is 100 ms or more past the schedule. That happens when the host cannot keep up with its crystal, or after the machine was stopped at the monitor.
+
+  A rollover that passes while the flip-flop is already set is lost, because the flip-flop is a latch. Only bit 5 restarts the divider. Other writes to the port, such as the service routine's bit 4 clear, leave the divider counting.
 - **Interrupts:** this card *is* the interrupt hardware. Its own `rtc_interrupt` strap accepts `none | vi0..vi7` — **not `int`**, because RI does not go to pin 73 and the manual forbids mixing (see *Quirks*).
 
 ### `properties()`
@@ -94,7 +98,7 @@ So we asked the only real client of this card that exists — **the PS2 monitor'
 | Property | Legal | Default | Notes |
 |---|---|---|---|
 | `port` | `00`–`FF` (hex) | `FE` | 376 octal. Write-only. |
-| `rtc_source` | `line` \| `clock` | `line` | 60 Hz mains, or 10 kHz off the 2 MHz clock |
+| `rtc_source` | `line` \| `clock` | `line` | 60 Hz mains, or 10 kHz off the 2 MHz bus clock. Both keep real time. |
 | `rtc_divide` | `1` \| `10` \| `100` \| `1000` | `1` | |
 | `rtc_interrupt` | `none` \| `vi0`…`vi7` | **`none`** | The `RI` strap. `none` is what MITS Programming System II needs. |
 
@@ -145,13 +149,13 @@ And the monitor really does enable them — its ISR runs `ORI C0` on *every* pas
 ## Limitations and deliberate departures
 
 - **The 8214's `ELR`/`ECS`/`SGS` pins are not modeled as pins.** We model the *documented behavior* of the control register, not the chip's internal strobes. Nothing on the Altair bus can observe them.
-- **`rtc_source = "line"` is 60 Hz of *emulated* time**, derived from `Clock::tStatesPer(60)` — not from the host's wall clock or mains. With `clock_hz = 0` (the default, flat out) the guest still sees exactly 33,333 T-states between ticks; it just gets them sooner. That is the same bargain the whole simulator makes. Software that tries to use the RTC to measure *real* elapsed time will be wrong, and would have been wrong on any emulator.
-- **The RTC timer is armed only when it can be observed** (interrupt enabled *and* `RI` strapped). The divider is otherwise a counter nobody can read. This is not just an optimization: a permanently-armed periodic timer leaves `Clock::queued()` non-zero forever, and that is one of the two conditions the run loop uses to decide a `HLT` has finished (`src/core/debug.cpp`) — so an always-ticking RTC would mean a machine with this card in it could never stop on a HLT again.
+- **The RTC follows the host's clock, not the mains.** A tick is as accurate as the host's monotonic clock. Flat out, a tick lands at the first run slice after it is due. A slice is a few microseconds of host time, or up to 4 ms while the guest waits at a prompt.
+- **The RTC timer is armed only when it can be observed** (interrupt enabled *and* `RI` strapped). The divider is otherwise a counter nobody can read. This is not just an optimization: a permanently-armed periodic timer leaves `Clock::queued()` non-zero forever, and that is one of the two conditions the run loop uses to decide a `HLT` has finished (`src/core/debug.cpp`) — so an always-ticking RTC would mean a machine with this card in it could never stop on a HLT again. When it *can* be observed, the deadline is armed flat out too, where it does not decide when the tick lands. A guest that halts to wait for its clock then keeps running.
 - **No 8-level nesting test.** The card supports it and the code implements the comparison, but no period software in the tree nests interrupts, so it is exercised only by unit tests.
 
 ## Verification
 
-- **`tests/test_virtc.cpp`** — the vector table, VI0-beats-VI7 priority, the current-level mask, the ones-complement encoding (pinned *because the manual is wrong about it*), a disabled card not claiming `IntAck`, the RTC firing into an unstrapped `RI` and interrupting nobody, and a 6850 on VI2 producing `RST 2` = `0xD7` — a byte a floating bus could never produce, which is what makes that assertion worth anything.
+- **`tests/test_virtc.cpp`** — the vector table, VI0-beats-VI7 priority, the current-level mask, the ones-complement encoding (pinned *because the manual is wrong about it*), a disabled card not claiming `IntAck`, the RTC firing into an unstrapped `RI` and interrupting nobody, the RTC keeping real time flat out and paced (and only bit 5 restarting its divider), and a 6850 on VI2 producing `RST 2` = `0xD7` — a byte a floating bus could never produce, which is what makes that assertion worth anything.
 - **`tests/acceptance/ps2-int.exp`** — **MITS Programming System II, with interrupts.** It springs the ReadMe's own booby trap (type a word the monitor doesn't know and it hunts the cassette for a program by that name, forever) and then rescues the machine with **Ctrl-C**, which is the one thing the ReadMe says interrupts are *for*. Every byte of that rescue crosses the new hardware: the 6850 pulls VI7 → the 88-VI prioritizes it and pulls pin 73 → the 8080 acknowledges → the 88-VI claims the `IntAck` cycle and jams `RST 7` → the monitor's handler at `0x0038` finds `0x03` and longjmps home.
 - **`acceptance-ps2-int-control`** — the same script against `ps2` (A9 up, no VI card), registered `WILL_FAIL`. The machine must stay hung. **If that control ever passes, the test above is passing on something that is not an interrupt.**
 - `Bus::setVerify(true)` re-derives all nine interrupt wires every instruction and aborts on the first board that forgets to announce a change.
