@@ -24,7 +24,7 @@
 #
 #   usage: release-worker.sh --version X.Y.Z [--repo DIR] [--no-parallel] [--path DIRS]
 #                            [--serial-a PORT --serial-b PORT] [--deliver USER@HOST:DIR]
-#                            [--skip-slow]
+#                            [--skip-slow] [<signing> | --unsigned]
 #          release-worker.sh --self-test
 #
 #     --version      The release, X.Y.Z. The tag is vX.Y.Z. Required.
@@ -40,6 +40,12 @@
 #                    run and the report says `delivered no`.
 #     --skip-slow    Do not run the CPU exercisers (step 4c). For a dry run only: a release
 #                    runs them.
+#     <signing>      macOS: --sign <SHA-1> --notary-profile <name> --keychain <path>
+#                    --keychain-pass-file <file>, all four. Step 6 signs and notarizes with
+#                    them, and step 7 requires the result to be notarized. A macOS release
+#                    without them is a STOP, before step 1.
+#     --unsigned     macOS: package with an ad hoc signature instead. For a dry run only: a
+#                    user of that package has to clear the quarantine mark by hand.
 #     --self-test    Run the checks on sample output and print PASS or FAIL. Builds nothing.
 #
 # THE OUTPUT ends with the report block of the skill, and then ONE last line:
@@ -92,6 +98,25 @@ hw_result() {  # $1 = the test name, $2 = the ctest output
     *Skipped*)   echo Skipped ;;
     *)           echo Failed ;;
   esac
+}
+
+# Are the signing arguments right for this target? $1 = the target, $2 = --unsigned (yes/no),
+# $3..$6 = identity, profile, keychain, pass file. A Mac needs all four, or --unsigned and
+# none; any other target needs none.
+sign_args_ok() {
+  _n=0
+  for _v in "$3" "$4" "$5" "$6"; do [ -z "$_v" ] || _n=$((_n + 1)); done
+  case $1:$2:$_n in
+    macos-*:no:4|macos-*:yes:0) return 0 ;;
+    macos-*:*)                  return 1 ;;
+    *:no:0)                     return 0 ;;
+    *)                          return 1 ;;
+  esac
+}
+
+# The macos-sign result line. Prints what follows `SIGNED `; fails if it is not there.
+signed_line() {
+  sed -n 's/^macos-sign: SIGNED //p' "$1" | head -n 1 | grep .
 }
 
 # The package target of a machine, from `uname -s` and `uname -m`. Empty for a machine that
@@ -177,6 +202,22 @@ self_test() {
   expect "Git Bash"      "$([ "$(target_of MINGW64_NT-10.0-26100 x86_64)" = windows-x86_64 ]; echo $?)" 0
   expect "an unknown machine has no target" "$([ -z "$(target_of Linux aarch64)" ]; echo $?)" 0
 
+  expect "a Mac with all four signing arguments" "$(rc sign_args_ok macos-arm64 no I P K F)" 0
+  expect "a Mac with none is refused"            "$(rc sign_args_ok macos-x86_64 no '' '' '' '')" 1
+  expect "a Mac with some is refused"            "$(rc sign_args_ok macos-arm64 no I '' K F)" 1
+  expect "a Mac with --unsigned and none"        "$(rc sign_args_ok macos-arm64 yes '' '' '' '')" 0
+  expect "--unsigned with an identity is refused" "$(rc sign_args_ok macos-arm64 yes I P K F)" 1
+  expect "Linux needs none"                      "$(rc sign_args_ok linux-x86_64 no '' '' '' '')" 0
+  expect "Linux with an identity is refused"     "$(rc sign_args_ok linux-x86_64 no I P K F)" 1
+  expect "Windows with --unsigned is refused"    "$(rc sign_args_ok windows-x86_64 yes '' '' '' '')" 1
+
+  printf '%s\n' 'macos-sign: submitting' \
+    'macos-sign: SIGNED Developer ID Application: A B (X) -- notarized (Accepted)' > "$t/signed"
+  expect "the signed line" \
+    "$([ "$(signed_line "$t/signed")" = 'Developer ID Application: A B (X) -- notarized (Accepted)' ]; echo $?)" 0
+  printf '%s\n' 'macos-sign: notarization finished with status Invalid' > "$t/unsigned"
+  expect "no signed line"                        "$(rc signed_line "$t/unsigned")" 1
+
   rm -rf "$t"
   if [ $bad = 0 ]; then echo "release-worker self-test: PASS"; exit 0; fi
   echo "release-worker self-test: FAIL"; exit 1
@@ -193,6 +234,11 @@ serial_a=""
 serial_b=""
 deliver=""
 slow=yes
+unsigned=no
+sign_identity=""
+sign_profile=""
+sign_keychain=""
+sign_passfile=""
 
 usage() {
   sed -n '/^#   usage:/,/^# The exit status/p' "$0" | sed 's/^# \{0,1\}//'
@@ -211,6 +257,11 @@ while [ $# -gt 0 ]; do
     --deliver)     need "$@"; deliver=$2; shift 2 ;;
     --no-parallel) parallel=no; shift ;;
     --skip-slow)   slow=no; shift ;;
+    --unsigned)    unsigned=yes; shift ;;
+    --sign)        need "$@"; sign_identity=$2; shift 2 ;;
+    --notary-profile)     need "$@"; sign_profile=$2; shift 2 ;;
+    --keychain)           need "$@"; sign_keychain=$2; shift 2 ;;
+    --keychain-pass-file) need "$@"; sign_passfile=$2; shift 2 ;;
     --self-test)   self_test ;;
     -h|--help)     usage 0 ;;
     *)             echo "release-worker: unknown argument: $1" >&2; usage 1 ;;
@@ -237,6 +288,7 @@ r_serial="not reached"
 r_tnfs="not reached"
 r_sdl="not reached"
 r_verify="not reached"
+r_signed="not reached"
 r_archive="not reached"
 r_delivered="no -- not reached"
 work=""
@@ -250,6 +302,7 @@ report() {
   echo "serial-hw     $r_serial"
   echo "tnfs-hw       $r_tnfs"
   echo "SDL3          $r_sdl"
+  echo "signed        $r_signed"
   echo "verify        $r_verify"
   echo "archive       $r_archive"
   echo "delivered     $r_delivered"
@@ -275,6 +328,10 @@ run() {  # $1 = the step, the rest = the command
 }
 
 [ -n "$target" ] || stop 0 "no release is built on this machine ($(uname -s)/$(uname -m))"
+# Before step 1, not at step 6: a missing certificate found after the CPU exercisers costs
+# their whole run to find.
+sign_args_ok "$target" "$unsigned" "$sign_identity" "$sign_profile" "$sign_keychain" "$sign_passfile" \
+  || stop 0 "on macOS give all of --sign, --notary-profile, --keychain and --keychain-pass-file (or --unsigned for a dry run); on any other target give none of them"
 
 # Where this script is, BEFORE the cd: $0 can be a relative path.
 self=$(cd "$(dirname "$0")" && pwd -P)
@@ -393,12 +450,25 @@ r_version=$(tr -d '\r' < "$out")
 version_ok "$r_version" "$version" || stop 5 "--version is not 'AltairSim $version'. A -N-gsha suffix means the build is not on the tag; (modified) means a dirty tree"
 
 # --- 6. Package, with the manual that CI built. The tag's tree holds it. -------------------
-run 6 tools/build-package.sh --pdf docs/altairsim-manual.pdf --target "$target"
+# A macOS package is signed and notarized here, inside build-package.sh (tools/macos-sign.sh).
+notary=""
+if [ -n "$sign_identity" ]; then
+  run 6 tools/build-package.sh --pdf docs/altairsim-manual.pdf --target "$target" \
+        --sign "$sign_identity" --notary-profile "$sign_profile" \
+        --keychain "$sign_keychain" --keychain-pass-file "$sign_passfile"
+  notary=--require-notarized
+else
+  run 6 tools/build-package.sh --pdf docs/altairsim-manual.pdf --target "$target"
+fi
 [ "$rc" = 0 ] || stop 6 "build-package.sh refused. Its output says why"
 [ -f "$archive" ] || stop 6 "build-package.sh did not write $archive"
+case $target in
+  macos-*) r_signed=$(signed_line "$out") || { r_signed="no SIGNED line"; stop 6 "tools/macos-sign.sh did not print its SIGNED line"; } ;;
+  *)       r_signed="n/a (not macOS)" ;;
+esac
 
 # --- 7. Prove the manual true against the ARCHIVE. ------------------------------------------
-run 7 tools/verify-package.sh "$archive"
+run 7 tools/verify-package.sh $notary "$archive"
 r_verify=$(verify_line "$out") || { r_verify="no PASS line"; stop 7 "verify-package.sh did not print its PASS line"; }
 [ "$rc" = 0 ] || stop 7 "verify-package.sh exit status $rc"
 

@@ -10,6 +10,15 @@ register, the bit or the command that was wrong.
 
 ---
 
+## Unreleased
+
+**The macOS packages are signed and notarized.** The program in both macOS archives is signed
+with a Developer ID, and Apple has notarized it. macOS starts it with no message, also when
+the package comes from a browser. Before, macOS refused to start the program, and you removed
+the quarantine mark with `xattr` first. The first start of a new copy needs the internet,
+because macOS asks Apple about the program. The *Troubleshooting* chapter says what to do when
+the Mac is offline.
+
 ## 1.3.4
 
 **1.3.4 adds two CompuPro floppy controllers, `--set` and `SHOW SERIAL`. It makes a halted

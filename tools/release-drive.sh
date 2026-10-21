@@ -25,13 +25,16 @@
 #
 #   usage: tools/release-drive.sh preflight [--conf FILE]
 #          tools/release-drive.sh start  <target> X.Y.Z [--skip-slow] [--no-deliver]
-#                                        [--repo DIR] [--conf FILE]
+#                                        [--unsigned] [--repo DIR] [--conf FILE]
 #          tools/release-drive.sh status <target> [--conf FILE]
 #          tools/release-drive.sh wait   <target>... [--conf FILE]
 #
 #     <target>      macos-arm64 | macos-x86_64 | linux-x86_64 | windows-x86_64
 #     --skip-slow   Do not run the CPU exercisers. For a dry run only.
 #     --no-deliver  Do not copy the archive to the coordinator. For a dry run only.
+#     --unsigned    macOS: sign ad hoc, do not notarize. For a dry run only. Without it, a
+#                   macOS worker signs with <TARGET>_SIGN_IDENTITY and the three keys after
+#                   it, and stops before step 1 when they are not set.
 #     --repo        Build in this checkout, not in the one that distribution.conf names. Use
 #                   it for a dry run of the coordinator's own target in a second clone.
 #     --conf        Read this file. Default: distribution.conf in the repository root.
@@ -43,6 +46,8 @@
 #   2. Each worker, only when the coordinator passed. ssh answers, the checkout is reset
 #      (`git reset --hard` and `git clean -fdx`), and an scp from the worker to
 #      COORDINATOR_DIST arrives. The scp is the one that step 8 of the worker makes.
+#   3. On each Mac, the coordinator too: the signing keychain unlocks with its password file,
+#      holds <TARGET>_SIGN_IDENTITY, and Apple answers with the notary profile.
 # Each check prints `preflight: OK -- <what>` or `preflight: FAIL -- <what>`. The last line is
 # `preflight: OK` or `preflight: FAIL`, and the exit status is 0 only for OK.
 #
@@ -93,6 +98,7 @@ targets=""
 version=""
 slow=yes
 deliver=yes
+unsigned=no
 repo_arg=""
 conf=$root/distribution.conf
 
@@ -100,6 +106,7 @@ while [ $# -gt 0 ]; do
   case $1 in
     --skip-slow)  slow=no; shift ;;
     --no-deliver) deliver=no; shift ;;
+    --unsigned)   unsigned=yes; shift ;;
     --repo)       [ $# -ge 2 ] || die "--repo needs a value"; repo_arg=$2; shift 2 ;;
     --conf)       [ $# -ge 2 ] || die "--conf needs a value"; conf=$2; shift 2 ;;
     -*)           echo "release-drive: unknown argument: $1" >&2; usage 1 ;;
@@ -278,6 +285,24 @@ if [ "$cmd" = preflight ]; then
   fi
   pass "coordinator: no change to a tracked file"
 
+  # The signing keychain of one Mac. $1 = the target; runs on this machine when $2 is
+  # "local", else over ssh to $2. Prints nothing; the exit status is the answer.
+  sign_check() {
+    kc=$(conf_of "$1" KEYCHAIN); pf=$(conf_of "$1" KEYCHAIN_PASS_FILE)
+    sid=$(conf_of "$1" SIGN_IDENTITY); np=$(conf_of "$1" NOTARY_PROFILE)
+    if [ -z "$kc" ] || [ -z "$pf" ] || [ -z "$sid" ] || [ -z "$np" ]; then
+      fail "$1: $conf does not set all of ${1}_SIGN_IDENTITY, _NOTARY_PROFILE, _KEYCHAIN and _KEYCHAIN_PASS_FILE (tools/macos-signing-setup.sh prints them)"
+      return 1
+    fi
+    c="security unlock-keychain -p \"\$(cat $pf)\" $kc && security find-identity -v -p codesigning $kc | grep -q $sid && xcrun notarytool history --keychain-profile $np --keychain $kc > /dev/null"
+    if [ "$2" = local ]; then sh -c "$c" > /dev/null 2>&1; else ssh $sshopt "$2" "$c" > /dev/null 2>&1; fi \
+      && pass "$1: the signing keychain holds the identity, and Apple accepts the notary profile" \
+      || fail "$1: the signing keychain $kc does not unlock, does not hold $sid, or Apple refuses profile $np. Run tools/macos-signing-setup.sh there"
+  }
+  case ${COORDINATOR_TARGET:-} in
+    macos-*) sign_check "$COORDINATOR_TARGET" local ;;
+  esac
+
   # A clone of HEAD, built as step 2 of the worker builds it. Each command's output goes to
   # the log; a FAIL prints its last lines.
   plog=$root/dist/preflight-coordinator.log
@@ -346,6 +371,7 @@ if [ "$cmd" = preflight ]; then
       continue
     fi
     pass "$t: ssh $host answers"
+    case $t in macos-*) sign_check "$t" "$host" ;; esac
     if running "$t"; then
       fail "$t: a worker runs there now"
       continue
@@ -456,6 +482,17 @@ if [ -n "$(conf_of "$target" SERIAL_A)" ] && [ -n "$(conf_of "$target" SERIAL_B)
   args="$args --serial-a $(conf_of "$target" SERIAL_A) --serial-b $(conf_of "$target" SERIAL_B)"
 fi
 [ $slow = yes ] || args="$args --skip-slow"
+case $target in
+  macos-*)
+    if [ $unsigned = yes ]; then
+      args="$args --unsigned"
+    elif [ -n "$(conf_of "$target" SIGN_IDENTITY)" ]; then
+      args="$args --sign $(conf_of "$target" SIGN_IDENTITY)"
+      args="$args --notary-profile $(conf_of "$target" NOTARY_PROFILE)"
+      args="$args --keychain $(conf_of "$target" KEYCHAIN)"
+      args="$args --keychain-pass-file $(conf_of "$target" KEYCHAIN_PASS_FILE)"
+    fi ;;  # No identity: the worker stops before step 1 and says what is missing.
+esac
 if [ $is_local = no ] && [ $deliver = yes ]; then
   [ -n "${COORDINATOR_USER:-}" ] && [ -n "${COORDINATOR_HOST:-}" ] && [ -n "${COORDINATOR_DIST:-}" ] \
     || die "$conf does not have COORDINATOR_USER, COORDINATOR_HOST and COORDINATOR_DIST"

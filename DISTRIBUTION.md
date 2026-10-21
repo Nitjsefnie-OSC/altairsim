@@ -181,9 +181,32 @@ the COORDINATOR   git and gh authenticated -- it does ALL the GitHub work
 ```
 
 **A worker holds no GitHub credentials.** It clones the public repo, builds, and hands one
-archive back over `scp`. Its only credential is the delivery key, which can write to the
-coordinator's `dist/` and nothing else. Everything that touches the repository with
-credentials happens on the coordinator.
+archive back over `scp`. Its credential for the coordinator is the delivery key, which can write
+to the coordinator's `dist/` and nothing else. Everything that touches the repository with
+credentials happens on the coordinator. A Mac also holds the signing credentials (below), which
+can sign and notarize a program and do nothing on GitHub.
+
+**Each Mac, the coordinator too, needs a signing keychain.** A macOS package is signed with the
+Developer ID Application certificate and notarized by Apple, so that macOS starts it with no
+`xattr` step (§4.3). Set it up one time on each Mac:
+
+1. Get the Developer ID certificate with its private key as a `.p12` (Keychain Access: right-click
+   the identity, Export). Get the App Store Connect API key (`AuthKey_XXXXXXXXXX.p8`), its key
+   ID and its issuer ID.
+2. Copy the two files to the Mac, into a folder that only you can read.
+3. On that Mac, in a terminal (it asks for the `.p12` password), run:
+   `tools/macos-signing-setup.sh --p12 <file> --p8 <file> --key-id <id> --issuer <uuid>`.
+   Over ssh, use `ssh -t` so that it can ask.
+4. CHECK the last line, `macos-signing-setup: OK`. STOP on a FAIL: the script names what Apple
+   or the keychain refused.
+5. Copy the four `<TARGET>_…` lines that it prints into `distribution.conf`.
+6. Delete the two copied files.
+
+The script makes `~/Library/Keychains/altairsim-signing.keychain-db` and its password file
+`~/.altairsim-signing-pass` (mode 600). The keychain is separate from the login keychain for
+one reason. Over ssh, the login keychain can be locked, and `codesign` can wait for an "allow
+access" dialog that nobody sees. `tools/macos-sign.sh` unlocks the signing keychain from the
+password file before each use. `release-drive.sh preflight` checks the keychain on each Mac.
 
 **No pandoc, no Chrome, no poppler on any machine.** CI builds the PDFs and commits them, so
 the tagged tree already has them. `build-package.sh --pdf docs/altairsim-manual.pdf` uses that
@@ -217,8 +240,13 @@ block and one line, `release-worker: OK` or `release-worker: FAIL at step N`. Th
 5. **`altairsim --version`** — CHECK exactly `AltairSim X.Y.Z`; STOP on a `-N-gsha` suffix or
    `(modified)`.
 6. **Package** — `tools/build-package.sh --pdf docs/altairsim-manual.pdf --target <target>`.
+   On a Mac, with the four signing options, which sign and notarize the package (§4.3). CHECK
+   the `macos-sign: SIGNED` line. A Mac with no signing values in `distribution.conf` STOPs
+   before step 1.
 7. **Prove the manual against the archive** — `tools/verify-package.sh <archive>`, which
-   extracts it outside the repo and runs the manual's own `$ altairsim …` commands.
+   extracts it outside the repo and runs the manual's own `$ altairsim …` commands. On a Mac,
+   with `--require-notarized`, which also proves that Gatekeeper accepts the program and that
+   it starts with the quarantine mark on it.
 8. **Deliver** — `scp` the archive to the coordinator's `dist/`.
 
 **A worker's checkout is disposable.** `tools/release-drive.sh` resets it
@@ -232,6 +260,24 @@ the download page has no later gate.
 
 **macOS.** Both Macs run identical steps and differ only in target. **Neither passes
 `-DCMAKE_OSX_ARCHITECTURES`**: each builds native, which is the point of splitting.
+
+**Each Mac signs and notarizes its own package**, in step 6. `tools/macos-sign.sh` signs every
+Mach-O file in the package with the Developer ID identity, the hardened runtime and a secure
+timestamp. It zips the package folder, sends the zip to Apple's notary service, and waits for
+`Accepted`. It usually takes a few minutes, and the Mac needs the internet to reach Apple. The
+archive stays a tar.gz.
+
+**A plain executable cannot be stapled.** Only an app bundle, a `.dmg` or a `.pkg` can hold the
+notary ticket. For a bare `altairsim`, macOS gets the ticket from Apple the first time a user
+starts a new copy. The manual's Troubleshooting chapter says what to do when the Mac is offline.
+
+**The signing is done on the worker, not on the coordinator.** The coordinator could sign the
+Intel binary, but it would then change an archive after delivery. Step 7 proves the archive
+that ships, on the hardware that it is for. That holds only if the worker signs.
+
+`--unsigned` on `release-drive.sh start` (or `release-worker.sh`) gives an ad hoc signature
+instead. Use it for a dry run only: a user of that package must clear the quarantine mark by
+hand. The CI package leg (`package.yml`) has no certificate, and signs ad hoc.
 
 **Linux.** Build on the **oldest glibc you can get** — a container or an old VM. A binary built
 on a current distro refuses to start on an older one. This is the one target where the build

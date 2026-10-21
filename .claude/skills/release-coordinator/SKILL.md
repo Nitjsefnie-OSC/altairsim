@@ -115,6 +115,11 @@ out the tag in it. On a worker box, the driver first resets the checkout, as `pr
   checkout on the box is at `vX.Y.Z`, the worker is a running process, and its log names the
   version. **STOP on `release-drive: FAIL`.** An empty log is not a build in progress: in 1.3.0
   a start that printed `started` ran nothing, and nobody saw it for about 10 minutes.
+- **The two Macs sign and notarize their own packages** with the `<TARGET>_SIGN_…` values in
+  `distribution.conf` (DISTRIBUTION.md §4.3). `preflight` checks each Mac's signing keychain.
+  A Mac with no signing values stops before step 1. Do not pass `--unsigned` for a release:
+  it is for a dry run only, and its package needs the `xattr` step that the manual no longer
+  gives.
 - **Any order, and at the same time**, but the driver refuses a target in `SHARED_HOST` while
   another target of that list runs. They are one physical machine.
 - **Wait for the results with one command, run in the background.** Do not poll by hand.

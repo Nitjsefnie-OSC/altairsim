@@ -57,6 +57,26 @@ LINUX_X86_64_PATH=
 # only fight over the same CPU and RAM. Empty if each target has a machine of its own.
 SHARED_HOST=
 
+# --- macOS signing and notarization, per Mac (the coordinator too) ---------------------------
+#
+# tools/macos-signing-setup.sh, run once on each Mac, makes the keychain and prints these four
+# values. DISTRIBUTION.md 4.1 says how.
+# <TARGET>_SIGN_IDENTITY       the SHA-1 of the Developer ID Application identity (the SHA-1,
+#                              not the name: the name has spaces).
+# <TARGET>_NOTARY_PROFILE      the notarytool profile in that keychain.
+# <TARGET>_KEYCHAIN            the signing keychain, a full path on that Mac.
+# <TARGET>_KEYCHAIN_PASS_FILE  the file that holds its password, a full path on that Mac.
+# Leave them empty and a macOS release stops before step 1 (a dry run can pass --unsigned).
+
+MACOS_ARM64_SIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567
+MACOS_ARM64_NOTARY_PROFILE=altairsim-notary
+MACOS_ARM64_KEYCHAIN=/Users/builder/Library/Keychains/altairsim-signing.keychain-db
+MACOS_ARM64_KEYCHAIN_PASS_FILE=/Users/builder/.altairsim-signing-pass
+MACOS_X86_64_SIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567
+MACOS_X86_64_NOTARY_PROFILE=altairsim-notary
+MACOS_X86_64_KEYCHAIN=/Users/builder/Library/Keychains/altairsim-signing.keychain-db
+MACOS_X86_64_KEYCHAIN_PASS_FILE=/Users/builder/.altairsim-signing-pass
+
 # --- Hardware tests (ctest -L hw), per box ---------------------------------------------------
 #
 # <TARGET>_SERIAL_A / _SERIAL_B: two serial ports joined by a null modem cable, for the
