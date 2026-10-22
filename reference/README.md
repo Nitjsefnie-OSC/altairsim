@@ -94,6 +94,12 @@ model wrong).
 | [MITS 88-PIO](MITS%2088-PIO.md) | MITS 88-PIO parallel board (discrete TTL, two 8212 latches — *not* a PIA): the two consecutive ports (even Control/Status with A0 split, odd Data), the fixed-direction 8-bit in/out latches, the status bits (DI0 output-ready, DI1 input-has-data), the interrupt-enable bits (DO0/DO1, "BOTH" jumper), the `SBO`/`SBI` strobe + `BO`/`BIN` handshake, and both interrupt paths (88-VI vectored — with the priority-order conflict vs the 88-VI board — or single-level RST 7 → 0x38). |
 | [MITS 88-4PIO](MITS%2088-4PIO.md) | MITS 88-4 parallel board (up to four Motorola 6820 PIAs, ports J/K/L/M): the 16-address-per-board decode (A4–A7 board, A3–A2 port, A1–A0 section/register), the read/write control/status register bit map (bit 7/6 IRQ status, 5–3 C2, 2 DDR-select, 1–0 C1), the C1/C2 edge+enable tables, the CA2/CB2-as-output read/write-strobe modes, DDR direction control, the power-on all-inputs reset, the init/handshake protocol, and both interrupt paths (88-VI vectored or single-level `PINT` → RST → 0x38). |
 
+## Networking
+
+| Reference | What it covers |
+|---|---|
+| [Zenith NET-100-1 Local Area Network Interface Card](Z-100%20NET100%20LAN%20Interface%20card.md) | Zenith NET-100-1 (Z-100 series, S-100 IEEE 696): **an ARCNET card, not Ethernet** despite the file name — an SMC **COM9026** token-passing controller (2.5 Mbit/s, RG-62 coax, nodes 1–255, 0 = broadcast) with an on-board 4-port active hub and a shared **2 KB buffer RAM**. Two I/O ports from a switch-set base (factory `0A0h`): **base** = status read / interrupt-mask write, **base+1** = command write; the status, mask and seven-command tables; the 512-byte page packet format (SID, DID, COUNT = 256 − N, data ends at offset FFh; long packets 512 − N); RAM at `0F0000h` and optional ROM at `0F4000h`; the inverted node-ID switch; the J101 interrupt choice (VI0–7, NMI, INT); the PAL equations, the RDY wait states and PHANTOM\*; the ET timeout table. The card **schematic** (a separate scan) shows there is **no 16/24-bit memory jumper**: A16–A23 feed the RAM/ROM switch comparators directly, so a 16-bit bus needs those switches set to match; I/O compares A7–A1 only. A closing section notes how it fits AltairSim's 16-bit memory / 8-bit I/O bus (port base `0A0h` collides with the 88-HDSK; RAM drives PHANTOM\* on every cycle; RDY waits). ⚠ OCR reads `D1h` as "01" and 840 ms as "640"; the received-SID offset and the per-node timeout formula conflict or are unclear. **Not emulated.** |
+
 ## Analog and game I/O
 
 | Reference | What it covers |
