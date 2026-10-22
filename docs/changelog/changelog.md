@@ -20,7 +20,8 @@ lists them, and `R .gitignore GITIGNOR.TXT` copies one.
 
 **`W` copies a wildcard into a host folder.** `W *.ASM SRC` writes each match into the host
 folder `SRC`, under its own name. Before, `W` refused a second word after a wildcard. The folder
-must exist. When it does not, `W` prints one error and copies nothing.
+must exist. When it does not, `W` prints one error and copies nothing. The CP/M example disks
+have this version of `W` (1.3).
 
 **The host bridge sources are smaller.** `R.ASM`, `W.ASM`, `HDIR.ASM` and `HB.INC` were
 103,624 bytes, and now they are 62,364 bytes. Tabs line up the columns, and the comments say
