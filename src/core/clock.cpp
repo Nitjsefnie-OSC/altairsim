@@ -87,7 +87,8 @@ void Clock::advance(uint64_t dt) {
 }
 
 void Clock::power() {
-    t_ = 0;
+    t_      = 0;
+    rateAt_ = 0;
     heap_.clear();
     live_.clear();
 }

@@ -318,6 +318,7 @@ add_library(altair_core STATIC
   src/core/symbols.cpp
   src/core/paths.cpp
   src/core/bus.cpp
+  src/core/busclock.cpp
   src/core/clock.cpp
   src/core/board.cpp
   src/core/machine.cpp
@@ -790,6 +791,7 @@ add_executable(altair_tests
   tests/main.cpp
   tests/test_bus.cpp
   tests/test_clock.cpp
+  tests/test_busclock.cpp
   tests/test_statefile.cpp
   tests/test_snapshot.cpp
   tests/test_memory.cpp

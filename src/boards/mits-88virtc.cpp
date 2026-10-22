@@ -119,8 +119,12 @@ void VirtcBoard::armRtc() {
         rtc_.stop(clock_);
         return;
     }
-    rtc_.start(clock_, rtcSource_ == RtcSource::Line ? 60 : 10000, (uint64_t)rtcDivide_,
-               [this] { rtcFire(); });
+    // Host time is the bus's (core/busclock.h): one host clock for pin 49 per machine,
+    // and the one a test sets.
+    if (bus_) rtc_.setHostNs([bc = &bus_->busClock()] { return bc->hostNs(); });
+    // CF is the bus CLOCK divided by 200.
+    rtc_.start(clock_, rtcSource_ == RtcSource::Line ? 60 : BusClock::kHz / 200,
+               (uint64_t)rtcDivide_, [this] { rtcFire(); });
 }
 
 // Once a slice: is the divider's host-time schedule due?

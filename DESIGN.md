@@ -1089,6 +1089,8 @@ The crystal is on the **CPU card** (§3, §8), so the card publishes its `clock_
 
 **A board's real-time source is not the CPU's crystal** (issue #825). The crystal does not leave the CPU board. The one exception is the bus's 2 MHz CLOCK (pin 49), which every CPU board supplies at 2 MHz at any processor speed. A source that keeps real time, such as the 60 Hz mains or a divider off the bus CLOCK, therefore counts host time. The board reads host time through an injected function, and a test sets it. A board on this rule uses a `HostTicker` (`src/core/hostticker.h`), which keeps the schedule in host time. With a crystal set, the tick is a `Clock` deadline at the exact T-state, because the run loop holds T-states to real time. Flat out, the board's `pump()` sets the tick when host time says it is due. The 88-VI/RTC and the RTC-100 (issue #827) use it. `docs/boards/mits-88virtc.md` has the details.
 
+**Pin 49 has one model, `BusClock`** (`src/core/busclock.h`, issue #836). The bus owns it, and a board reads it as `bus.busClock()`. It counts 2 MHz ticks of real time. With a crystal set, it counts T-states, so a paced run is exact and repeatable. Flat out, it counts host time, one tick for each 500 ns. If the machine stops at the monitor, the next run slice moves the count forward to host time. `BusClock` also holds the host-time function for pin 49, so a test sets host time there. Only a source that the hardware wires to pin 49 uses `BusClock`. The SS-1's 8253 counts its ticks, and the 88-VI/RTC's `clock` source (CF, CLOCK ÷ 200) reads its host time. A source with its own crystal keeps its own clock. For example, the RTC-100's MSM5832 has its own 32.768 kHz crystal.
+
 ```cpp
 class Clock {
 public:

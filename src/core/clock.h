@@ -139,9 +139,17 @@ public:
     long long hz() const { return hz_; }
     bool      free() const { return free_; }
     void      setHz(long long hz) {
-        free_ = (hz <= 0);
-        hz_   = hz > 0 ? hz : 2000000;
+        bool      f = (hz <= 0);
+        long long h = hz > 0 ? hz : 2000000;
+        if (f != free_ || h != hz_) rateAt_ = t_;
+        free_ = f;
+        hz_   = h;
     }
+
+    // The T-state at which hz() or free() last changed. A count of real time kept in
+    // T-states (core/busclock.h) counts up to here at the old rate and on from here at
+    // the new one, whenever it next looks.
+    uint64_t rateChangedAt() const { return rateAt_; }
 
     // THE SECOND POLICY, AND IT IS ORTHOGONAL TO THE FIRST (Patrick, 2026-07-13).
     //
@@ -222,6 +230,7 @@ private:
     std::unordered_map<Handle, std::function<void()>> live_;
 
     uint64_t t_    = 0;
+    uint64_t rateAt_ = 0;       // see rateChangedAt()
     long long hz_  = 2000000;   // the DIVISOR. Never 0. See setHz().
     bool     free_ = true;      // ...and by default we do not pace against it.
     bool     idle_ = true;      // ...but we DO stand down when the guest is only waiting.

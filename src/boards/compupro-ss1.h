@@ -165,6 +165,9 @@ private:
     void     refresh();
     uint64_t nextEdge() const;
 
+    // The 8253's counter clock: pin-49 ticks of the bus CLOCK, or 0 with no clock or bus.
+    uint64_t pin49() const;
+
     // Drive the next byte of the master's interrupt-acknowledge CALL (see the .cpp).
     uint8_t  intAckByte();
 

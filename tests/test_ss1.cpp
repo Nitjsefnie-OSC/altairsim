@@ -13,6 +13,7 @@
 #include "chips/intel8253.h"
 #include "chips/intel8259a.h"
 #include "chips/sig2651.h"
+#include "core/busclock.h"
 #include "core/clock.h"
 #include "core/machine.h"
 #include "core/statefile.h"
@@ -123,18 +124,14 @@ constexpr uint64_t kChar = kBit * 10;       // 8N1 = 10 bits
 
 // ---- Phase 3: the 8253 interval timer ----
 
-// A bare 8253 on a Clock -- the CHIP, exercised directly. The clock runs at the 8253's
-// own 2 MHz counter rate, so one advanced T-state is exactly one counter tick and the
-// mode arithmetic reads straight off the numbers.
+// A bare 8253 -- the CHIP, exercised directly. It counts edges of its counter clock, and
+// the rig hands it that count, so the mode arithmetic reads straight off the numbers.
 struct TimerRig {
-    Clock     clk;
+    uint64_t  now = 0;  // counter-clock edges
     Intel8253 t{"timer"};
 
-    TimerRig() {
-        clk.setHz(2000000);  // one counter tick per T-state
-        t.powerOn(clk);
-    }
-    void advance(uint64_t dt) { clk.advance(dt); }
+    TimerRig() { t.powerOn(); }
+    void advance(uint64_t dt) { now += dt; }
 };
 
 // Control-word helpers: SC1/SC0 (counter) | RL1/RL0 | M2/M1/M0 | BCD.
@@ -542,150 +539,155 @@ void test_ss1() {
     SECTION("SS-1 8253 -- mode 0: interrupt on terminal count");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(0, kLsb, 0), g.clk);  // counter 0, LSB, mode 0, binary
-        CHECK(!g.t.out(0, g.clk), "mode 0: OUT is low the moment the control word lands");
+        g.t.writeControl(ctrl(0, kLsb, 0), g.now);  // counter 0, LSB, mode 0, binary
+        CHECK(!g.t.out(0, g.now), "mode 0: OUT is low the moment the control word lands");
 
-        g.t.writeCounter(0, 100, g.clk);  // N = 100
-        CHECK(!g.t.out(0, g.clk), "mode 0: still low with the count loaded");
-        CHECK(g.t.count(0, g.clk) == 100, "the count reads back the value just loaded");
+        g.t.writeCounter(0, 100, g.now);  // N = 100
+        CHECK(!g.t.out(0, g.now), "mode 0: still low with the count loaded");
+        CHECK(g.t.count(0, g.now) == 100, "the count reads back the value just loaded");
 
         g.advance(40);
-        CHECK(g.t.count(0, g.clk) == 60, "40 ticks later the count has counted down to 60");
+        CHECK(g.t.count(0, g.now) == 60, "40 ticks later the count has counted down to 60");
 
         g.advance(59);  // 99 ticks total
-        CHECK(!g.t.out(0, g.clk), "one tick short of terminal count, OUT is still low");
+        CHECK(!g.t.out(0, g.now), "one tick short of terminal count, OUT is still low");
         g.advance(1);   // 100 ticks: terminal count
-        CHECK(g.t.out(0, g.clk), "at terminal count OUT goes high");
+        CHECK(g.t.out(0, g.now), "at terminal count OUT goes high");
         g.advance(5000);
-        CHECK(g.t.out(0, g.clk), "and in mode 0 it stays high");
+        CHECK(g.t.out(0, g.now), "and in mode 0 it stays high");
     }
 
     SECTION("SS-1 8253 -- the counter-latch command freezes a 16-bit read");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(0, kBoth, 0), g.clk);  // counter 0, LSB-then-MSB, mode 0
-        g.t.writeCounter(0, 0x00, g.clk);            // LSB
-        g.t.writeCounter(0, 0x02, g.clk);            // MSB -> N = 0x0200, counting starts
+        g.t.writeControl(ctrl(0, kBoth, 0), g.now);  // counter 0, LSB-then-MSB, mode 0
+        g.t.writeCounter(0, 0x00, g.now);            // LSB
+        g.t.writeCounter(0, 0x02, g.now);            // MSB -> N = 0x0200, counting starts
         g.advance(0x100);                            // 256 ticks -> count 0x0100
 
-        g.t.writeControl(ctrl(0, 0 /*latch*/, 0), g.clk);  // Counter Latch Command
+        g.t.writeControl(ctrl(0, 0 /*latch*/, 0), g.now);  // Counter Latch Command
         g.advance(50);  // the counter keeps running, but the latched value must not move
 
-        uint8_t lo = g.t.readCounter(0, g.clk);
-        uint8_t hi = g.t.readCounter(0, g.clk);
+        uint8_t lo = g.t.readCounter(0, g.now);
+        uint8_t hi = g.t.readCounter(0, g.now);
         CHECK(((hi << 8) | lo) == 0x0100,
               "the latch froze the count at 0x0100 despite 50 more ticks");
         // After both bytes are read the latch releases: a fresh read tracks live again.
-        uint8_t lo2 = g.t.readCounter(0, g.clk);
-        uint8_t hi2 = g.t.readCounter(0, g.clk);
+        uint8_t lo2 = g.t.readCounter(0, g.now);
+        uint8_t hi2 = g.t.readCounter(0, g.now);
         CHECK(((hi2 << 8) | lo2) < 0x0100, "reading both bytes released the latch");
     }
 
     SECTION("SS-1 8253 -- mode 2: rate generator");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(1, kLsb, 2), g.clk);  // counter 1, LSB, mode 2
-        g.t.writeCounter(1, 4, g.clk);              // N = 4
-        CHECK(g.t.out(1, g.clk), "mode 2: OUT idles high");
+        g.t.writeControl(ctrl(1, kLsb, 2), g.now);  // counter 1, LSB, mode 2
+        g.t.writeCounter(1, 4, g.now);              // N = 4
+        CHECK(g.t.out(1, g.now), "mode 2: OUT idles high");
 
         g.advance(3);  // the count would read 1 here
-        CHECK(!g.t.out(1, g.clk), "mode 2: OUT drops low for the one tick before reload");
-        CHECK(g.t.count(1, g.clk) == 1, "mode 2 counts N..1");
+        CHECK(!g.t.out(1, g.now), "mode 2: OUT drops low for the one tick before reload");
+        CHECK(g.t.count(1, g.now) == 1, "mode 2 counts N..1");
         g.advance(1);  // reload
-        CHECK(g.t.out(1, g.clk), "mode 2: OUT is high again and the period reloaded");
-        CHECK(g.t.count(1, g.clk) == 4, "and the count is back at N");
+        CHECK(g.t.out(1, g.now), "mode 2: OUT is high again and the period reloaded");
+        CHECK(g.t.count(1, g.now) == 4, "and the count is back at N");
         g.advance(3);
-        CHECK(!g.t.out(1, g.clk), "mode 2: it pulses low again exactly one period later");
+        CHECK(!g.t.out(1, g.now), "mode 2: it pulses low again exactly one period later");
     }
 
     SECTION("SS-1 8253 -- mode 3: square wave (even and odd counts)");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(2, kLsb, 3), g.clk);  // counter 2, LSB, mode 3
-        g.t.writeCounter(2, 4, g.clk);              // N = 4 -> 2 high, 2 low
-        CHECK(g.t.out(2, g.clk), "mode 3: high for the first half of the period");
+        g.t.writeControl(ctrl(2, kLsb, 3), g.now);  // counter 2, LSB, mode 3
+        g.t.writeCounter(2, 4, g.now);              // N = 4 -> 2 high, 2 low
+        CHECK(g.t.out(2, g.now), "mode 3: high for the first half of the period");
         g.advance(1);
-        CHECK(g.t.out(2, g.clk), "still high at tick 1");
+        CHECK(g.t.out(2, g.now), "still high at tick 1");
         g.advance(1);
-        CHECK(!g.t.out(2, g.clk), "low for the second half (tick 2)");
+        CHECK(!g.t.out(2, g.now), "low for the second half (tick 2)");
         g.advance(1);
-        CHECK(!g.t.out(2, g.clk), "still low at tick 3");
+        CHECK(!g.t.out(2, g.now), "still low at tick 3");
         g.advance(1);
-        CHECK(g.t.out(2, g.clk), "high again at the start of the next period");
+        CHECK(g.t.out(2, g.now), "high again at the start of the next period");
 
         // An odd count spends the extra tick HIGH: N=5 -> 3 high, 2 low.
         TimerRig h;
-        h.t.writeControl(ctrl(2, kLsb, 3), h.clk);
-        h.t.writeCounter(2, 5, h.clk);
+        h.t.writeControl(ctrl(2, kLsb, 3), h.now);
+        h.t.writeCounter(2, 5, h.now);
         h.advance(2);
-        CHECK(h.t.out(2, h.clk), "odd N: still high at tick 2 (the extra tick is high)");
+        CHECK(h.t.out(2, h.now), "odd N: still high at tick 2 (the extra tick is high)");
         h.advance(1);
-        CHECK(!h.t.out(2, h.clk), "odd N: low from tick 3");
+        CHECK(!h.t.out(2, h.now), "odd N: low from tick 3");
     }
 
     SECTION("SS-1 8253 -- nextEdge reports the next OUT transition");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(0, kLsb, 0), g.clk);
-        g.t.writeCounter(0, 100, g.clk);
-        uint64_t base = g.clk.now();
-        CHECK(g.t.nextEdge(0, g.clk) == base + 100,
+        g.t.writeControl(ctrl(0, kLsb, 0), g.now);
+        g.t.writeCounter(0, 100, g.now);
+        uint64_t base = g.now;
+        CHECK(g.t.nextEdge(0, g.now) == base + 100,
               "mode 0 nextEdge is the terminal-count moment");
         g.advance(100);
-        CHECK(g.t.nextEdge(0, g.clk) == 0, "past terminal count mode 0 has no further edge");
+        CHECK(g.t.nextEdge(0, g.now) == 0, "past terminal count mode 0 has no further edge");
 
         // A rate generator always has a next edge (it is periodic).
-        g.t.writeControl(ctrl(1, kLsb, 2), g.clk);
-        g.t.writeCounter(1, 10, g.clk);
-        uint64_t b1 = g.clk.now();
-        CHECK(g.t.nextEdge(1, g.clk) == b1 + 9, "mode 2 next edge is the low pulse (count 1)");
+        g.t.writeControl(ctrl(1, kLsb, 2), g.now);
+        g.t.writeCounter(1, 10, g.now);
+        uint64_t b1 = g.now;
+        CHECK(g.t.nextEdge(1, g.now) == b1 + 9, "mode 2 next edge is the low pulse (count 1)");
     }
 
     SECTION("SS-1 8253 -- BCD counting");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(0, kLsb, 0, /*bcd*/ true), g.clk);
-        g.t.writeCounter(0, 0x50, g.clk);  // BCD 50
-        CHECK(g.t.count(0, g.clk) == 0x50, "a BCD count reads back as BCD 50");
+        g.t.writeControl(ctrl(0, kLsb, 0, /*bcd*/ true), g.now);
+        g.t.writeCounter(0, 0x50, g.now);  // BCD 50
+        CHECK(g.t.count(0, g.now) == 0x50, "a BCD count reads back as BCD 50");
         g.advance(10);
-        CHECK(g.t.count(0, g.clk) == 0x40, "and decrements in BCD to 40");
+        CHECK(g.t.count(0, g.now) == 0x40, "and decrements in BCD to 40");
         g.advance(40);
-        CHECK(g.t.out(0, g.clk), "BCD mode 0 hits terminal count after 50 ticks, not 0x50");
+        CHECK(g.t.out(0, g.now), "BCD mode 0 hits terminal count after 50 ticks, not 0x50");
     }
 
     SECTION("SS-1 8253 -- the counter clock is 2 MHz regardless of the CPU clock");
     {
-        // A 4 MHz CPU: the 8253 still counts at 2 MHz, so one tick takes two T-states.
-        Clock     clk;
+        // A 4 MHz CPU, paced: the 8253 counts the 2 MHz bus CLOCK, so one tick takes two
+        // T-states.
+        Clock    clk;
+        BusClock bc;
         clk.setHz(4000000);
+        bc.power(clk);
         Intel8253 t{"timer"};
-        t.powerOn(clk);
-        t.writeControl(ctrl(0, kLsb, 0), clk);
-        t.writeCounter(0, 10, clk);
+        t.powerOn();
+        t.writeControl(ctrl(0, kLsb, 0), bc.now(clk));
+        t.writeCounter(0, 10, bc.now(clk));
         clk.advance(19);  // 9 counter ticks
-        CHECK(!t.out(0, clk), "9 counter ticks (19 T-states) short of TC: OUT still low");
+        CHECK(!t.out(0, bc.now(clk)), "9 counter ticks (19 T-states) short of TC: OUT still low");
         clk.advance(1);    // the 20th T-state completes the 10th tick
-        CHECK(t.out(0, clk), "the 10th counter tick (20 T-states) reaches terminal count");
+        CHECK(t.out(0, bc.now(clk)), "the 10th counter tick (20 T-states) reaches terminal count");
     }
 
     SECTION("SS-1 8253 -- snapshot carries the running counters");
     {
         TimerRig g;
-        g.t.writeControl(ctrl(0, kLsb, 0), g.clk);
-        g.t.writeCounter(0, 200, g.clk);
+        g.advance(1000);
+        g.t.writeControl(ctrl(0, kLsb, 0), g.now);
+        g.t.writeCounter(0, 200, g.now);
         g.advance(60);  // count = 140
         StateWriter w;
-        g.t.serialize(w);
+        g.t.serialize(w, g.now);
 
-        Clock clk2;
-        clk2.setHz(2000000);
-        clk2.advance(g.clk.now());  // the restored machine is at the same emulated time
+        // The count of edges does not travel in a snapshot: the machine it is restored
+        // into has its own, here younger than the counter's phase.
+        uint64_t  now2 = 5;
         Intel8253 t2{"timer"};
         StateReader r(w.data());
-        t2.deserialize(r);
+        t2.deserialize(r, now2);
         CHECK(r.ok(), "the snapshot reads back without underrun");
-        CHECK(t2.count(0, clk2) == 140,
-              "the restored counter keeps counting from the same tick");
+        CHECK(t2.count(0, now2) == 140, "the restored counter keeps its phase");
+        CHECK(t2.nextEdge(0, now2) == now2 + 140, "and reaches terminal count 140 ticks on");
+        CHECK(t2.count(0, now2 + 40) == 100, "and counts on from there");
     }
 
     // ---- the timer on a real bus ----
@@ -735,9 +737,61 @@ void test_ss1() {
         m.bus.ioWrite(0x54, 200);
         m.clock.advance(200);  // 100 ticks
         CHECK(m.bus.ioRead(0x54) == 100, "IN 54 reads the counter halfway down");
-        CHECK(!ss1->timer().out(0, m.clock), "and OUT is still low");
+        CHECK(!ss1->timer().out(0, m.bus.busClock().now(m.clock)), "and OUT is still low");
         m.clock.advance(200);  // 100 more ticks -> terminal count
-        CHECK(ss1->timer().out(0, m.clock), "OUT is high once the counter reaches zero");
+        CHECK(ss1->timer().out(0, m.bus.busClock().now(m.clock)),
+              "OUT is high once the counter reaches zero");
+    }
+
+    // ---- flat out: the counters count pin 49 in real time (issue #836) ----
+
+    SECTION("SS-1 board -- flat out, the 8253 counts host time, not T-states");
+    {
+        Machine  m;
+        uint64_t ns = 1000000000;  // the host clock, frozen until the test moves it
+        m.bus.busClock().setHostNs([&ns] { return ns; });
+        auto* ss1 = buildIntMachine(m);
+        std::string err;
+        setProperty(*(dynamic_cast<Board*>(m.find("cpu0"))), "clock_hz", "0", err);  // flat out
+
+        // Counter 0, mode 0, LSB then MSB, N = 50000 (25 ms of CLOCK).
+        m.bus.ioWrite(0x57, ctrl(0, kBoth, 0));
+        m.bus.ioWrite(0x54, 50000 & 0xFF);
+        m.bus.ioWrite(0x54, 50000 >> 8);
+        auto read0 = [&] {
+            m.bus.ioWrite(0x57, ctrl(0, 0 /*latch*/, 0));
+            uint8_t lo = m.bus.ioRead(0x54);
+            uint8_t hi = m.bus.ioRead(0x54);
+            return (hi << 8) | lo;
+        };
+        m.clock.advance(1000000);
+        CHECK(read0() == 50000, "a million T-states with the host clock frozen: no count");
+        ns += 1000000;  // 1 ms
+        CHECK(read0() == 48000, "1 ms of host time counts 2000 ticks of the 2 MHz CLOCK");
+        (void)ss1;
+    }
+
+    SECTION("SS-1 board -- flat out, a terminal count interrupts in host time");
+    {
+        Machine  m;
+        uint64_t ns = 1000000000;
+        m.bus.busClock().setHostNs([&ns] { return ns; });
+        buildIntMachine(m);
+        std::string err;
+        setProperty(*(dynamic_cast<Board*>(m.find("cpu0"))), "clock_hz", "0", err);
+
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 1) & 0xFFu));
+        m.bus.ioWrite(0x57, ctrl(0, kLsb, 0));  // Timer 0, mode 0
+        m.bus.ioWrite(0x54, 50);                // N = 50 ticks = 25 us
+        m.clock.advance(1000000);
+        m.pump();
+        CHECK(!m.bus.intPending(), "a million T-states, host clock frozen: no terminal count");
+        ns += 25000;  // 25 us = 50 ticks
+        m.pump();
+        CHECK(m.bus.intPending(), "25 us of host time: the TC raises slave IR1 -> pin 73");
+        CHECK(m.bus.intAck() == 0xCD, "INTA 1: the CALL opcode");
+        CHECK(m.bus.intAck() == 0x04, "INTA 2: address low (0x2204)");
+        CHECK(m.bus.intAck() == 0x22, "INTA 3: address high");
     }
 
     // =====================================================================

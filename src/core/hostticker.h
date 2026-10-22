@@ -22,7 +22,9 @@
 // for the tick is not taken for finished (see start()).
 //
 // TWO BOARDS NEED THIS: the 88-VI/RTC's divider chain and the RTC-100's seconds
-// output. Same arithmetic, so it is written once. The ticker knows about Clock and
+// output. Same arithmetic, so it is written once. The 88-VI/RTC hands it the host
+// clock of the bus's pin-49 model (core/busclock.h); a chip that COUNTS pin 49, such as
+// the SS-1's 8253, reads BusClock directly and needs no ticker. The ticker knows about Clock and
 // nothing else; what a tick DOES is the board's `fire` callback.
 //
 // The Clock is passed in on every call rather than kept, because a board's clock_ is

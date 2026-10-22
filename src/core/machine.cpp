@@ -61,6 +61,7 @@ Board* Machine::adopt(std::unique_ptr<Board> b) {
 }
 
 void Machine::pump() {
+    bus.busClock().pump(clock);  // before the boards, so each reads this slice's count
     for (auto& b : boards_) b->pump();
 
     // A CALLER ANSWERED A LISTENER THAT GREETS, and only the backplane can say which
@@ -203,6 +204,7 @@ void Machine::power() {
     // panel RESET does not un-elapse the hours the machine has been on, and a
     // board timing a disk's rotation would be very surprised if it did.
     clock.power();
+    bus.busClock().power(clock);  // pin 49 starts counting with the power, too
     for (auto& b : boards_) b->power();
     for (auto& b : boards_) b->reset(Reset::PowerOn);
 }
@@ -224,7 +226,8 @@ constexpr char     kMagic[8]     = {'A', 'L', 'T', 'R', 'S', 'N', 'P', '1'};
 // 2: the ACR/Sol tape decks gained an auto-stop mark (`stopAt_`) in their state. A v1
 // snapshot lacks it and is rejected with the format-mismatch message rather than misread.
 // 3: the `sbc` board gained its auto-start latch and the onboard 1K RAM in its state.
-constexpr uint32_t kFormatVersion = 3;
+// 4: the `ss1` 8253 keeps each counter's phase in pin-49 ticks, not its load T-state.
+constexpr uint32_t kFormatVersion = 4;
 }  // namespace
 
 bool Machine::snapshot(const std::string& path, std::string& err) const {
@@ -337,6 +340,7 @@ bool Machine::restore(const std::string& path, std::string& err) {
         StateReader cr(clockBytes);
         clock.deserialize(cr);
     }
+    bus.busClock().rebase(clock);  // the count goes on from the restored T-state
     for (uint32_t i = 0; i < n; ++i) {
         StateReader br(boardBytes[i]);
         boards_[i]->deserialize(br);
