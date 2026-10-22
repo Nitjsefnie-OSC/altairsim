@@ -118,7 +118,7 @@ void Intel8259a::senseEdges(uint8_t live) {
 
 int Intel8259a::acknowledge(uint8_t live) {
     int w = winner(live);
-    if (w < 0) return -1;
+    if (w < 0) return 7;  // the default IR7: the IR7 vector, no in-service bit
     uint8_t bit = (uint8_t)(1u << w);
     isr_ |= bit;
     if (!ltim_) edge_ &= (uint8_t)~bit;  // edge mode: the request latch clears on ack

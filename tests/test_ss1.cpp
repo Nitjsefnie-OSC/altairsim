@@ -158,15 +158,15 @@ void initPic(Intel8259a& p, uint8_t icw1, uint8_t icw2, uint8_t icw4, uint8_t ma
 // Program the SS-1's two 8259As over the bus in the standard cascade: master vectors at
 // 0x0200, slave at 0x2200, both level-triggered with interval 4. `mMask`/`sMask` are the
 // OCW1 masks (a 0 bit is unmasked).
-void initSs1Pics(Machine& m, uint8_t base, uint8_t mMask, uint8_t sMask) {
+void initSs1Pics(Machine& m, uint8_t base, uint8_t mMask, uint8_t sMask, uint8_t icw1 = 0x1D) {
     uint8_t m0 = (uint8_t)(base + 0), m1 = (uint8_t)(base + 1);
     uint8_t s0 = (uint8_t)(base + 2), s1 = (uint8_t)(base + 3);
-    m.bus.ioWrite(m0, 0x1D);       // master ICW1: cascade, level, interval 4, IC4
+    m.bus.ioWrite(m0, icw1);       // master ICW1: 1D = cascade, level, interval 4, IC4
     m.bus.ioWrite(m1, 0x02);       //        ICW2: vectors at 0x0200
     m.bus.ioWrite(m1, 0x80);       //        ICW3: a slave on IR7
     m.bus.ioWrite(m1, kIcw4Mcs);   //        ICW4: MCS-80/85
     m.bus.ioWrite(m1, mMask);      //        OCW1
-    m.bus.ioWrite(s0, 0x1D);       // slave  ICW1
+    m.bus.ioWrite(s0, icw1);       // slave  ICW1
     m.bus.ioWrite(s1, 0x22);       //        ICW2: vectors at 0x2200
     m.bus.ioWrite(s1, 0x07);       //        ICW3: slave ID 7 (wired to master IR7)
     m.bus.ioWrite(s1, kIcw4Mcs);   //        ICW4
@@ -865,6 +865,33 @@ void test_ss1() {
         CHECK(q.winner(1u << 2) == 2, "level mode: a high line is a request with no edge");
     }
 
+    SECTION("SS-1 8259A -- an edge request needs IR held high until the acknowledge (#838)");
+    {
+        Intel8259a p{"pic"};
+        initPic(p, 0x13, 0x20, kIcw4Mcs, 0x00);  // edge, single, IC4
+        p.senseEdges(0x00);
+        p.senseEdges(1u << 2);  // a rising edge latches IR2
+        CHECK(p.winner(1u << 2) == 2, "the edge is latched while IR2 is high");
+        CHECK(p.winner(0x00) == -1, "IR2 fell before the acknowledge: no request");
+        CHECK(p.irr(0x00) == 0x00, "and the IRR shows no request");
+        CHECK(!p.intOut(0x00), "so INT drops with the line");
+        CHECK(p.acknowledge(0x00) == 7, "an acknowledge with no request is the default IR7");
+        CHECK(p.isr() == 0x00, "the default IR7 sets no in-service bit");
+        CHECK(p.callAddress(7) == 0x2038, "and its CALL is the IR7 address (interval 8)");
+
+        Intel8259a q{"pic"};
+        initPic(q, 0x13, 0x20, kIcw4Mcs, 0x00);
+        q.senseEdges(0x00);
+        q.senseEdges(1u << 7);
+        CHECK(q.acknowledge(1u << 7) == 7 && q.isr() == 0x80,
+              "a real IR7 request sets ISR bit 7 -- the way to tell it from a default IR7");
+
+        Intel8259a l{"pic"};
+        initPic(l, 0x1B, 0x20, kIcw4Mcs, 0x00);  // level mode
+        CHECK(l.acknowledge(0x00) == 7 && l.isr() == 0x00,
+              "level mode: nothing requesting at the acknowledge is the default IR7 too");
+    }
+
     SECTION("SS-1 8259A -- 8086 mode yields a single vector byte");
     {
         Intel8259a p{"pic"};
@@ -947,6 +974,50 @@ void test_ss1() {
         CHECK(m.bus.intAck() == 0x22, "INTA 3: address high");
         CHECK(!m.bus.intPending(),
               "the in-service bits are set now, so pin 73 has dropped");
+    }
+
+    SECTION("SS-1 board -- edge mode: a tick that falls before the acknowledge is lost (#838)");
+    {
+        Machine m;
+        m.bus.setVerify(true);
+        buildIntMachine(m);
+
+        // Timer 0, mode 3, N = 100: OUT high 50 ticks, low 50 ticks = 100 T-states each.
+        // Programmed first, so OUT is already high when ICW1 resets the edge sense.
+        m.bus.ioWrite(0x57, ctrl(0, kLsb, 3));
+        m.bus.ioWrite(0x54, 100);
+        // Both PICs edge-triggered (ICW1 15 = cascade, edge, interval 4, IC4); master IR7
+        // (the slave) and slave IR1 (Timer 0 OUT) unmasked.
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 1) & 0xFFu), 0x15);
+        CHECK(!m.bus.intPending(), "OUT high since ICW1 is not an edge");
+
+        m.clock.advance(150);  // in the low half
+        CHECK(!m.bus.intPending(), "OUT low: nothing asking");
+        m.clock.advance(100);  // in the high half: a rising edge
+        CHECK(m.bus.intPending(), "the rising edge raises slave IR1 -> master IR7 -> pin 73");
+        m.clock.advance(100);  // low again, and nobody acknowledged (a long DI window)
+        CHECK(!m.bus.intPending(),
+              "IR1 fell before the acknowledge: the request and pin 73 are gone");
+        m.clock.advance(100);  // the next rising edge
+        CHECK(m.bus.intPending(), "the next tick asks again");
+        CHECK(m.bus.intAck() == 0xCD, "INTA 1: CALL");
+        CHECK(m.bus.intAck() == 0x04, "INTA 2: the slave's IR1 address low (0x2204)");
+        CHECK(m.bus.intAck() == 0x22, "INTA 3: address high");
+    }
+
+    SECTION("SS-1 board -- an acknowledge with nothing requesting is the default IR7 (#838)");
+    {
+        Machine m;
+        auto* ss1 = buildIntMachine(m);
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), 0xFF);  // slave all masked
+        BusCycle ic;
+        ic.type = Cycle::IntAck;
+        // decodes() would not claim this cycle -- nothing is asking -- so drive the board
+        // directly: this is the path an IR that drops after INT was sampled would take.
+        CHECK(ss1->read(ic) == 0xCD, "INTA 1: CALL, not a floating RST 7");
+        CHECK(ss1->read(ic) == 0x1C, "INTA 2: the slave's IR7 address low (0x221C)");
+        CHECK(ss1->read(ic) == 0x22, "INTA 3: address high");
+        CHECK(ss1->slave().isr() == 0x00, "the default IR7 sets no slave in-service bit");
     }
 
     SECTION("SS-1 board -- the UART's RxRDY interrupts through the cascade");

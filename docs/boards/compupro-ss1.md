@@ -194,6 +194,10 @@ math socket) are tied inactive.
   (OCW3 P) are not modelled; the manual's own sample program uses neither, and Intel advises
   against auto-EOI in a cascade. In **edge-triggered** mode a VI-line edge is sensed at the card's
   next poll rather than the instant it moves (level-triggered, the SS-1 default, is exact).
+  An edge request lasts only while its line stays high. A line that falls before the acknowledge
+  removes the request, as on the real chip. An acknowledge with no request gives the **default
+  IR7**: a CALL to the slave's IR7 address, with no ISR bit set on the slave. The board claims
+  the INTA cycle only while the master drives INT, so the default IR7 does not occur from the bus.
 - **Do not put an SS-1 (with its 8259As programmed) and an 88-VI in the same machine.** Both watch
   the VI lines and both claim the IntAck cycle, which is genuine bus contention — the contention
   detector reports it. A machine picks one interrupt controller.

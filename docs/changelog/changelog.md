@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**An edge-triggered SS-1 interrupt needs its line held high.** In edge-triggered mode (ICW1
+LTIM = 0), the SS-1's 8259A kept a request after its IR line fell. A real 8259A drops the
+request when the line falls before the acknowledge. For example, an MP/M II XIOS put the 8253
+counter 0 square wave (mode 3) on slave IR1. When the guest disabled interrupts for longer than
+the high half of the wave, the tick still vectored to IR1 later. On a real SS-1 that tick is
+lost. Now the request falls with the line, as on the real chip. An acknowledge with no request
+now gives the 8259A's default IR7 (a CALL to the IR7 address, no ISR bit) instead of `RST 7`.
+
 **The MCP `run` tool stops at an address.** A new `stop_at` argument stops the run when the PC
 gets to that address, before the instruction there runs. The reply gives `stopped` as
 `stop-at`. The stop is for that one call only, so there is no breakpoint to remove after it.

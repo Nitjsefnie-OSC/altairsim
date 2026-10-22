@@ -28,7 +28,9 @@
 //
 // The one piece of state that is NOT a pure function of the inputs is the EDGE latch,
 // for edge-triggered mode (ICW1 LTIM=0): a rising edge on an IR sets a latch that
-// holds until the interrupt is acknowledged. senseEdges() updates it; the CARD calls
+// holds until the interrupt is acknowledged. The request is that latch AND the live
+// level: the IR must stay high until the acknowledge, so a line that falls first
+// drops the request (and INT with it). senseEdges() updates the latch; the CARD calls
 // that at its sampling points (refresh()/pump()). In LEVEL-triggered mode -- the
 // System Support 1's documented default (ICW1 = 1D, LTIM=1) -- the request register
 // simply follows the live pins and senseEdges() is harmless bookkeeping.
@@ -81,7 +83,9 @@ public:
     void senseEdges(uint8_t live);
 
     // ACKNOWLEDGE: latch the winner into ISR (and, in edge mode, drop its request
-    // latch). Returns the level acknowledged, or -1 if nothing is serviceable.
+    // latch). Returns the level acknowledged. With nothing serviceable -- the request
+    // went away after INT was sampled -- it is the DEFAULT IR7: returns 7 and sets no
+    // ISR bit, which is how a handler tells it from a real IR7.
     int  acknowledge(uint8_t live);
 
     // The MCS-80/85 CALL target for a level -- ICW2 (A15-A8) plus, from ICW1, the
@@ -108,8 +112,10 @@ public:
 
 private:
     // The request register the priority logic sees: the live pins in level mode, the
-    // edge latch in edge mode.
-    uint8_t effectiveIrr(uint8_t live) const { return ltim_ ? live : edge_; }
+    // edge latch AND the live pin in edge mode. An IR that falls before the acknowledge
+    // takes its request with it, in both modes (data sheet, "Edge and Level Triggered
+    // Modes") -- the latch only says the line has risen since it was last served.
+    uint8_t effectiveIrr(uint8_t live) const { return ltim_ ? live : (uint8_t)(edge_ & live); }
 
     // The in-service bit of highest priority (honoring rotation), or -1.
     int highestIsr() const;

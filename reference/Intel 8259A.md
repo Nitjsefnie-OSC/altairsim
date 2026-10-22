@@ -129,6 +129,16 @@ in-service bit — so the handler must send an EOI to **both** the slave and the
   level sources, and the System Support 1's default) the request register simply follows
   the pins; in **edge-triggered** mode a rising-edge latch is updated at the card's sample
   points.
+- **The IR line must stay high until the first INTA, in both modes.** In edge-triggered mode
+  the request is the rising-edge latch AND the live level of the line. A line that falls before
+  the acknowledge removes its request, and INT falls with it. The model does the same.
+- **An acknowledge with no request gives the default IR7.** If the request goes away after the
+  CPU has started the acknowledge, the chip sends the CALL to the IR7 address and sets no ISR
+  bit. A handler can tell a default IR7 from a real IR7 by reading the ISR. In a cascade, a
+  slave with no request gives its own default IR7. The master's ISR bit for that slave stays
+  set, so the handler must still send the master its EOI. The model returns level 7 with no ISR
+  bit from `acknowledge()`. The data sheet does not say what a master gives when its own IR7 is
+  a slave input. The System Support 1 model sends it to the slave, the same as a real IR7.
 - **The `PHANTOM*` interrupt-acknowledge trick may be unnecessary in a given emulator.** On
   real hardware an 8080/Z80 issues one INTA pulse and fetches the CALL's two address bytes
   as ordinary memory reads, so a board must assert `PHANTOM*` to blank memory during them
