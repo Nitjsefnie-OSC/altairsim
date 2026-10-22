@@ -1423,6 +1423,61 @@ void test_mcp() {
         CHECK(!rep[8].at("result").has("isError"), "after RESET, step works again");
     }
 
+    // RUN TO AN ADDRESS (#822). `stop_at` is a one-shot PC stop for this call only: it stops
+    // before the instruction there runs, a PC already there stops on its next arrival, a
+    // real breakpoint met first still wins, and it is gone when the call returns.
+    SECTION("MCP: run stop_at stops at an address, once (#822)");
+    {
+        Machine m;
+        if (!loadAltmon(m)) return;
+        std::ostringstream s;
+        int id = 0;
+        auto req = [&](const std::string& params) {
+            s << R"({"jsonrpc":"2.0","id":)" << ++id
+              << R"(,"method":"tools/call","params":)" << params << "}\n";
+        };
+        // 0040: NOP ; NOP ; JMP 0040 -- a loop that never comes to the console.
+        req(R"({"name":"monitor","arguments":{"command":"DEPOSIT 40 00 00 C3 40 00"}})");  // 1
+        req(R"({"name":"run","arguments":{"from":64,"stop_at":66,"timeout_ms":2000}})");   // 2
+        req(R"({"name":"run","arguments":{"stop_at":66,"timeout_ms":2000}})");             // 3
+        req(R"({"name":"run","arguments":{"max_steps":1000,"timeout_ms":2000}})");         // 4
+        req(R"({"name":"monitor","arguments":{"command":"BREAK 41"}})");                   // 5
+        req(R"({"name":"run","arguments":{"from":64,"stop_at":66,"timeout_ms":2000}})");   // 6
+        req(R"({"name":"monitor","arguments":{"command":"NOBREAK"}})");                    // 7
+        req(R"({"name":"step","arguments":{"count":4}})");                                 // 8
+        req(R"({"name":"run","arguments":{"from":64,"stop_at":"0x42"}})");                 // 9
+        req(R"({"name":"run","arguments":{"from":64,"stop_at":70000}})");                  // 10
+        req(R"({"name":"regs","arguments":{}})");                                          // 11
+        auto rep = runScript(m, s.str());
+
+        auto st = [&](int n) -> const Json& { return rep[n].at("result").at("structuredContent"); };
+        auto err = [&](int n) {
+            const Json& r = rep[n].at("result");
+            return r.has("isError") && r.at("isError").boolean()
+                       ? r.at("content").items()[0].at("text").str()
+                       : std::string();
+        };
+        CHECK(st(2).at("stopped").str() == "stop-at" && st(2).at("pc").integer() == 66 &&
+                  st(2).at("steps").integer() == 2,
+              "run stops at stop_at, before the JMP there runs");
+        CHECK(st(3).at("stopped").str() == "stop-at" && st(3).at("pc").integer() == 66 &&
+                  st(3).at("steps").integer() == 3,
+              "from the address itself, it stops on the next arrival, once round the loop");
+        CHECK(st(4).at("stopped").str() == "steps",
+              "the next run without stop_at goes past the old address");
+        CHECK(st(6).at("stopped").str() == "breakpoint" && st(6).at("pc").integer() == 65,
+              "a breakpoint met before stop_at stops the run first");
+        CHECK(st(8).at("stopped").str() == "steps" && st(8).at("steps").integer() == 4,
+              "the stop_at a breakpoint pre-empted is gone: a step runs through 0042");
+        CHECK(err(9).find("`stop_at` must be a JSON number") != std::string::npos &&
+                  err(9).find("66") != std::string::npos,
+              "a hex string for stop_at is refused with the number to send");
+        CHECK(err(10).find("`stop_at` must be an address from 0 to 65535") != std::string::npos,
+              "an address past 64K is refused");
+        CHECK(st(11).at("pc").integer() == st(8).at("pc").integer(),
+              "...and a refused run moved nothing: `from` was not applied");
+    }
+
     // SET BUS UNCLAIMED=WARN|HALT HOLDS UNDER MCP AS AT THE MONITOR (#580). HALT stops the
     // run with `unclaimed`; WARN returns the warning line in `warnings`; each run re-arms
     // the once-per-port de-dup, so a second run reports the port again.

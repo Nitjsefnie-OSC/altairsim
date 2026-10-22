@@ -27,7 +27,7 @@ run {input: "ASM FOO\r", until: "A>", timeout_ms: 120000}
 ```
 
 - `run` never blocks. It returns on `until`, on the guest going idle at a prompt, on
-  `timeout_ms`, `max_steps`, HLT, a breakpoint, a port no board decodes under
+  `timeout_ms`, `max_steps`, `stop_at` (a one-shot PC address, `stopped: "stop-at"`), HLT, a breakpoint, a port no board decodes under
   `SET BUS UNCLAIMED=HALT` (`unclaimed`), a `BREAK TAPE STOP` (`tape-stop`), or a cancel of
   the request or a ^C to the process (`interrupted`) — read `stopped` to learn which. Bus
   warnings from the run come back in `warnings`.

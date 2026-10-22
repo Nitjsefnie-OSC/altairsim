@@ -190,11 +190,17 @@ Json toolList() {
                                     "socket device has wall-clock time to reply within this "
                                     "budget.");
         p["max_steps"]  = intSchema("Optional instruction-count cap for this call.");
+        p["stop_at"]    = intSchema("Optional address (a decimal number, as `from`): stop when "
+                                    "the PC reaches it, before the instruction there runs -- "
+                                    "reported as `stopped: \"stop-at\"`. At least one instruction "
+                                    "runs first, so a PC already there stops on its next arrival. "
+                                    "One-shot: it is gone when the call returns, however it "
+                                    "ended, and it is not a breakpoint (no id, not listed).");
         list.push(tool("run",
                        "Advance the running guest a bounded slice and return what it printed to "
-                       "the console. STOPS on: `until` matched, a prompt reached (the guest is "
-                       "spinning on console input with nothing to say), timeout_ms, max_steps, a "
-                       "HLT, a breakpoint, an I/O port no board decodes under SET BUS "
+                       "the console. STOPS on: `until` matched, `stop_at` reached, a prompt "
+                       "reached (the guest is spinning on console input with nothing to say), "
+                       "timeout_ms, max_steps, a HLT, a breakpoint, an I/O port no board decodes under SET BUS "
                        "UNCLAIMED=HALT (`unclaimed`), a BREAK TAPE STOP (`tape-stop`), a "
                        "`notifications/cancelled` naming this call's "
                        "request id, or a SIGINT to the altairsim process itself (an "
@@ -1036,6 +1042,7 @@ bool sliceStops(StopReason w) {
     case StopReason::StopRequested:
     case StopReason::Unclaimed:
     case StopReason::TapeStop:
+    case StopReason::StepTarget:  // the run tool's `stop_at`; a free run never sets one
         return true;
     default:
         return false;
@@ -1601,6 +1608,10 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
         if (!cpu) return textResult("no CPU in this machine", true);
         if (std::string h = haltRefusal(m, cpu, args.has("from")); !h.empty())
             return textResult(h, true);
+        // #822: refused before anything moves -- a bad stop_at must not leave PC or input changed.
+        const long long stopAt = args.has("stop_at") ? args.at("stop_at").integer() : -1;
+        if (args.has("stop_at") && (stopAt < 0 || stopAt > 0xFFFF))
+            return textResult("`stop_at` must be an address from 0 to 65535", true);
 
         if (args.has("from")) cpu->setPc((uint16_t)args.at("from").integer());
         if (args.has("input")) con->feed(args.at("input").str());
@@ -1694,6 +1705,10 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
             if (!o.empty()) { out += o; con->clearOut(); }
         };
 
+        // `stop_at` is NEXT's one-shot PC target (Debugger::setStepTarget): no breakpoint id,
+        // nothing for BREAK to list. Set for this call only -- every exit from the loop below is
+        // a `break`, so the clear after it always runs.
+        m.debug.setStepTarget((int)stopAt);
         for (;;) {
             drain();
             if (!until.empty() && out.find(until) != std::string::npos) { stopped = "match"; break; }
@@ -1749,7 +1764,7 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
             if (sliceStops(r.why)) {
                 if (r.why == StopReason::StopRequested) Debugger::clearStopRequest();
                 last    = r;
-                stopped = stopReasonName(r.why);
+                stopped = r.why == StopReason::StepTarget ? "stop-at" : stopReasonName(r.why);
                 break;
             }
 
@@ -1777,6 +1792,8 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
                 }
             }
         }
+
+        m.debug.setStepTarget(-1);
 
         publishStatus(steps);  // #490: this call is done -- the next status poll's `steps`/`pc`
                                 // are this call's own final values (its `in_flight` comes from
