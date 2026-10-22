@@ -63,8 +63,8 @@ of the chain — and **only one of them runs by default**:
 | `acceptance-hostbridge` | the committed `.HEX` still `LOAD`s to the committed `.COM`, and that `.COM` works | nothing — the disk is tracked |
 | `acceptance-hostbridge-build` | the committed `.ASM` still *assembles* to the committed `.HEX`, `.PRN` and `.COM` | the 8 MB image, which is **not** in git |
 
-**So the `.ASM` → `.HEX` half is not checked on a fresh clone.** `PIP`ping 78 KB of source
-into the guest needs 78 KB of free disk, and the tracked floppy has 18K; no choice of
+**So the `.ASM` → `.HEX` half is not checked on a fresh clone.** `PIP`ping 57 KB of source
+into the guest needs 57 KB of free disk, and the tracked floppy has 18K; no choice of
 fixture fixes that. If you edit a `.ASM`, fetch the 8 MB image
 (`disks/mits-88dcdd/cpm22/8mb/README.md`) and run `ctest -R hostbridge-build` before you
 commit — otherwise nothing will tell you the `.HEX` beside it went stale.

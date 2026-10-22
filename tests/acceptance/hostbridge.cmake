@@ -13,7 +13,7 @@
 #                .ASM changes. Labelled `slow`, and it also carries the minidisk phase.
 #
 # WHY THE SPLIT, in one number: `PIP FOO.ASM=CON:` is the only slow thing here. The three
-# sources are 78 KB, PIP ECHOES every byte it is fed, and a 2SIO is a real serial line --
+# sources are 57 KB, PIP ECHOES every byte it is fed, and a 2SIO is a real serial line --
 # so the bootstrap is ~156 KB of wire time and nothing else. R and W themselves never touch
 # the console at all: they read the disk and OUT to the bridge, so a whole transfer costs
 # about as much as one prompt. Rebuilding the assembler on every edit to test a card that
@@ -119,7 +119,7 @@ endmacro()
 set(keys "")
 
 if(MODE STREQUAL build)
-  # FROM SOURCE. 78 KB through the console, and this is the whole cost of this mode.
+  # FROM SOURCE. 57 KB through the console, and this is the whole cost of this mode.
   foreach(u R W HDIR)
     pip("${SRC}/cpm/hostbridge/${u}.ASM" "${u}.ASM")
     cmd("ASM ${u}")                     # -> .HEX and .PRN
@@ -221,7 +221,7 @@ file(WRITE "${work}/dcdd.keys" "${keys}")
 #          them: 12.5 KB of .HEX, plus the three small files we move in. Tight, and
 #          deliberately so -- see the ERA below.
 #
-#   build  the 8 MB image, because PIPing R/W/HDIR.ASM in needs 78 KB of free disk. It is
+#   build  the 8 MB image, because PIPing R/W/HDIR.ASM in needs 57 KB of free disk. It is
 #          not in git, so CMakeLists.txt gates this mode on finding it.
 #
 # NEVER MUTATE A REPO IMAGE: both are copied to scratch first. For the tracked one that is
@@ -237,7 +237,7 @@ configure_file("${image}" "${work}/work.dsk" COPYONLY)
 # NO `SET ... BAUD` HERE, AND RESIST THE URGE.
 #
 # The console is a 9600-baud line and this test lives with it, which is why `fast` PIPs the
-# 12 KB of .HEX and only `build` PIPs the 78 KB of source.
+# 12 KB of .HEX and only `build` PIPs the 57 KB of source.
 #
 # An earlier draft turned the line up to 76800 to make the bootstrap bearable, and it was
 # chasing the wrong thing: at the time the test took 17 seconds and only ~2 of them were the

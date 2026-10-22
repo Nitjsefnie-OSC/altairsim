@@ -22,6 +22,11 @@ lists them, and `R .gitignore GITIGNOR.TXT` copies one.
 folder `SRC`, under its own name. Before, `W` refused a second word after a wildcard. The folder
 must exist. When it does not, `W` prints one error and copies nothing.
 
+**The host bridge sources are smaller.** `R.ASM`, `W.ASM`, `HDIR.ASM` and `HB.INC` were
+103,624 bytes, and now they are 62,364 bytes. Tabs line up the columns, and the comments say
+only how the code works now. The programs are the same, byte for byte. The
+`altairsim-cpm-text` skill now says to use tabs in assembler source.
+
 **Host bridge folder names ignore case on Linux.** The board ignored case only in the last
 part of a host path. The CP/M command line is in upper case, so `R SRC/FOO.ASM` did not find
 the folder `src` on a case-sensitive host, and the copy failed. Now each

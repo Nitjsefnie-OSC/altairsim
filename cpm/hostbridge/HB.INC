@@ -1,112 +1,84 @@
 ;-----------------------------------------------------------------------
-; HB.INC -- the Host Bridge, as the guest sees it.
+; HB.INC: the Host Bridge, as the guest sees it.
 ;
-; NOT ACTUALLY INCLUDED BY ANYTHING. Digital Research's ASM.COM has no
-; INCLUDE directive (that is M80's MACLIB), so every one of R.ASM, W.ASM
-; and HDIR.ASM carries its own copy of the equates below. This file is the
-; MASTER: if a number here and a number there ever disagree, this one is
-; right and the other is a typo.
+; No program includes this file. ASM.COM has no INCLUDE, so R.ASM,
+; W.ASM and HDIR.ASM each have their own copy of the equates they use.
+; This file is the master list. If a value here and a value in a
+; program are different, this one is correct.
 ;
-; The card is src/boards/hostbridge.h. It is OUR OWN design -- not a period
-; board -- and it exists because there is otherwise no way to move a file
-; between the host and a running CP/M guest.
+; The board is src/boards/hostbridge.h. It is an altairsim design, not
+; a period board.
 ;-----------------------------------------------------------------------
 
 ;---- The two ports ----------------------------------------------------
 ;
-; PORT B0, AND THAT NUMBER TOOK A CENSUS OF THE WHOLE S-100 CATALOG.
+; Other boards decode these ports: 00-01 88-SIO, 04-05 88-PIO,
+; 06-07 88-ACR, 08-0A 88-DCDD, 0E-0F Dazzler, 10-13 88-2SIO,
+; 20-23 88-4PIO, 30 WD179X, 40/C0 bank select, A0-A7 88-HDSK, C0 PMMI,
+; F8-FC Tarbell, FE 88-VI/RTC, FF front panel. B0-BF and D0-DF are free.
 ;
-; 0x30 was the obvious pick and it is WRONG: the WD179X floppy controller
-; defaults there and the Cromemco 64FDC sits on top of it. Also taken:
-; 00-01 88-SIO, 04-05 88-PIO, 06-07 88-ACR, 08-0A 88-DCDD, 0E-0F Dazzler,
-; 10-13 88-2SIO, 20-23 88-4PIO, 40/C0 bank select, A0-A7 88-HDSK,
-; C0 PMMI, F8-FC Tarbell, FE 88-VI/RTC, FF front panel.
+; The utilities do not search the bus for the board. An IN can change
+; the state of another board, for example a UART's receive register.
+; If you move the board, change HBBASE and assemble again.
 ;
-; B0-BF and D0-DF are the only 16-port holes left.
-;
-; IF YOU MOVE THE CARD, REASSEMBLE. These utilities do NOT scan the bus
-; looking for the bridge, and that is deliberate: a blind IN across 256
-; ports of an unknown machine would take a byte out of a UART's receive
-; register and step a floppy controller's head on the way past. A program
-; that guesses at hardware is a program that breaks other hardware.
-;
-HBBASE  EQU     0B0H            ; SET hb0 PORT=.. moves it; then change this
-HBCMD   EQU     HBBASE          ; OUT = command      IN = status
-HBDATA  EQU     HBBASE+1        ; OUT = data         IN = data
+HBBASE	EQU	0B0H		; SET hb0 PORT=.. moves the board
+HBCMD	EQU	HBBASE		; OUT = command      IN = status
+HBDATA	EQU	HBBASE+1	; OUT = data         IN = data
 
 ;---- Status bits (IN HBCMD) -------------------------------------------
 ;
-; An IN from HBCMD is ALWAYS the status register. Never a result code,
-; never "the second byte of the thing you asked for". A guest can read
-; status at any moment, mid-transfer, and learn nothing but status.
+; An IN from HBCMD always reads the status register, at any time.
+; Bits 5-7 always read 0. A port that no board decodes reads 0FFH, but
+; IDENT is the correct test for the board.
 ;
-; BITS 5-7 ALWAYS READ ZERO, so a status of 0FFH means THERE IS NO CARD
-; THERE -- an IN from an undecoded port floats the bus high. Do not lean
-; on that, though; use IDENT, which is the real probe.
-;
-RDY     EQU     01H             ; ready for a command (always set today)
-DAV     EQU     02H             ; a byte is waiting at HBDATA
-TBE     EQU     04H             ; HBDATA will accept a byte
-HEOF    EQU     08H             ; the stream you are draining has run dry
-HERR    EQU     10H             ; the last operation failed -- ask CERROR
+RDY	EQU	01H		; ready for a command (always set)
+DAV	EQU	02H		; a byte is waiting at HBDATA
+TBE	EQU	04H		; HBDATA will take a byte
+HEOF	EQU	08H		; the stream has no more data
+HERR	EQU	10H		; the last operation failed. Use CERROR.
 
 ;---- Commands (OUT HBCMD) ---------------------------------------------
 ;
-; THE ONE RULE THAT MATTERS:
+; An OUT to HBCMD stops the stream in progress, and the next command
+; works. A command does not stop a directory listing, so R can do an
+; OPEN_READ between two DIR_NEXTs.
 ;
-;     ANY OUT TO HBCMD ABANDONS THE STREAM IN FLIGHT.
-;
-; You can walk away from a half-finished transfer at any point, for any
-; reason, and the next command simply works. There is no "the device is
-; now in an undefined state", and therefore no reason for a utility to
-; open by resetting the card more than once.
-;
-; The one thing a command does NOT abandon is the directory enumerator.
-; That is not an exception -- a listing is not a stream -- and it is what
-; lets R walk a wildcard, doing a whole OPEN_READ between DIR_NEXTs.
-;
-CIDENT  EQU     0               ; -> "ALTAIRSIM HOSTBRIDGE 1",0 at HBDATA
-CVOPENR EQU     1               ; then the name, NUL-terminated. Then read.
-CVOPENW EQU     2               ; then the name. Then write. Then CCLOSE.
-CCLOSE  EQU     3               ; REQUIRED -- an unclosed write is discarded
-CDIRF   EQU     4               ; then a glob (may be empty). Then read names.
-CDIRN   EQU     5               ; next name; HEOF when the list runs out
-CDELET  EQU     6               ; then the name
-CERROR  EQU     7               ; -> code byte, then a NUL-terminated message
-CRESET  EQU     8               ; abort everything, clear the error latch
-CDIRL   EQU     9               ; like CDIRF, but each entry streams THREE fields:
-                                ; name<0> size<0> date<0>. Size is "<DIR>" for a
-                                ; directory else a decimal byte count; date is
-                                ; MM/DD/YY. Walk it with CDIRN, same as CDIRF.
+CIDENT	EQU	0		; -> "ALTAIRSIM HOSTBRIDGE 1",0 at HBDATA
+CVOPENR EQU	1		; then the name and a NUL. Then read.
+CVOPENW EQU	2		; then the name. Then write. Then CCLOSE.
+CCLOSE	EQU	3		; required: the board discards an unclosed write
+CDIRF	EQU	4		; then a pattern (can be empty). Then read names.
+CDIRN	EQU	5		; the next name. HEOF at the end.
+CDELET	EQU	6		; then the name
+CERROR	EQU	7		; -> a code byte, then a message and a NUL
+CRESET	EQU	8		; stop everything, clear the error
+CDIRL	EQU	9		; as CDIRF, but each entry is three strings:
+				; name<0> size<0> date<0>. The size is "<DIR>"
+				; for a folder, else a decimal byte count. The
+				; date is MM/DD/YY. Use CDIRN for the next one.
 
-;---- Error codes (the first byte CERROR hands back) --------------------
+;---- Error codes (the first byte from CERROR) -------------------------
 ;
-; These are on the wire, so they are part of the card's published
-; interface and will not be renumbered.
+; These numbers are part of the board's interface. They do not change.
 ;
-ENONE   EQU     0
-ENOFILE EQU     1               ; no such file
-EPERM   EQU     2               ; permission denied
-EOUTSID EQU     3               ; OUTSIDE THE SANDBOX -- see below
-EIO     EQU     4               ; host I/O error
-ENOOPEN EQU     5               ; no file open
-EBIG    EQU     6               ; larger than the card will carry (8 MB)
-EBADNAM EQU     7               ; bad file name
-EAMBIG  EQU     8               ; several host files differ only in case
+ENONE	EQU	0
+ENOFILE EQU	1		; no such file
+EPERM	EQU	2		; permission denied
+EOUTSID EQU	3		; outside the sandbox (see below)
+EIO	EQU	4		; host I/O error
+ENOOPEN EQU	5		; no file open
+EBIG	EQU	6		; larger than the board holds (8 MB)
+EBADNAM EQU	7		; bad file name
+EAMBIG	EQU	8		; two or more host files differ only in case
 
 ;---- The sandbox ------------------------------------------------------
 ;
-; Host names resolve against the card's `hostdir` and CANNOT LEAVE IT.
-; A name may be a relative path -- SRC/FOO.ASM -- and BOTH separators work
-; on every host, so one assembled .COM runs against a Mac, a Linux box and
-; a Windows box without being told which. There is no "what is your path
-; separator?" command, because the guest should not have to care.
+; A host name is relative to the board's `hostdir`, and cannot go out of
+; it. A name can be a path, such as SRC/FOO.ASM. Both `/` and `\` work on
+; every host, so one .COM works on macOS, Linux and Windows.
 ;
-; Refused with EOUTSID: an absolute path, a drive letter, a `..` component,
-; and a symlink that resolves out of the root. There is no way to talk the
-; card into any of them, which is the point: a rogue CP/M program must not
-; be able to read your ssh key.
+; The board refuses these with EOUTSID: an absolute path, a drive letter,
+; a `..` part, and a symlink that goes out of `hostdir`.
 ;
-; The empty `hostdir` -- the default -- is the directory you started
-; altairsim from.
+; An empty `hostdir` (the default) is the folder you started altairsim in.
 ;-----------------------------------------------------------------------
