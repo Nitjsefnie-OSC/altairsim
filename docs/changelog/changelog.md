@@ -12,6 +12,11 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The MCP `run` tool stops at an address.** A new `stop_at` argument stops the run when the PC
+gets to that address, before the instruction there runs. The reply gives `stopped` as
+`stop-at`. The stop is for that one call only, so there is no breakpoint to remove after it.
+For example, an assistant at a BDOS call can run to the return address to time the call.
+
 **The RTC-100 interrupts once a second of real time.** The board counted its one-second
 interrupt in processor T-states. At flat out (`clock_hz = 0`, the default), the interrupt came
 as fast as the host ran the guest, many times each second. A guest that counts the interrupts

@@ -334,11 +334,16 @@ are the most important:
   stdout.
 - A `run` **never blocks**. It stops when `until` matches, when the guest waits at a prompt, or
   at `timeout_ms`. `timeout_ms` is a limit, not a wait.
+- `stop_at` stops a `run` when the PC gets to an address. The instruction at that address does
+  not run. The reply gives `stopped` as `stop-at`. The stop is for that one `run` only. It is
+  not a breakpoint, and `BREAK` does not list it. If the PC is already at the address, the
+  guest runs until it gets back there.
 - `start` returns at once and **leaves the guest running** until `stop`, a `HLT` or a
   breakpoint. All other tools work while it runs. `status` tells you if it still runs, and if
   not, why it stopped.
-- JSON has no hex form, so `from` is a decimal number: `65280` is `FF00`. If you send a string
-  such as `"0xFF00"`, the server refuses the call and tells you the number to send.
+- JSON has no hex form, so `from` and `stop_at` are decimal numbers: `65280` is `FF00`. If you
+  send a string such as `"0xFF00"`, the server refuses the call and tells you the number to
+  send.
 - A control byte is a JSON `\uXXXX` escape: `\u0003` is `Ctrl-C`. `\x03` is not JSON.
 - Some clients send the text as you write it, and do not make a JSON escape from it. With such
   a client, use the `TYPE` command through the `monitor` tool. `TYPE` has its own escapes:
