@@ -116,22 +116,13 @@
 // The 60 Hz line is the mains. The 10 kHz source is divided down from the bus's 2 MHz
 // CLOCK (pin 49), which every CPU board must supply at 2 MHz whatever its processor
 // runs at. Neither is the CPU's crystal, and the CPU's crystal never leaves the CPU
-// board. So the divider keeps its schedule in HOST time, read through an injected
-// function (setHostNs, the FDC+'s seam), and a test sets the time.
-//
-// The tick still has to land at some T-state, and it lands by one of two routes:
-//   * PACED (clock_hz set): the run loop holds T-states to real time, so a Clock
-//     deadline `period x hz` T-states on fires it at the exact instruction, with no
-//     jitter. hz is only the exchange rate the throttle promises.
-//   * FLAT OUT, OR LATE: pump() reads host time once a slice and sets the flip-flop
-//     when the schedule is due. Flat out, a slice is microseconds of host time.
-//     Paced, this only fires when the host fell well behind its crystal, or the
-//     machine sat stopped at the monitor while the real chain kept counting.
-// Flat out, the Clock deadline is still armed -- only so a guest that HALTs to wait
-// for the RTC is not taken for finished (see armRtc).
+// board. So the divider keeps its schedule in HOST time, through a HostTicker
+// (core/hostticker.h, which explains how a tick reaches the guest paced and flat out).
+// The host clock is injected (setHostNs), and a test sets the time.
 
 #include "core/board.h"
 #include "core/clock.h"
+#include "core/hostticker.h"
 
 #include <cstdint>
 #include <functional>
@@ -178,7 +169,7 @@ public:
 
     // The HOST clock the divider counts in, in nanoseconds. Defaults to steady_clock;
     // a test drives it.
-    void setHostNs(std::function<uint64_t()> f) { hostNs_ = std::move(f); }
+    void setHostNs(std::function<uint64_t()> f) { rtc_.setHostNs(std::move(f)); }
 
     // SNAPSHOT/RESTORE (DESIGN.md 13). The VI section's enable/level latches and the
     // RTC's enable and interrupt flip-flop. The port, source, divide and jumper are
@@ -209,16 +200,8 @@ private:
     uint8_t pendingLines() const;
 
     bool rtcObservable() const { return rtcEnabled_ && rtcJumper_ != IrqJumper::None; }
-    void armRtc();          // restart the chain at host-now, and its Clock deadline
-    void onRtcDeadline();   // the Clock deadline came due
-    void rtcFire();         // the flip-flop sets; RI goes out onto its VI line
-    void rtcPassed(uint64_t now);  // move the schedule to the first rollover after now
-    uint64_t rtcPeriod() const;    // one interval, in T-states at the bus's hz
-
-    // One interval is rtcNum() / rtcDen() nanoseconds: divide x 1e9 over 60 or 10000.
-    uint64_t rtcNum() const { return (uint64_t)rtcDivide_ * 1000000000ull; }
-    uint64_t rtcDen() const { return rtcSource_ == RtcSource::Line ? 60 : 10000; }
-    void     rtcSetDue();  // hostDueNs_ from anchorNs_ and rtcTicks_
+    void armRtc();   // restart the chain at host-now, or stop it if nobody can see it
+    void rtcFire();  // the flip-flop sets; RI goes out onto its VI line
 
     uint8_t port_ = 0xFE;  // 376 octal. The manual decodes all eight address lines.
 
@@ -235,16 +218,9 @@ private:
     bool      rtcInt_     = false;                // the flip-flop (IC Fb)
     IrqJumper rtcJumper_  = IrqJumper::None;      // "RI" -- and `none` is the PS2 machine
 
-    Clock::Handle wake_ = Clock::kNone;
-
-    // The divider's schedule, in host nanoseconds. Rollover k is at
-    // anchorNs_ + k * rtcNum() / rtcDen(), computed fresh each time so it cannot
-    // drift; rtcSetDue() folds whole nanoseconds into the anchor to keep k small.
-    // Host time does not travel in a snapshot: restore starts the chain again.
-    std::function<uint64_t()> hostNs_;
-    uint64_t anchorNs_  = 0;
-    uint64_t rtcTicks_  = 0;
-    uint64_t hostDueNs_ = 0;
+    // The divider chain, counting host time. Host time does not travel in a snapshot:
+    // restore starts the chain again.
+    HostTicker rtc_;
 };
 
 } // namespace altair

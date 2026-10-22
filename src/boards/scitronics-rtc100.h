@@ -54,14 +54,17 @@
 // vi0..vi7 strap here: `interrupt` is none|int, and `restart` is the switch. A
 // board that offered eight VI levels would be a board that never existed.
 //
-// The second is WALL time -- the chip's crystal, not the CPU's -- so the tick is a
-// Clock deadline scheduled off tStatesPer(), the same way the 88-VI's RTC does it.
+// The second is REAL time -- the chip's own crystal, not the CPU's (issue #827) -- so
+// the tick counts host time through a HostTicker (core/hostticker.h), the same way the
+// 88-VI's RTC does it. The host clock is injected (setHostNs), and a test sets it.
 
 #include "chips/msm5832.h"
 #include "core/board.h"
 #include "core/clock.h"
+#include "core/hostticker.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -80,6 +83,13 @@ public:
 
     void reset(Reset) override;
     void power() override;
+
+    // Once a slice: is the next second due in host time?
+    void pump() override { tick_.pump(clock_); }
+
+    // The HOST clock the seconds count in, in nanoseconds. Defaults to steady_clock;
+    // a test drives it.
+    void setHostNs(std::function<uint64_t()> f) { tick_.setHostNs(std::move(f)); }
 
     void serialize(StateWriter& w) const override;
     void deserialize(StateReader& r) override;
@@ -101,7 +111,7 @@ private:
     // register is edge-sensitive on Hold, so it must see every transition exactly once.
     void driveClock(bool writeStrobe);
 
-    void scheduleTick();       // arm the next one-second deadline
+    void scheduleTick();       // restart the seconds at host-now, or stop them if unwired
     void onTick();             // the clock chip's seconds output
     void dropRequest();        // clear the request and settle pin 73
 
@@ -121,7 +131,7 @@ private:
     bool          intWired_ = false;        // `interrupt` strap: none | int (pin 73)
     uint8_t       restart_  = 7;            // INT switch: RST 0..7, vector 8n
     bool          intReq_   = false;        // the request, pending until acknowledged
-    Clock::Handle tick_     = Clock::kNone; // the one-second deadline
+    HostTicker    tick_;                    // the seconds, in host time
 };
 
 }  // namespace altair

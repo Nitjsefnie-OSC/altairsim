@@ -14,11 +14,6 @@ constexpr uint8_t kCrC2Level    = 0x08;  // bit 3: the CA2 / CB2 output level
 constexpr uint8_t kCmdHold  = 0x40;
 constexpr uint8_t kCmdWrite = 0x20;
 
-// The seconds output. WALL time, not CPU time: the MSM5832 divides its own 32.768 kHz
-// crystal, so the tick is scheduled off the Clock's wall-time rate and is unaffected
-// by how fast the guest is running.
-constexpr long long kTicksPerSecond = 1;
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -129,25 +124,25 @@ void Rtc100Board::driveClock(bool writeStrobe) {
 }
 
 // ---------------------------------------------------------------------------
-// The once-a-second interrupt.
+// The once-a-second interrupt. The seconds output is REAL time, not CPU time: the
+// MSM5832 divides its own 32.768 kHz crystal, so the second is kept in host time and
+// does not depend on how fast the guest is running (issue #827).
 // ---------------------------------------------------------------------------
 void Rtc100Board::scheduleTick() {
     if (!clock_) return;
-    clock_->cancel(tick_);
-    tick_ = Clock::kNone;
-    if (!intWired_) return;  // an unsoldered strap is not a deadline -- keep the
-                             // queue empty so an idle machine can still stand down
-    uint64_t dt = clock_->tStatesPer(kTicksPerSecond);
-    tick_ = clock_->after(dt ? dt : 1, [this] { onTick(); });
+    if (!intWired_) {  // an unsoldered strap is not a deadline -- keep the queue
+        tick_.stop(clock_);  // empty so an idle machine can still stand down
+        return;
+    }
+    tick_.start(clock_, 1, 1, [this] { onTick(); });
 }
 
+// The ticker repeats by itself: the chip ticks whether or not anyone listened.
 void Rtc100Board::onTick() {
-    tick_ = Clock::kNone;
-    if (intWired_ && !intReq_) {
+    if (!intReq_) {
         intReq_ = true;
         intChanged();
     }
-    scheduleTick();  // free-running: the chip ticks whether or not anyone listened
 }
 
 void Rtc100Board::dropRequest() {

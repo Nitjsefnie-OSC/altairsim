@@ -328,6 +328,7 @@ add_library(altair_core STATIC
   src/core/debug.cpp
   src/core/debuglog.cpp
   src/core/spindle.cpp
+  src/core/hostticker.cpp
   src/isa/isa8080.cpp
   src/isa/isa8085.cpp
   src/isa/isaZ80.cpp

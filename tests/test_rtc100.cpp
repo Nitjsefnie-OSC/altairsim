@@ -271,6 +271,102 @@ void test_rtc100() {
               "STOPS stops the interrupt, not the timekeeping");
     }
 
+    // ---- THE SECOND IS REAL TIME, NOT CPU TIME (issue #827). ----
+    //
+    // The MSM5832 divides its own 32.768 kHz crystal. Flat out (the default) T-states
+    // come as fast as the host runs the guest, so they must move the tick not at all
+    // -- and host time must move it. Both directions are asserted: the first alone
+    // would pass against a dead tick, the second against the old one.
+    struct HostRig {
+        Machine      m;
+        Rtc100Board* b      = nullptr;
+        uint64_t     hostNs = 1000000000;
+        explicit HostRig(long long hz) {
+            b = attach(m);
+            m.clock.setHz(hz);
+            b->setHostNs([this] { return hostNs; });
+            b->attachClock(&m.clock);
+            setProp(b, "interrupt", Value::ofStr("int"));
+        }
+    };
+
+    {
+        HostRig g(0);
+        for (int i = 0; i < 2000; ++i) {
+            g.m.clock.advance(10000);
+            if (i % 2 == 0) g.b->pump();
+        }
+        CHECK(!g.b->assertsInt(), "flat out, 20 million T-states move the seconds not at all");
+        CHECK(g.m.clock.queued() != 0,
+              "...but the deadline stays armed, so a guest that HALTs for its tick waits");
+
+        g.hostNs += 999000000;
+        g.b->pump();
+        CHECK(!g.b->assertsInt(), "999 ms of real time: not yet");
+        g.hostNs += 1000000;
+        g.b->pump();
+        CHECK(g.b->assertsInt(), "1000 ms of real time: one tick");
+
+        // Ten seconds, slice by slice, at a fast host's speed. No drift.
+        g.m.bus.intAck();
+        int ticks = 1;
+        for (int ms = 1000; ms < 10000; ++ms) {
+            g.hostNs += 1000000;
+            g.m.clock.advance(1000000);  // a millisecond is a million T-states here
+            g.b->pump();
+            if (g.b->assertsInt()) {
+                ++ticks;
+                g.m.bus.intAck();
+            }
+        }
+        CHECK(ticks == 10, "ten ticks in ten seconds of real time, at any host speed");
+    }
+
+    // ---- PACED, the tick lands on its exact T-state. ----
+    //
+    // With a crystal set, the run loop holds T-states to real time, so the deadline
+    // delivers the tick at the instruction it belongs to. Host time is held still to
+    // prove it is the deadline doing it.
+    for (long long hz : {2000000LL, 10000000LL}) {
+        HostRig g(hz);
+        g.m.clock.advance((uint64_t)hz - 1);
+        g.b->pump();
+        CHECK(!g.b->assertsInt(), "paced: one T-state short of a second, no tick");
+        g.m.clock.advance(1);
+        CHECK(g.b->assertsInt(), "paced: the tick lands on exactly hz T-states");
+    }
+
+    // ---- PACED, but the host fell behind its crystal: host time is the truth. ----
+    //
+    // pump() leaves a tick to the deadline until host time is a whole period past it
+    // (or 100 ms, for a fast tick) -- here, one second.
+    {
+        HostRig g(2000000);
+        g.hostNs += 1900000000;  // the first second was due at +1 s
+        g.b->pump();
+        CHECK(!g.b->assertsInt(), "paced, 0.9 s late: still the deadline's to deliver");
+        g.hostNs += 200000000;
+        g.b->pump();
+        CHECK(g.b->assertsInt(), "paced, 1.1 s late: pump() delivers the tick");
+
+        // Host-now is +2.1 s; the next real second is at +3 s -- 0.9 s of crystal.
+        g.m.bus.intAck();
+        g.m.clock.advance(1800000 - 1);
+        CHECK(!g.b->assertsInt(), "...and re-aims the deadline at the next real second");
+        g.m.clock.advance(1);
+        CHECK(g.b->assertsInt(), "...which arrives 0.9 s of crystal later, not 1 s");
+    }
+
+    // ---- an unwired strap arms nothing, flat out or paced ----
+    for (long long hz : {0LL, 2000000LL}) {
+        HostRig g(hz);
+        setProp(g.b, "interrupt", Value::ofStr("none"));
+        CHECK(g.m.clock.queued() == 0, "interrupt = none leaves the Clock queue empty");
+        g.hostNs += 5000000000ull;
+        g.b->pump();
+        CHECK(!g.b->assertsInt(), "...and five real seconds raise nothing");
+    }
+
     // ---- the PORT switch decodes A2-A7: the base must be a multiple of 4 ----
     {
         Machine m;

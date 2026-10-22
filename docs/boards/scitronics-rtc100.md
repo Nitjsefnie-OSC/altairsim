@@ -66,10 +66,19 @@ Hours-10 (5) has the 24-hour/AM-PM bit, Days-10 (8) has the leap-year bit.
   that chip's command/data interface (`driveClock()`).
 - **The translation**, in one line: Hold = CA2 low, digit select = port A's low nibble,
   data = port A's high nibble, Write = the falling edge of PB0.
-- **Interrupt**: a one-second `Clock` deadline — wall time, because the second comes from
-  the card's own crystal, not the CPU's. The request rides **pin 73** (`assertsInt()`); on
-  acknowledge the card claims the cycle and returns `rstOpcode(restart_)`. The
-  acknowledge is the dismissal — no driver writes a port to clear it.
+- **Interrupt**: once a second of **real time** (issue #827). The second comes from the
+  chip's own 32.768 kHz crystal, not from the processor's crystal. A `HostTicker`
+  (`src/core/hostticker.h`) keeps the schedule in host time. The board reads host time
+  through `setHostNs()`, and a test sets it. The tick gets to the guest in one of two ways:
+  - **Paced** (`clock_hz` set): a `Clock` deadline fires the tick at the exact T-state.
+    The run loop holds T-states to real time, so one second is `clock_hz` T-states.
+  - **Flat out, or late:** `pump()` reads host time once a run slice and sets the request
+    when the second is due. Paced, `pump()` does this only when host time is one second or
+    more past the schedule.
+
+  The request rides **pin 73** (`assertsInt()`). On acknowledge the card claims the cycle
+  and returns `rstOpcode(restart_)`. The acknowledge is the dismissal. No driver writes a
+  port to clear it. A second that passes while a request is pending is lost.
 - **Properties**: `port` (multiple of 4, default `F0H`), `interrupt` (`none | int`),
   `restart` (0–7), and a live read-only `time`.
 
@@ -110,6 +119,11 @@ Hours-10 (5) has the 24-hour/AM-PM bit, Days-10 (8) has the leap-year bit.
   number to enforce even if we wanted to.
 - **The century is pinned from the host year** (the chip holds two digits). `READ.ASM`
   hard-codes `19`; we do not.
+- **The interrupt follows the host's clock**, so a tick is as accurate as the host's
+  monotonic clock. Flat out, a tick lands at the first run slice after it is due. The
+  tick is not in step with the second that the chip shows, which counts host wall time.
+- **The interrupt runs only when `interrupt = int`.** With `none`, nothing is on the
+  `Clock` queue, so a guest that runs `HLT` with nothing else to wait for still ends the run.
 
 ## Verification
 
@@ -123,6 +137,9 @@ Hours-10 (5) has the 24-hour/AM-PM bit, Days-10 (8) has the leap-year bit.
 - the time survives `reset()` and `power()`;
 - the interrupt fires once per second, the acknowledge yields `RST n`, and the acknowledge
   dismisses it; `interrupt = none` never requests while timekeeping continues;
+- the tick keeps real time: flat out, T-states do not move it and host time does (ten ticks
+  in ten host seconds); paced, it lands at exactly `clock_hz` T-states; a host that is late
+  gets the tick from `pump()`; `interrupt = none` leaves the `Clock` queue empty;
 - a base that is not a multiple of 4 is rejected, and moving the base moves all four ports;
 - snapshot/restore carries the set time.
 
