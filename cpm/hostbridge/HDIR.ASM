@@ -1,449 +1,425 @@
 ;-----------------------------------------------------------------------
-; HDIR.COM -- list the HOST directory.
+; HDIR.COM: list the host directory.
 ;
 ;       HDIR                    everything in hostdir
 ;       HDIR *.ASM              only what matches
-;       HDIR SRC/               inside a subdirectory of hostdir
+;       HDIR SRC/               a subdirectory of hostdir
 ;
-; Part of the altairsim Host Bridge (src/boards/hostbridge.h,
-; docs/boards/hostbridge.md). Assemble it INSIDE the machine:
+; Part of the altairsim Host Bridge. Assemble it in the machine:
 ;
 ;       ASM HDIR                -> HDIR.HEX
 ;       LOAD HDIR               -> HDIR.COM
 ;
-; WITHOUT THIS THERE IS NO WAY TO SEE WHAT IS THERE TO READ -- you type a
-; host name from memory, get it wrong, and cannot tell whether the file is
-; missing or your spelling is. HDIR is the answer to "what can I say to R".
+; Revisions:
+;       2026-07-14  First version.
+;       2026-07-28  The long listing: size and date.
 ;
-;-----------------------------------------------------------------------
-; IT PRINTS TRUE HOST NAMES, AND THAT IS THE POINT OF IT.
+; HDIR prints each host name as it is on the host, in its own case and
+; at its full length. R and W change a name to fit 8.3.
 ;
-; R and W have to squeeze a host name into an 8.3 FCB -- `my-notes(2).txt`
-; comes across as `MY-NOTES.TXT`, and a name too long or too strange to map
-; is reported and skipped. HDIR does no such thing: it prints what is
-; actually on the host disk, in its real case, at its real length. So when
-; R says it cannot name something, you can still see what it was.
-;
-; This program touches NO disk at all -- no BDOS file calls, no FCB. It is
-; the console and the two bridge ports, and nothing else.
+; HDIR makes no BDOS file calls. It uses the console and ports B0H and
+; B1H only.
 ;-----------------------------------------------------------------------
 
-        ORG     100H
+	ORG	100H
 
 ;---- CP/M ------------------------------------------------------------
-BDOS    EQU     0005H
-TAIL    EQU     0080H           ; the command tail: length, then the text.
-                                ; The CCP has already FOLDED IT TO UPPER
-                                ; CASE. The card folds host names to match
-                                ; when it looks for them -- but what it
-                                ; PRINTS is always the true name.
+BDOS	EQU	0005H
+TAIL	EQU	0080H		; the command tail: length, then the text.
+				; The CCP folds it to upper case. The board
+				; folds host names to match, and prints
+				; each name in its own case.
 
-CONOUT  EQU     2               ; E = char
-PRSTR   EQU     9               ; DE = string, '$'-terminated
+CONOUT	EQU	2		; E = char
+PRSTR	EQU	9		; DE = string, ends in '$'
 
-HNMAX   EQU     64              ; a host name may be a PATH, so it is not 8.3
-IDMAX   EQU     32              ; room for the card's signature
-SZMAX   EQU     20              ; a host size in decimal (a uint64 is <= 20 digits)
-DTMAX   EQU     12              ; room for a date field ("MM/DD/YY" and then some)
-SIZEW   EQU     8               ; the size column, right-justified to this width
-CR      EQU     0DH
-LF      EQU     0AH
+HNMAX	EQU	64		; a host name can be a path
+IDMAX	EQU	32		; room for the board's signature
+SZMAX	EQU	20		; a size in decimal (a uint64 is 20 digits)
+DTMAX	EQU	12		; room for a date ("MM/DD/YY")
+SIZEW	EQU	8		; the width of the size column
+CR	EQU	0DH
+LF	EQU	0AH
 
-;---- The Host Bridge (see HB.INC -- ASM.COM has no INCLUDE) -----------
-HBCMD   EQU     0B0H            ; OUT = command   IN = status
-HBDATA  EQU     0B1H            ; data, both ways
+;---- The Host Bridge (HB.INC has the full list) ----------------------
+HBCMD	EQU	0B0H		; OUT = command   IN = status
+HBDATA	EQU	0B1H		; data, both ways
 
-HEOF    EQU     08H             ; the listing has run out
-HERR    EQU     10H             ; the last operation failed
+HEOF	EQU	08H		; the listing has no more names
+HERR	EQU	10H		; the last operation failed
 
-CIDENT  EQU     0
-CDIRL   EQU     9               ; start the LONG listing: name<0> size<0> date<0>
-CDIRN   EQU     5               ; then each next entry; HEOF when it runs out
-CERROR  EQU     7
-CRESET  EQU     8
+CIDENT	EQU	0
+CDIRL	EQU	9		; the long listing: name<0> size<0> date<0>
+CDIRN	EQU	5		; the next entry. HEOF at the end.
+CERROR	EQU	7
+CRESET	EQU	8
 
 ;=======================================================================
 ; MAIN
 ;=======================================================================
-START:  LXI     SP,STACK
+START:	LXI	SP,STACK
 
-        MVI     A,CRESET        ; ONE byte -- this card has no undefined
-        OUT     HBCMD           ; state to climb out of.
+	MVI	A,CRESET	; one byte puts the board in a known
+	OUT	HBCMD		; state
 
-        CALL    IDENT           ; is there even a card there? (exits if not)
-        CALL    PARSE           ; the tail -> PAT (which may be empty, and an
-                                ; EMPTY PATTERN MEANS EVERYTHING -- the card
-                                ; reads it as `*`, so there is no special case
-                                ; here for the bare `HDIR`)
+	CALL	IDENT		; exits if there is no board
+	CALL	PARSE		; the tail -> PAT. The board reads an
+				; empty pattern as `*`.
 
-        LXI     H,0             ; a 16-bit tally: a host directory is not a
-        SHLD    COUNT           ; CP/M one and can easily hold 300 files
+	LXI	H,0		; a 16-bit count: a host directory can
+	SHLD	COUNT		; hold more than 255 files
 
-        MVI     A,CDIRL         ; the LONG listing -- each entry is three fields
-        OUT     HBCMD
-        LXI     H,PAT
-        CALL    SENDZ           ; the NUL is what commits it
+	MVI	A,CDIRL
+	OUT	HBCMD
+	LXI	H,PAT
+	CALL	SENDZ		; the NUL commits the command
 
 ;---- the listing loop -------------------------------------------------
-DIR1:   IN      HBCMD
-        ANI     HERR
-        JNZ     DIRBAD          ; a bad pattern, or a hostdir that is not there
+DIR1:	IN	HBCMD
+	ANI	HERR
+	JNZ	DIRBAD		; a bad pattern, or no such hostdir
 
-        IN      HBCMD
-        ANI     HEOF
-        JNZ     DIRE            ; the list ran out -- and an EMPTY list lands
-                                ; here on the FIRST pass, which is why "no
-                                ; matches" needs no special case either
+	IN	HBCMD
+	ANI	HEOF
+	JNZ	DIRE		; no more names. With no matches at all,
+				; HDIR comes here on the first pass.
 
-; Each entry streams THREE NUL-terminated fields, in this order: the name, its
-; size ("<DIR>" for a directory, else a decimal byte count) and its date.
-        LXI     H,NAME
-        MVI     B,HNMAX
-        CALL    RECVZ
-        LXI     H,SIZE
-        MVI     B,SZMAX
-        CALL    RECVZ
-        LXI     H,DATE
-        MVI     B,DTMAX
-        CALL    RECVZ
+; Each entry is three strings: the name, the size ("<DIR>" for a folder,
+; else a decimal byte count) and the date.
+	LXI	H,NAME
+	MVI	B,HNMAX
+	CALL	RECVZ
+	LXI	H,SIZE
+	MVI	B,SZMAX
+	CALL	RECVZ
+	LXI	H,DATE
+	MVI	B,DTMAX
+	CALL	RECVZ
 
-        CALL    SHOW            ; one line: <size>  <date>  <name>
+	CALL	SHOW		; one line: <size>  <date>  <name>
 
-        LHLD    COUNT
-        INX     H
-        SHLD    COUNT
+	LHLD	COUNT
+	INX	H
+	SHLD	COUNT
 
-        MVI     A,CDIRN
-        OUT     HBCMD
-        JMP     DIR1
+	MVI	A,CDIRN
+	OUT	HBCMD
+	JMP	DIR1
 
-;---- and the tally ----------------------------------------------------
-DIRE:   LHLD    COUNT
-        MOV     A,H
-        ORA     L
-        JZ      DIRNON
+;---- the count --------------------------------------------------------
+DIRE:	LHLD	COUNT
+	MOV	A,H
+	ORA	L
+	JZ	DIRNON
 
-        CALL    CRLF
-        LHLD    COUNT
-        CALL    PRDEC
-        LXI     D,MFILES
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0               ; warm boot
+	CALL	CRLF
+	LHLD	COUNT
+	CALL	PRDEC
+	LXI	D,MFILES
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0		; warm boot
 
-DIRNON: LXI     D,MNONE
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0
+DIRNON: LXI	D,MNONE
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0
 
-DIRBAD: CALL    REPERR
-        JMP     0
+DIRBAD: CALL	REPERR
+	JMP	0
 
 ;-----------------------------------------------------------------------
-; SHOW -- print one entry as a line:  <size>  <date>  <name>
+; SHOW: print one entry as a line:  <size>  <date>  <name>
 ;
 ;       1792  07/14/26  R.COM
 ;      <DIR>  07/20/26  SRC/
 ;
-; The size is right-justified in an 8-wide field so the numbers line up; the
-; date is the card's own MM/DD/YY, already 8 characters; the name comes last,
-; where a long one can run to any length without pushing anything out of true.
-;
-; A DIRECTORY COMES BACK WITH A TRAILING '/' on the name (and "<DIR>" for its
-; size), and we leave both on: that is the entire difference between "you can R
-; this" and "you cannot", and hiding it to tidy the listing would be hiding the
-; one thing the user needs to know.
+; The size is right-justified in SIZEW columns. The date from the board
+; is 8 characters. The name goes last, because it has no fixed length.
+; A folder name ends in '/', and its size is "<DIR>".
 ;-----------------------------------------------------------------------
-SHOW:   LXI     H,SIZE          ; the size, right-justified into the column
-        MVI     C,SIZEW
-        CALL    RJUST
-        CALL    SPC2            ; two spaces between the columns
-        LXI     H,DATE          ; the date -- already MM/DD/YY
-        CALL    PSTR
-        CALL    SPC2
-        LXI     H,NAME          ; and the name, at its real length
-        CALL    PSTR
-        JMP     CRLF            ; tail call: end the line
+SHOW:	LXI	H,SIZE
+	MVI	C,SIZEW
+	CALL	RJUST
+	CALL	SPC2		; two spaces between the columns
+	LXI	H,DATE
+	CALL	PSTR
+	CALL	SPC2
+	LXI	H,NAME
+	CALL	PSTR
+	JMP	CRLF		; tail call: end the line
 
 ;-----------------------------------------------------------------------
-; RJUST -- print the NUL-terminated string at HL right-justified in a field
-;          C characters wide: emit (C - length) leading spaces, then the
-;          string. A string as wide as the field, or wider, prints unpadded.
+; RJUST: print the string at HL right-justified in C columns. It prints
+;        (C - length) spaces, then the string. A string of C characters
+;        or more gets no spaces.
 ;-----------------------------------------------------------------------
-RJUST:  PUSH    H
-        CALL    STRLEN          ; B = length (and STRLEN walked HL to the NUL)
-        POP     H
-        MOV     A,C
-        SUB     B               ; A = spaces owed
-        JC      RJ2             ; wider than the field: no padding
-        JZ      RJ2
-        MOV     B,A
-RJ1:    MVI     A,' '
-        PUSH    B
-        PUSH    H
-        CALL    PUTCH           ; BDOS eats every register, so save B and H
-        POP     H
-        POP     B
-        DCR     B
-        JNZ     RJ1
-RJ2:    JMP     PSTR            ; tail call: the string itself
+RJUST:	PUSH	H
+	CALL	STRLEN		; B = the length
+	POP	H
+	MOV	A,C
+	SUB	B		; A = the number of spaces
+	JC	RJ2		; wider than the field: no spaces
+	JZ	RJ2
+	MOV	B,A
+RJ1:	MVI	A,' '
+	PUSH	B
+	PUSH	H
+	CALL	PUTCH		; BDOS changes B and HL
+	POP	H
+	POP	B
+	DCR	B
+	JNZ	RJ1
+RJ2:	JMP	PSTR		; tail call: the string
 
 ;-----------------------------------------------------------------------
-; SPC2 -- two spaces, the gap between columns.
+; SPC2: two spaces, the gap between columns.
 ;-----------------------------------------------------------------------
-SPC2:   MVI     A,' '
-        CALL    PUTCH
-        MVI     A,' '
-        JMP     PUTCH           ; tail call
+SPC2:	MVI	A,' '
+	CALL	PUTCH
+	MVI	A,' '
+	JMP	PUTCH		; tail call
 
 ;-----------------------------------------------------------------------
-; STRLEN -- B = the length of the NUL-terminated string at HL.
+; STRLEN: B = the length of the string at HL.
 ;-----------------------------------------------------------------------
-STRLEN: MVI     B,0
-SL1:    MOV     A,M
-        ORA     A
-        RZ
-        INR     B
-        INX     H
-        JMP     SL1
+STRLEN: MVI	B,0
+SL1:	MOV	A,M
+	ORA	A
+	RZ
+	INR	B
+	INX	H
+	JMP	SL1
 
 ;=======================================================================
 ; THE HOST BRIDGE
 ;=======================================================================
 
 ;-----------------------------------------------------------------------
-; IDENT -- prove there is a card there before we do anything else.
+; IDENT: check that the board is there before anything else.
 ;
-; THIS IS NOT CEREMONY. An IN from a port that no card decodes FLOATS THE
-; BUS and the 8080 reads 0FFH -- which has both HEOF and HERR set. Without
-; this check, HDIR on a machine with no bridge in it would print a host
-; error, or an empty listing, and either one is a lie about your disk.
+; An IN from a port that no board decodes reads 0FFH, and 0FFH has HEOF
+; and HERR set. Without this check, HDIR would print a host error or an
+; empty listing.
 ;-----------------------------------------------------------------------
-IDENT:  MVI     A,CIDENT
-        OUT     HBCMD
+IDENT:	MVI	A,CIDENT
+	OUT	HBCMD
 
-        LXI     H,IDBUF
-        MVI     B,IDMAX
-ID1:    IN      HBDATA
-        MOV     M,A
-        ORA     A
-        JZ      ID2             ; got the terminator
-        INX     H
-        DCR     B
-        JNZ     ID1
-        MVI     M,0             ; never terminated -- 0FFH forever, i.e. no card
+	LXI	H,IDBUF
+	MVI	B,IDMAX
+ID1:	IN	HBDATA
+	MOV	M,A
+	ORA	A
+	JZ	ID2		; the terminator
+	INX	H
+	DCR	B
+	JNZ	ID1
+	MVI	M,0		; no terminator: 0FFH, so no board
 
-ID2:    LXI     H,IDBUF
-        LXI     D,IDWANT
-ID3:    LDAX    D
-        ORA     A
-        RZ                      ; matched to the end of what we wanted: ours.
-                                ; A PREFIX compare, so a later card that says
-                                ; "... 2" still works with this .COM
-        CMP     M
-        JNZ     IDBAD
-        INX     H
-        INX     D
-        JMP     ID3
+ID2:	LXI	H,IDBUF
+	LXI	D,IDWANT
+ID3:	LDAX	D
+	ORA	A
+	RZ			; all of IDWANT matched. This is a prefix
+				; compare, so "... 2" matches too.
+	CMP	M
+	JNZ	IDBAD
+	INX	H
+	INX	D
+	JMP	ID3
 
-IDBAD:  LXI     D,MNOHB
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0               ; nothing else in this program can work
+IDBAD:	LXI	D,MNOHB
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0
 
 ;-----------------------------------------------------------------------
-; SENDZ -- send the NUL-terminated string at HL to the data port.
-; The NUL goes too, AND IT IS THE NUL THAT COMMITS THE COMMAND.
+; SENDZ: send the string at HL to the data port, with its NUL. The NUL
+; commits the command.
 ;-----------------------------------------------------------------------
-SENDZ:  MOV     A,M
-        OUT     HBDATA
-        ORA     A
-        RZ
-        INX     H
-        JMP     SENDZ
+SENDZ:	MOV	A,M
+	OUT	HBDATA
+	ORA	A
+	RZ
+	INX	H
+	JMP	SENDZ
 
 ;-----------------------------------------------------------------------
-; RECVZ -- read a NUL-terminated string from the data port into HL.
-;          B = the room available, including the terminator.
+; RECVZ: read a string from the data port into HL.
+;        B = the room, with the NUL.
 ;-----------------------------------------------------------------------
-RECVZ:  IN      HBDATA
-        MOV     M,A
-        ORA     A
-        RZ
-        INX     H
-        DCR     B
-        JNZ     RECVZ
-        MVI     M,0             ; out of room -- truncate rather than run on
-        RET
+RECVZ:	IN	HBDATA
+	MOV	M,A
+	ORA	A
+	RZ
+	INX	H
+	DCR	B
+	JNZ	RECVZ
+	MVI	M,0		; no room left: cut the string here
+	RET
 
 ;-----------------------------------------------------------------------
-; REPERR -- print what actually went wrong, in the host's own words.
+; REPERR: print the board's error message, in the host's words.
 ;-----------------------------------------------------------------------
-REPERR: MVI     A,CERROR
-        OUT     HBCMD
-        IN      HBDATA          ; the code byte -- read it and discard it
+REPERR: MVI	A,CERROR
+	OUT	HBCMD
+	IN	HBDATA		; the code byte: skip it
 
-        LXI     D,MERR
-        MVI     C,PRSTR
-        CALL    BDOS
+	LXI	D,MERR
+	MVI	C,PRSTR
+	CALL	BDOS
 
-RPE1:   IN      HBDATA          ; ...then the text, a character at a time
-        ORA     A
-        JZ      RPE2
-        MOV     E,A
-        MVI     C,CONOUT
-        CALL    BDOS
-        JMP     RPE1
+RPE1:	IN	HBDATA		; then the text, one character at a time
+	ORA	A
+	JZ	RPE2
+	MOV	E,A
+	MVI	C,CONOUT
+	CALL	BDOS
+	JMP	RPE1
 
-RPE2:   JMP     CRLF            ; tail call
+RPE2:	JMP	CRLF		; tail call
 
 ;=======================================================================
 ; THE COMMAND TAIL
 ;=======================================================================
 
 ;-----------------------------------------------------------------------
-; PARSE -- the first word of the tail at 0080H -> PAT.
+; PARSE: the first word of the tail at 0080H -> PAT.
 ;
-; We parse it ourselves rather than use the FCB the CCP built at 005CH,
-; and we have to: that is an 8.3 FCB parse, and it would hand us `SRC/`
-; as `SRC     ` with the slash eaten and the pattern gone. A host pattern
-; is not an 8.3 name and must never be put through one.
+; HDIR does not use the CCP's FCB at 005CH. The CCP parses the word as
+; 8.3, so `SRC/` would lose its slash.
 ;-----------------------------------------------------------------------
-PARSE:  LXI     H,TAIL
-        MOV     B,M             ; the length of the tail
-        INX     H
+PARSE:	LXI	H,TAIL
+	MOV	B,M		; the length of the tail
+	INX	H
 
-        CALL    SKIPSP
-        LXI     D,PAT
-        MVI     C,HNMAX
-        CALL    TOKEN
-        RET
+	CALL	SKIPSP
+	LXI	D,PAT
+	MVI	C,HNMAX
+	CALL	TOKEN
+	RET
 
-SKIPSP: MOV     A,B
-        ORA     A
-        RZ
-        MOV     A,M
-        CPI     ' '
-        RNZ
-        INX     H
-        DCR     B
-        JMP     SKIPSP
+SKIPSP: MOV	A,B
+	ORA	A
+	RZ
+	MOV	A,M
+	CPI	' '
+	RNZ
+	INX	H
+	DCR	B
+	JMP	SKIPSP
 
-; Copy one space-delimited word from (HL) to (DE), NUL-terminated.
-;   B = characters left in the tail   C = room at DE, including the NUL
-; Always writes the NUL, so "no word here" is an empty string -- which is
-; what the card wants anyway.
-TOKEN:  MOV     A,C
-        CPI     1
-        JZ      TOKEND
-        MOV     A,B
-        ORA     A
-        JZ      TOKEND
-        MOV     A,M
-        CPI     ' '
-        JZ      TOKEND
-        STAX    D
-        INX     H
-        INX     D
-        DCR     B
-        DCR     C
-        JMP     TOKEN
-TOKEND: XRA     A
-        STAX    D
-        RET
+; Copy one word from (HL) to (DE), and end it with a NUL.
+;   B = characters left in the tail   C = room at DE, with the NUL
+; With no word, the result is an empty string.
+TOKEN:	MOV	A,C
+	CPI	1
+	JZ	TOKEND
+	MOV	A,B
+	ORA	A
+	JZ	TOKEND
+	MOV	A,M
+	CPI	' '
+	JZ	TOKEND
+	STAX	D
+	INX	H
+	INX	D
+	DCR	B
+	DCR	C
+	JMP	TOKEN
+TOKEND: XRA	A
+	STAX	D
+	RET
 
 ;=======================================================================
-; TALKING TO THE USER
+; MESSAGES TO THE USER
 ;=======================================================================
 
-; PSTR -- print the NUL-terminated string at HL.
-; HL is pushed around the BDOS call because BDOS EATS EVERY REGISTER.
-PSTR:   MOV     A,M
-        ORA     A
-        RZ
-        PUSH    H
-        MOV     E,A
-        MVI     C,CONOUT
-        CALL    BDOS
-        POP     H
-        INX     H
-        JMP     PSTR
+; PSTR: print the string at HL. HL is pushed across the BDOS call.
+PSTR:	MOV	A,M
+	ORA	A
+	RZ
+	PUSH	H
+	MOV	E,A
+	MVI	C,CONOUT
+	CALL	BDOS
+	POP	H
+	INX	H
+	JMP	PSTR
 
-PUTCH:  MOV     E,A
-        MVI     C,CONOUT
-        JMP     BDOS
+PUTCH:	MOV	E,A
+	MVI	C,CONOUT
+	JMP	BDOS
 
-CRLF:   LXI     D,MCRLF
-        MVI     C,PRSTR
-        JMP     BDOS
+CRLF:	LXI	D,MCRLF
+	MVI	C,PRSTR
+	JMP	BDOS
 
 ;-----------------------------------------------------------------------
-; PRDEC -- print HL in decimal. Built backwards from the end of a buffer,
-; so no digit reversal is needed.
+; PRDEC: print HL in decimal. The digits go into a buffer from the end.
 ;-----------------------------------------------------------------------
-PRDEC:  LXI     D,NUMEND
-        MVI     A,'$'
-        STAX    D
-PD1:    DCX     D
-        CALL    DIV10           ; HL = HL/10, A = the remainder
-        ADI     '0'
-        STAX    D
-        MOV     A,H
-        ORA     L
-        JNZ     PD1
-        MVI     C,PRSTR
-        JMP     BDOS            ; DE already points at the first digit
+PRDEC:	LXI	D,NUMEND
+	MVI	A,'$'
+	STAX	D
+PD1:	DCX	D
+	CALL	DIV10		; HL = HL/10, A = the remainder
+	ADI	'0'
+	STAX	D
+	MOV	A,H
+	ORA	L
+	JNZ	PD1
+	MVI	C,PRSTR
+	JMP	BDOS		; DE points at the first digit
 
-; DIV10 -- HL = HL/10, A = the remainder. The 8080 has no divide.
-DIV10:  PUSH    B
-        LXI     B,0
-DV1:    MOV     A,H
-        ORA     A
-        JNZ     DV2
-        MOV     A,L
-        CPI     10
-        JC      DV3
-DV2:    MOV     A,L
-        SUI     10
-        MOV     L,A
-        MOV     A,H
-        SBI     0
-        MOV     H,A
-        INX     B
-        JMP     DV1
-DV3:    MOV     A,L             ; the remainder -- grab it BEFORE clobbering L
-        MOV     H,B
-        MOV     L,C
-        POP     B
-        RET
+; DIV10: HL = HL/10, A = the remainder, by repeated subtraction.
+DIV10:	PUSH	B
+	LXI	B,0
+DV1:	MOV	A,H
+	ORA	A
+	JNZ	DV2
+	MOV	A,L
+	CPI	10
+	JC	DV3
+DV2:	MOV	A,L
+	SUI	10
+	MOV	L,A
+	MOV	A,H
+	SBI	0
+	MOV	H,A
+	INX	B
+	JMP	DV1
+DV3:	MOV	A,L		; the remainder, before L changes
+	MOV	H,B
+	MOV	L,C
+	POP	B
+	RET
 
 ;=======================================================================
 ; DATA
 ;=======================================================================
-IDWANT: DB      'ALTAIRSIM HOSTBRIDGE',0
+IDWANT: DB	'ALTAIRSIM HOSTBRIDGE',0
 
-MNOHB:  DB      CR,LF,'HDIR: no host bridge at B0H.',CR,LF
-        DB      'This machine has no `hostbridge` card in it, or it is at'
-        DB      ' another port.',CR,LF,'$'
+MNOHB:	DB	CR,LF,'HDIR: no host bridge at B0H.',CR,LF
+	DB	'This machine has no `hostbridge` card in it, or it is at'
+	DB	' another port.',CR,LF,'$'
 
-MERR:   DB      'HDIR: $'
-MCRLF:  DB      CR,LF,'$'
-MFILES: DB      ' files.',CR,LF,'$'
-MNONE:  DB      'HDIR: nothing matches.',CR,LF,'$'
+MERR:	DB	'HDIR: $'
+MCRLF:	DB	CR,LF,'$'
+MFILES: DB	' files.',CR,LF,'$'
+MNONE:	DB	'HDIR: nothing matches.',CR,LF,'$'
 
-;---- Variables -------------------------------------------------------
-PAT:    DS      HNMAX+1         ; the pattern, as typed. Empty = everything.
-NAME:   DS      HNMAX+1         ; the name the card just handed us. +1: RECVZ's
-                                ; truncate path writes its NUL one past the
-                                ; count it was given.
-SIZE:   DS      SZMAX+1         ; its size, as decimal text (or "<DIR>")
-DATE:   DS      DTMAX+1         ; its date, MM/DD/YY
-IDBUF:  DS      IDMAX+1
-COUNT:  DS      2               ; how many names we have printed
-NUMBUF: DS      6
-NUMEND: DS      1               ; PRDEC builds backwards from here
+;---- variables --------------------------------------------------------
+PAT:	DS	HNMAX+1		; the pattern as typed. Empty = everything.
+NAME:	DS	HNMAX+1		; the name from the board. +1: RECVZ can
+				; write its NUL one byte past the count.
+SIZE:	DS	SZMAX+1		; its size as decimal text, or "<DIR>"
+DATE:	DS	DTMAX+1		; its date, MM/DD/YY
+IDBUF:	DS	IDMAX+1
+COUNT:	DS	2		; the names printed
+NUMBUF: DS	6
+NUMEND: DS	1		; PRDEC ends here
 
-        DS      64              ; stack: BDOS is the deepest thing we call
-STACK   EQU     $
+	DS	64		; the stack
+STACK	EQU	$
 
-        END     START
+	END	START

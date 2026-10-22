@@ -100,6 +100,9 @@ bool validateHostName(const std::string& name, HbFail& err);
 // `R *.ASM` silently miss every file on a Linux host. The host names themselves are
 // reported exactly as they are on disk (see list()) -- we fold the COMPARISON, never
 // the name.
+//
+// A name that starts with `.` matches only a glob that starts with `.`, as in a shell:
+// `*.*` and the empty glob skip `.DS_Store`, and `.*` finds it.
 bool hostGlobMatch(const std::string& glob, const std::string& name);
 
 // ---------------------------------------------------------------------------
@@ -120,7 +123,7 @@ public:
                        HbFail& err) = 0;
     virtual bool remove(const std::string& name, HbFail& err) = 0;
 
-    // Sorted. An empty glob means everything. The glob may carry a directory --
+    // Sorted. An empty glob means everything but dot files. The glob may carry a directory --
     // `SRC/*.ASM` lists SRC -- and the names handed back carry it too, so the guest can
     // feed one straight back to read(). A DIRECTORY comes back with a trailing '/', so
     // HDIR can show it and R's wildcard loop can skip it.
@@ -185,8 +188,13 @@ private:
     // `Makefile` and `makefile` in one directory -- we refuse with Ambiguous rather
     // than silently picking one, because there is no defensible way to choose and the
     // wrong choice is a corrupted transfer that looks like a successful one.
+    //
+    // EVERY PART OF A PATH FOLDS, not only the last: `W *.* OUT` and `R SRC/FOO.ASM`
+    // arrive upper-cased too, and on a case-sensitive host the folder is `out` or
+    // `src`. `dirsOnly` is set for a part that must be a folder (all but the last);
+    // the last part may be a file or a folder (`HDIR SRC/` names a folder last).
     bool findCaseInsensitive(const std::string& canonRoot, const std::string& name,
-                             std::string& out, HbFail& err) const;
+                             bool dirsOnly, std::string& out, HbFail& err) const;
 
     std::string root_;
 };

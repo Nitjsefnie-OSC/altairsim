@@ -1,943 +1,857 @@
 ;-----------------------------------------------------------------------
-; R.COM -- copy a file from the HOST into CP/M.
+; R.COM: copy a file from the host into CP/M.
 ;
 ;       R <hostfile> [cpmfile]
 ;       R <pattern>                     e.g.  R *.ASM     R SRC/*.MAC
 ;
-; Part of the altairsim Host Bridge (src/boards/hostbridge.h,
-; docs/boards/hostbridge.md). Assemble it INSIDE the machine:
+; Part of the altairsim Host Bridge. Assemble it in the machine:
 ;
 ;       ASM R                   -> R.HEX
 ;       LOAD R                  -> R.COM
 ;
-; The name is one letter because it is typed constantly. R talks to the
-; Host Bridge card at 0B0H and to nothing else: no pseudo-device, no port
-; 0FEH -- in a real Altair that is the 88-VI/RTC's control register.
+; Revisions:
+;       1.0  2026-08-27  Version banner. Byte count after each file.
+;       1.1  2026-09-20  The CP/M name is folded to upper case.
+;       1.2  2026-10-02  A space does not go into a CP/M name.
 ;
-;-----------------------------------------------------------------------
-; EVERY DISK OPERATION IN THIS PROGRAM IS A BDOS CALL, AND THAT IS THE
-; WHOLE DESIGN.
-;
-; No BIOS entry points. No IN or OUT to a disk controller. No assumptions
-; about a DPB, a sector size, a skew table, or which card the drive is on.
-; The only ports this program touches are the Host Bridge's own two.
-;
-; That is what makes R.COM portable across every CP/M and every disk
-; device in the machine -- an 88-DCDD 8", an 88-MDS minidisk, an 8 MB
-; image, a Tarbell if one is ever built, and any BIOS anybody writes
-; later. The utility knows about FILES; CP/M knows about DISKS; the bridge
-; knows about the HOST. No layer reaches past the next one.
-;
-; AND BDOS CLOBBERS EVERY REGISTER (A,B,C,D,E,H,L -- only SP survives).
-; That is not a warning, it is the single most common way 8080 CP/M code
-; goes wrong. Nothing may be left live in a register across CALL BDOS.
+; R uses only BDOS calls for the disk, and only ports B0H and B1H. It
+; does not use the BIOS or a disk controller, so the same R.COM runs on
+; every CP/M disk. BDOS changes every register except SP.
 ;-----------------------------------------------------------------------
 
-        ORG     100H
+	ORG	100H
 
 ;---- CP/M ------------------------------------------------------------
-BDOS    EQU     0005H           ; ALWAYS here. Never call the BIOS directly.
-TAIL    EQU     0080H           ; the command tail: length, then the text
-                                ; ...and the CCP has already FOLDED IT TO
-                                ; UPPER CASE. We cannot see lower case, ever.
-                                ; The card knows, and folds host names to
-                                ; match -- so `R readme.txt` still works.
+BDOS	EQU	0005H
+TAIL	EQU	0080H		; the command tail: length, then the text.
+				; The CCP folds it to upper case. The board
+				; folds host names to match, so
+				; `R readme.txt` finds readme.txt.
 
-CONOUT  EQU     2               ; E = char
-PRSTR   EQU     9               ; DE = string, '$'-terminated
-FCLOSE  EQU     16
-FDELET  EQU     19
-FWRITE  EQU     21              ; write sequential
-FMAKE   EQU     22
-FSETDMA EQU     26
+CONOUT	EQU	2		; E = char
+PRSTR	EQU	9		; DE = string, ends in '$'
+FCLOSE	EQU	16
+FDELET	EQU	19
+FWRITE	EQU	21		; write sequential
+FMAKE	EQU	22
+FSETDMA EQU	26
 
-RECLEN  EQU     128             ; a CP/M record. Everything is a multiple.
-HNMAX   EQU     64              ; a host name may be a PATH, so it is not 8.3
-IDMAX   EQU     32              ; room for the card's signature
-CPMEOF  EQU     1AH             ; ^Z
-CR      EQU     0DH
-LF      EQU     0AH
+RECLEN	EQU	128		; a CP/M record
+HNMAX	EQU	64		; a host name can be a path
+IDMAX	EQU	32		; room for the board's signature
+CPMEOF	EQU	1AH		; ^Z
+CR	EQU	0DH
+LF	EQU	0AH
 
-;---- The Host Bridge (see HB.INC -- ASM.COM has no INCLUDE) -----------
-HBCMD   EQU     0B0H            ; OUT = command   IN = status
-HBDATA  EQU     0B1H            ; data, both ways
+;---- The Host Bridge (HB.INC has the full list) ----------------------
+HBCMD	EQU	0B0H		; OUT = command   IN = status
+HBDATA	EQU	0B1H		; data, both ways
 
-DAV     EQU     02H             ; a byte is waiting
-HEOF    EQU     08H             ; the stream has run dry
-HERR    EQU     10H             ; the last operation failed
+DAV	EQU	02H		; a byte is waiting
+HEOF	EQU	08H		; the stream has no more data
+HERR	EQU	10H		; the last operation failed
 
-CIDENT  EQU     0
-CVOPENR EQU     1
-CDIRF   EQU     4
-CDIRN   EQU     5
-CERROR  EQU     7
-CRESET  EQU     8
+CIDENT	EQU	0
+CVOPENR EQU	1
+CDIRF	EQU	4
+CDIRN	EQU	5
+CERROR	EQU	7
+CRESET	EQU	8
 
 ;=======================================================================
 ; MAIN
 ;=======================================================================
-START:  LXI     SP,STACK
+START:	LXI	SP,STACK
 
-; RESET first -- ONE byte, because this card has no undefined state to
-; climb out of. It costs nothing and it means we start from a known place
-; even if the last program to run left a transfer half-finished.
-        MVI     A,CRESET
-        OUT     HBCMD
+	MVI	A,CRESET	; one byte puts the board in a known state
+	OUT	HBCMD
 
-        CALL    IDENT           ; is there even a card there? (exits if not)
-        CALL    PARSE           ; command tail -> HNAME, CNAME
+	CALL	IDENT		; exits if there is no board
+	CALL	PARSE		; the tail -> HNAME, CNAME
 
-        LDA     HNAME
-        ORA     A
-        JZ      USAGE           ; no arguments at all
+	LDA	HNAME
+	ORA	A
+	JZ	USAGE		; no arguments
 
-        CALL    HASWLD          ; does the host name contain * or ? ...
-        ORA     A
-        JNZ     MANY            ; ...yes: walk the host directory
-        CALL    ONE             ; ...no: just the one file
-        JMP     EXIT
+	CALL	HASWLD		; a * or ? in the host name?
+	ORA	A
+	JNZ	MANY		; yes: walk the host directory
+	CALL	ONE		; no: one file
+	JMP	EXIT
 
 ;-----------------------------------------------------------------------
-; MANY -- a wildcard. Walk the matches, copying each.
+; MANY: a wildcard. Copy each host file that matches.
 ;
-; THE ENUMERATION AND THE TRANSFERS INTERLEAVE, and the card is built for
-; it: DIR_FIRST/DIR_NEXT keep their place across the OPEN_READ that
-; happens between them. The alternative -- buffering every matching name
-; up front -- would cost real memory in a TPA for no reason.
+; DIR_FIRST and DIR_NEXT keep their place across an OPEN_READ, so R
+; copies each match as the board lists it.
 ;-----------------------------------------------------------------------
-MANY:   LDA     CNAME
-        ORA     A
-        JNZ     EWILD           ; "R *.ASM FOO.ASM" cannot mean anything
+MANY:	LDA	CNAME
+	ORA	A
+	JNZ	EWILD		; a wildcard takes no CP/M name
 
-        MVI     A,CDIRF
-        OUT     HBCMD
-        LXI     H,HNAME         ; the pattern...
-        CALL    SENDZ           ; ...NUL-terminated. The NUL commits it.
+	MVI	A,CDIRF
+	OUT	HBCMD
+	LXI	H,HNAME		; the pattern
+	CALL	SENDZ
 
-MANY1:  IN      HBCMD
-        ANI     HERR
-        JNZ     MANYE           ; the host said no (a bad pattern, a bad dir)
+MANY1:	IN	HBCMD
+	ANI	HERR
+	JNZ	MANYE		; a bad pattern or a bad folder
 
-        IN      HBCMD
-        ANI     HEOF
-        JNZ     EXIT            ; the list ran out -- and an EMPTY list lands
-                                ; here on the FIRST pass, which is why there
-                                ; is no special case for "no matches"
+	IN	HBCMD
+	ANI	HEOF
+	JNZ	EXIT		; no more names. With no matches at all,
+				; R comes here on the first pass.
 
-        LXI     H,HNAME         ; overwrite the pattern with the match; we do
-        MVI     B,HNMAX         ; not need it again, the card is holding it
-        CALL    RECVZ
+	LXI	H,HNAME		; the match replaces the pattern. The
+	MVI	B,HNMAX		; board keeps the pattern.
+	CALL	RECVZ
 
-        CALL    ISDIR           ; a subdirectory comes back marked with a '/'
-        JZ      MANY2           ; ...and is not a file to copy
+	CALL	ISDIR		; a folder ends in '/'
+	JZ	MANY2		; and is not copied
 
-        CALL    ONE
+	CALL	ONE
 
-MANY2:  MVI     A,CDIRN
-        OUT     HBCMD
-        JMP     MANY1
+MANY2:	MVI	A,CDIRN
+	OUT	HBCMD
+	JMP	MANY1
 
-MANYE:  CALL    REPERR
-        JMP     EXIT
+MANYE:	CALL	REPERR
+	JMP	EXIT
 
-EXIT:   JMP     0               ; warm boot
+EXIT:	JMP	0		; warm boot
 
 ;=======================================================================
-; ONE -- copy the host file named in HNAME into CP/M.
+; ONE: copy the host file named in HNAME into CP/M.
 ;
-; Called once for a plain transfer, and once per match for a wildcard.
+; It runs once for one file, and once for each match of a wildcard.
 ;=======================================================================
-ONE:    LXI     H,0
-        SHLD    RECS            ; records written, for the report at the end
-        SHLD    BYTES           ; and the TRUE host byte count -- 24 bits, because
-        XRA     A               ; a padded record count is not the file's real size
-        STA     BYTES+2
+ONE:	LXI	H,0
+	SHLD	RECS		; records written
+	SHLD	BYTES		; the true host byte count, 24 bits. The
+	XRA	A		; last record is padded, so RECS*128 is wrong.
+	STA	BYTES+2
 
-; OPEN THE HOST FILE FIRST, BEFORE TOUCHING THE CP/M DIRECTORY.
-;
-; The order is load-bearing. Creating the CP/M file first would mean that
-; `R TYPPO.ASM` -- a name that does not exist on the host -- DELETES the
-; CP/M file of the same name (see FDELET below) and leaves an empty one in
-; its place. Fail first, destroy nothing.
-        MVI     A,CVOPENR
-        OUT     HBCMD
-        LXI     H,HNAME
-        CALL    SENDZ
+; R opens the host file before it changes the CP/M directory. If the
+; host file is not there, the CP/M file of that name stays as it was.
+	MVI	A,CVOPENR
+	OUT	HBCMD
+	LXI	H,HNAME
+	CALL	SENDZ
 
-        IN      HBCMD
-        ANI     HERR
-        JNZ     ONEBAD          ; no such host file, outside the sandbox, ...
+	IN	HBCMD
+	ANI	HERR
+	JNZ	ONEBAD		; no such host file, outside the sandbox, ...
 
-;---- Work out what to call it on this side ----------------------------
-        LDA     CNAME
-        ORA     A
-        JZ      ONEDER          ; no second argument -> derive the name
-        LXI     H,CNAME         ; the user said what to call it
-        JMP     ONEFCB
-ONEDER: CALL    BASENM          ; SRC/FOO.ASM -> FOO.ASM: a CP/M file has no
-                                ; directory to live in, so only the last
-                                ; component can survive the trip
-ONEFCB: CALL    MKFCB
+;---- the CP/M name ----------------------------------------------------
+	LDA	CNAME
+	ORA	A
+	JZ	ONEDER		; no second word: use the host name
+	LXI	H,CNAME		; the name the user gave
+	JMP	ONEFCB
+ONEDER: CALL	BASENM		; SRC/FOO.ASM -> FOO.ASM
+ONEFCB: CALL	MKFCB
 
-        CALL    SAYXFR          ; "R: SRC/FOO.ASM -> FOO.ASM"
+	CALL	SAYXFR		; "R: SRC/FOO.ASM -> FOO.ASM"
 
-;---- Make the CP/M file ----------------------------------------------
-; Delete any existing one first. BDOS MAKE on a name that already exists
-; creates a SECOND directory entry for it -- two files, same name, and the
-; disk is quietly corrupt. Deleting first is not politeness, it is the
-; documented way to avoid that.
-        LXI     D,FCB
-        MVI     C,FDELET
-        CALL    BDOS            ; 0FFH = "there wasn't one", which is fine
+;---- make the CP/M file -----------------------------------------------
+; Delete the old file first. BDOS MAKE on a name that exists makes a
+; second directory entry with the same name.
+	LXI	D,FCB
+	MVI	C,FDELET
+	CALL	BDOS		; 0FFH = there was no file. That is fine.
 
-        LXI     D,FCB
-        MVI     C,FMAKE
-        CALL    BDOS
-        CPI     0FFH
-        JZ      ENODIR          ; directory full
+	LXI	D,FCB
+	MVI	C,FMAKE
+	CALL	BDOS
+	CPI	0FFH
+	JZ	ENODIR		; directory full
 
-        LXI     D,BUF
-        MVI     C,FSETDMA
-        CALL    BDOS            ; where BDOS reads each record from
+	LXI	D,BUF
+	MVI	C,FSETDMA
+	CALL	BDOS		; BDOS writes each record from BUF
 
-        CALL    COPY            ; <-- the actual transfer
-        RC                      ; carry = the copy failed and has reported it
+	CALL	COPY
+	RC			; CY = the copy failed and said so
 
-        LXI     D,FCB
-        MVI     C,FCLOSE
-        CALL    BDOS
-        CPI     0FFH
-        JZ      ECLOSE
+	LXI	D,FCB
+	MVI	C,FCLOSE
+	CALL	BDOS
+	CPI	0FFH
+	JZ	ECLOSE
 
-        CALL    SAYREC          ; "  3 records"
-        RET
+	CALL	SAYREC		; "3 records, 300 bytes"
+	RET
 
-ONEBAD: CALL    REPERR
-        RET
+ONEBAD: CALL	REPERR
+	RET
 
 ;-----------------------------------------------------------------------
-; COPY -- host stream -> CP/M records. Returns CY on failure.
+; COPY: the host stream -> CP/M records. Returns CY on failure.
 ;
-; NO POLLING LOOP, AND THAT IS NOT AN OVERSIGHT. The card never makes you
-; wait: it read the whole file into its own buffer when OPEN_READ
-; committed, so every byte is already there. DAV clear means END OF DATA,
-; not "not yet" -- so `ANI DAV / JZ` is a complete and correct test, and a
-; wait loop around it would spin forever on the last byte.
+; The board reads the whole file into memory when OPEN_READ commits.
+; DAV clear means the end of the data, so R does not wait for DAV.
 ;-----------------------------------------------------------------------
-COPY:   IN      HBCMD
-        ANI     DAV
-        RZ                      ; nothing (left) at all -- done, no carry.
-                                ; An EMPTY host file lands here immediately
-                                ; and produces a zero-record CP/M file, which
-                                ; is right: it is empty too.
+COPY:	IN	HBCMD
+	ANI	DAV
+	RZ			; no more data: done, no carry. An empty
+				; host file makes an empty CP/M file.
 
-        LXI     H,BUF           ; start a record
-        MVI     B,RECLEN
+	LXI	H,BUF		; start a record
+	MVI	B,RECLEN
 
-CP1:    IN      HBCMD
-        ANI     DAV
-        JZ      CPPAD           ; ran out mid-record -> pad the rest
-        IN      HBDATA
-        MOV     M,A
-        INX     H
-        DCR     B
-        JNZ     CP1
-        MVI     A,RECLEN        ; a full 128 bytes -- count them...
-        CALL    ADDBYT
-        JMP     CPWRIT
+CP1:	IN	HBCMD
+	ANI	DAV
+	JZ	CPPAD		; the data ended in the record: pad it
+	IN	HBDATA
+	MOV	M,A
+	INX	H
+	DCR	B
+	JNZ	CP1
+	MVI	A,RECLEN	; a full record: count 128 bytes
+	CALL	ADDBYT
+	JMP	CPWRIT
 
-; PAD THE TAIL OF THE LAST RECORD WITH ^Z.
-;
-; CP/M stores whole 128-byte records and keeps NO BYTE COUNT, so a file's
-; true length is simply not representable -- the last record is always
-; full of something. ^Z is what every CP/M program of the era expects to
-; find there, and it is what TYPE and ED stop at.
-;
-; This is also the exact reason W.COM has a T switch: coming back the
-; other way, those pad bytes are indistinguishable from real data, and
-; only the human knows whether the file was text.
-CPPAD:  MVI     A,RECLEN        ; ...and on a short last record, count only what
-        SUB     B               ; the host actually gave us: 128 - the slots left.
-        CALL    ADDBYT          ; ADDBYT keeps B and HL, so the pad below is intact.
-        MVI     A,CPMEOF
-CPPAD1: MOV     M,A
-        INX     H
-        DCR     B
-        JNZ     CPPAD1
+; Pad the rest of the last record with ^Z. CP/M keeps no byte count, and
+; TYPE and ED stop at the ^Z.
+CPPAD:	MVI	A,RECLEN	; count only the bytes from the host:
+	SUB	B		; 128 - the slots left.
+	CALL	ADDBYT		; ADDBYT keeps B and HL for the pad below.
+	MVI	A,CPMEOF
+CPPAD1: MOV	M,A
+	INX	H
+	DCR	B
+	JNZ	CPPAD1
 
-CPWRIT: LXI     D,FCB
-        MVI     C,FWRITE
-        CALL    BDOS
-        ORA     A
-        JNZ     EDISK           ; out of space, or a read-only disk
+CPWRIT: LXI	D,FCB
+	MVI	C,FWRITE
+	CALL	BDOS
+	ORA	A
+	JNZ	EDISK		; disk full, or read-only
 
-        LHLD    RECS
-        INX     H
-        SHLD    RECS
-        JMP     COPY            ; ...and around for the next record
+	LHLD	RECS
+	INX	H
+	SHLD	RECS
+	JMP	COPY		; the next record
 
 ;=======================================================================
 ; THE HOST BRIDGE
 ;=======================================================================
 
 ;-----------------------------------------------------------------------
-; IDENT -- prove there is a card there before we do anything else.
+; IDENT: check that the board is there before anything else.
 ;
-; THIS IS NOT CEREMONY. An IN from a port that no card decodes FLOATS THE
-; BUS, and the 8080 reads 0FFH. Without this check, R on a machine with no
-; bridge in it would read 0FFH forever: 0FFH has DAV set, so COPY would
-; happily write a disk full of 0FFH bytes and call it a file.
-;
-; A program that cannot tell "the card said 0FFH" from "there is no card"
-; must ask a question only a real card can answer. This is that question.
+; An IN from a port that no board decodes reads 0FFH, and 0FFH has DAV
+; set. Without this check, R would fill the disk with 0FFH bytes.
 ;-----------------------------------------------------------------------
-IDENT:  MVI     A,CIDENT
-        OUT     HBCMD
+IDENT:	MVI	A,CIDENT
+	OUT	HBCMD
 
-        LXI     H,IDBUF
-        MVI     B,IDMAX
-ID1:    IN      HBDATA
-        MOV     M,A
-        ORA     A
-        JZ      ID2             ; got the terminator
-        INX     H
-        DCR     B
-        JNZ     ID1
-        MVI     M,0             ; never terminated -- 0FFH forever, i.e. no card
+	LXI	H,IDBUF
+	MVI	B,IDMAX
+ID1:	IN	HBDATA
+	MOV	M,A
+	ORA	A
+	JZ	ID2		; the terminator
+	INX	H
+	DCR	B
+	JNZ	ID1
+	MVI	M,0		; no terminator: 0FFH, so no board
 
-ID2:    LXI     H,IDBUF
-        LXI     D,IDWANT
-ID3:    LDAX    D
-        ORA     A
-        RZ                      ; matched all the way to the end: it is ours
-        CMP     M
-        JNZ     IDBAD
-        INX     H
-        INX     D
-        JMP     ID3
+ID2:	LXI	H,IDBUF
+	LXI	D,IDWANT
+ID3:	LDAX	D
+	ORA	A
+	RZ			; all of IDWANT matched
+	CMP	M
+	JNZ	IDBAD
+	INX	H
+	INX	D
+	JMP	ID3
 
-IDBAD:  LXI     D,MNOHB
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0               ; nothing else in this program can work
+IDBAD:	LXI	D,MNOHB
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0
 
 ;-----------------------------------------------------------------------
-; SENDZ -- send the NUL-terminated string at HL to the data port.
-;
-; The NUL goes too, AND IT IS THE NUL THAT COMMITS THE COMMAND. Until it
-; lands, the card has opened nothing and looked nothing up, and we could
-; still change our mind by writing a different command byte.
+; SENDZ: send the string at HL to the data port, with its NUL. The NUL
+; commits the command.
 ;-----------------------------------------------------------------------
-SENDZ:  MOV     A,M
-        OUT     HBDATA
-        ORA     A
-        RZ                      ; that was the terminator: done
-        INX     H
-        JMP     SENDZ
+SENDZ:	MOV	A,M
+	OUT	HBDATA
+	ORA	A
+	RZ			; that was the NUL
+	INX	H
+	JMP	SENDZ
 
 ;-----------------------------------------------------------------------
-; RECVZ -- read a NUL-terminated string from the data port into HL.
-;          B = room available, including the terminator.
+; RECVZ: read a string from the data port into HL.
+;        B = the room, with the NUL.
 ;-----------------------------------------------------------------------
-RECVZ:  IN      HBDATA
-        MOV     M,A
-        ORA     A
-        RZ
-        INX     H
-        DCR     B
-        JNZ     RECVZ
-        MVI     M,0             ; out of room -- truncate rather than run on
-        RET
+RECVZ:	IN	HBDATA
+	MOV	M,A
+	ORA	A
+	RZ
+	INX	H
+	DCR	B
+	JNZ	RECVZ
+	MVI	M,0		; no room left: cut the string here
+	RET
 
 ;-----------------------------------------------------------------------
-; REPERR -- print what actually went wrong.
-;
-; The card hands back a code byte and then a MESSAGE, in the host's own
-; words ("FOO.ASM: no such file or directory"). We print the message and
-; drop the code: a number the user has to go and look up is not an error
-; report. The code is there for a program that wants to branch on it.
+; REPERR: print the board's error message. The board sends a code byte,
+; then the host's message as text. R prints the text.
 ;-----------------------------------------------------------------------
-REPERR: MVI     A,CERROR
-        OUT     HBCMD
-        IN      HBDATA          ; the code byte -- read it and discard it
+REPERR: MVI	A,CERROR
+	OUT	HBCMD
+	IN	HBDATA		; the code byte: skip it
 
-        LXI     D,MERR
-        MVI     C,PRSTR
-        CALL    BDOS
+	LXI	D,MERR
+	MVI	C,PRSTR
+	CALL	BDOS
 
-RPE1:   IN      HBDATA          ; ...then the text, a character at a time.
-        ORA     A               ; Nothing is live across the BDOS call below,
-        JZ      RPE2            ; because the next byte comes from the PORT.
-        MOV     E,A
-        MVI     C,CONOUT
-        CALL    BDOS
-        JMP     RPE1
+RPE1:	IN	HBDATA		; then the text, one character at a time.
+	ORA	A		; No register is kept across the BDOS
+	JZ	RPE2		; call, because the next byte comes
+	MOV	E,A		; from the port.
+	MVI	C,CONOUT
+	CALL	BDOS
+	JMP	RPE1
 
-RPE2:   LXI     D,MCRLF
-        MVI     C,PRSTR
-        JMP     BDOS            ; tail call: BDOS returns to OUR caller
+RPE2:	LXI	D,MCRLF
+	MVI	C,PRSTR
+	JMP	BDOS		; tail call
 
 ;=======================================================================
 ; THE COMMAND TAIL
 ;=======================================================================
 
 ;-----------------------------------------------------------------------
-; PARSE -- pull two words out of the command tail at 0080H.
+; PARSE: get two words from the command tail at 0080H.
 ;
-; WE PARSE IT OURSELVES rather than use the FCBs the CCP already built at
-; 005CH and 006CH. We have to: the CCP's parse is an 8.3 FCB parse, and it
-; would take `readme.markdown` and hand us `README  MAR` -- a host name
-; mangled beyond recovery before our first instruction ran.
-;
-; What we CANNOT undo is the upper-casing: the CCP folds the whole tail
-; before we see it. The card compensates (it folds host names when looking
-; for a match), which is why there is no `L` switch here: nobody should
-; have to remember which of their files are in which case.
+; R does not use the CCP's FCBs at 005CH and 006CH. The CCP parses the
+; first word as 8.3, so `readme.markdown` would become `README  MAR`.
 ;-----------------------------------------------------------------------
-PARSE:  LXI     H,TAIL
-        MOV     B,M             ; length of the tail
-        INX     H               ; -> first character
+PARSE:	LXI	H,TAIL
+	MOV	B,M		; the length of the tail
+	INX	H		; the first character
 
-        CALL    SKIPSP
-        LXI     D,HNAME
-        CALL    TOKEN
+	CALL	SKIPSP
+	LXI	D,HNAME
+	CALL	TOKEN
 
-        CALL    SKIPSP
-        LXI     D,CNAME
-        CALL    TOKEN
-        RET
+	CALL	SKIPSP
+	LXI	D,CNAME
+	CALL	TOKEN
+	RET
 
-SKIPSP: MOV     A,B
-        ORA     A
-        RZ                      ; nothing left
-        MOV     A,M
-        CPI     ' '
-        RNZ
-        INX     H
-        DCR     B
-        JMP     SKIPSP
+SKIPSP: MOV	A,B
+	ORA	A
+	RZ			; nothing left
+	MOV	A,M
+	CPI	' '
+	RNZ
+	INX	H
+	DCR	B
+	JMP	SKIPSP
 
-; Copy one space-delimited word from (HL) to (DE), NUL-terminated.
-; Always writes the NUL -- so "no word here" comes out as an empty string,
-; which is what the callers test for.
-TOKEN:  MOV     A,B
-        ORA     A
-        JZ      TOKEND
-        MOV     A,M
-        CPI     ' '
-        JZ      TOKEND
-        STAX    D
-        INX     H
-        INX     D
-        DCR     B
-        JMP     TOKEN
-TOKEND: XRA     A
-        STAX    D
-        RET
+; Copy one word from (HL) to (DE), and end it with a NUL. With no word,
+; the result is an empty string.
+TOKEN:	MOV	A,B
+	ORA	A
+	JZ	TOKEND
+	MOV	A,M
+	CPI	' '
+	JZ	TOKEND
+	STAX	D
+	INX	H
+	INX	D
+	DCR	B
+	JMP	TOKEN
+TOKEND: XRA	A
+	STAX	D
+	RET
 
 ;-----------------------------------------------------------------------
-; HASWLD -- A=1 if HNAME contains * or ?, else A=0.
+; HASWLD: A=1 if HNAME has a * or a ?, else A=0.
 ;-----------------------------------------------------------------------
-HASWLD: LXI     H,HNAME
-HW1:    MOV     A,M
-        ORA     A
-        JZ      HWNO
-        CPI     '*'
-        JZ      HWYES
-        CPI     '?'
-        JZ      HWYES
-        INX     H
-        JMP     HW1
-HWNO:   XRA     A
-        RET
-HWYES:  MVI     A,1
-        RET
+HASWLD: LXI	H,HNAME
+HW1:	MOV	A,M
+	ORA	A
+	JZ	HWNO
+	CPI	'*'
+	JZ	HWYES
+	CPI	'?'
+	JZ	HWYES
+	INX	H
+	JMP	HW1
+HWNO:	XRA	A
+	RET
+HWYES:	MVI	A,1
+	RET
 
 ;-----------------------------------------------------------------------
-; ISDIR -- Z if HNAME ends in '/', i.e. the card says it is a directory.
-;
-; HDIR shows directories, and a wildcard can match one. R must not try to
-; open it: the card would refuse, and the user would get a puzzling error
-; instead of the obvious "that is a folder, not a file".
+; ISDIR: Z if HNAME ends in '/'. The board marks a folder that way.
+; A wildcard can match a folder, and R does not try to open it.
 ;-----------------------------------------------------------------------
-ISDIR:  LXI     H,HNAME
-        MOV     A,M
-        ORA     A
-        RNZ                     ; empty name: not a directory (and NZ)
-IS1:    MOV     A,M
-        ORA     A
-        JZ      IS2
-        INX     H
-        JMP     IS1
-IS2:    DCX     H               ; -> the last character
-        MOV     A,M
-        CPI     '/'             ; Z if it IS a directory
-        RET
+ISDIR:	LXI	H,HNAME
+	MOV	A,M
+	ORA	A
+	RNZ			; empty name: not a folder (and NZ)
+IS1:	MOV	A,M
+	ORA	A
+	JZ	IS2
+	INX	H
+	JMP	IS1
+IS2:	DCX	H		; the last character
+	MOV	A,M
+	CPI	'/'		; Z if it is a folder
+	RET
 
 ;-----------------------------------------------------------------------
-; BASENM -- HL = the last component of HNAME.
-;
-; SRC/FOO.ASM -> FOO.ASM. A CP/M file has no directory to live in, so the
-; path cannot come across; only the name can.
+; BASENM: HL = the last part of the path in HNAME.
+; SRC/FOO.ASM -> FOO.ASM. CP/M has no folders.
 ;-----------------------------------------------------------------------
-BASENM: LXI     H,HNAME
-        LXI     B,HNAME         ; BC = best candidate so far
-BN1:    MOV     A,M
-        ORA     A
-        JZ      BN9
-        CPI     '/'
-        JZ      BN2
-        CPI     5CH             ; backslash. Both separators are legal on
-        JZ      BN2             ; every host -- see HB.INC.
-        INX     H
-        JMP     BN1
-BN2:    INX     H               ; the character AFTER the separator...
-        MOV     B,H
-        MOV     C,L             ; ...is the new candidate
-        JMP     BN1
-BN9:    MOV     H,B
-        MOV     L,C
-        RET
+BASENM: LXI	H,HNAME
+	LXI	B,HNAME		; BC = the start of the last part so far
+BN1:	MOV	A,M
+	ORA	A
+	JZ	BN9
+	CPI	'/'
+	JZ	BN2
+	CPI	5CH		; backslash. The board accepts both
+	JZ	BN2		; separators on every host.
+	INX	H
+	JMP	BN1
+BN2:	INX	H		; the character after the separator
+	MOV	B,H
+	MOV	C,L
+	JMP	BN1
+BN9:	MOV	H,B
+	MOV	L,C
+	RET
 
 ;=======================================================================
 ; THE FCB
 ;=======================================================================
 
 ;-----------------------------------------------------------------------
-; MKFCB -- build FCB from the NUL-terminated name at HL.
+; MKFCB: build FCB from the name at HL.
 ;
-; Handles an optional drive prefix ("B:FOO.ASM"), folds to 8.3, and DROPS
-; characters CP/M cannot store in a filename. Dropping rather than
-; refusing is the friendly choice for a name that came off a host
-; filesystem, where `my-notes(2).txt` is perfectly ordinary.
+; It reads a drive prefix ("B:FOO.ASM"), cuts the name to 8.3, and
+; drops each character that CP/M cannot store in a name. A host name
+; such as `my-notes(2).txt` becomes MY-NOTES.TXT.
 ;
-; IT ALSO FOLDS THE NAME TO UPPER CASE, and that is not cosmetic. A CP/M
-; directory entry holds upper case; the CCP upper-cases everything the
-; user types, so a file stored as `foo.asm` can never be named again --
-; not by ERA, not by the assembler, not by DIR's own match. A name that
-; arrives here in lower case did not come from the tail: it came off the
-; host, either as a directory match under a wildcard or through BASENM.
+; It also folds the name to upper case. The CCP folds every name that
+; the user types, so a lower case CP/M name cannot be typed. A lower case
+; name comes from the host, as a wildcard match or through BASENM.
 ;-----------------------------------------------------------------------
-MKFCB:  PUSH    H
+MKFCB:	PUSH	H
 
-        LXI     H,FCB           ; zero the whole thing...
-        MVI     B,36
-MF0:    MVI     M,0
-        INX     H
-        DCR     B
-        JNZ     MF0
+	LXI	H,FCB		; zero the FCB
+	MVI	B,36
+MF0:	MVI	M,0
+	INX	H
+	DCR	B
+	JNZ	MF0
 
-        LXI     H,FCB+1         ; ...then blank the name and type fields.
-        MVI     B,11            ; An FCB pads with SPACES, not NULs.
-MF1:    MVI     M,' '
-        INX     H
-        DCR     B
-        JNZ     MF1
+	LXI	H,FCB+1		; then fill the name and type with
+	MVI	B,11		; spaces
+MF1:	MVI	M,' '
+	INX	H
+	DCR	B
+	JNZ	MF1
 
-        POP     H
+	POP	H
 
-; A drive letter? "B:FOO.ASM" -- look for the ':' in the second position.
-        MOV     A,M
-        ORA     A
-        RZ                      ; empty name; caller has already checked
-        INX     H
-        MOV     A,M
-        CPI     ':'
-        JNZ     MF2             ; no colon -> no drive; back up
-        DCX     H
-        MOV     A,M             ; the letter
-        CALL    UPCASE
-        SUI     'A'-1           ; 'A' -> 1, 'B' -> 2 ... 0 means "current"
-        STA     FCB
-        INX     H
-        INX     H               ; step over "B:"
-        JMP     MF3
-MF2:    DCX     H               ; back to the first character
+; A drive letter: a ':' in the second position.
+	MOV	A,M
+	ORA	A
+	RZ			; empty name. The caller checked.
+	INX	H
+	MOV	A,M
+	CPI	':'
+	JNZ	MF2		; no colon, no drive
+	DCX	H
+	MOV	A,M		; the letter
+	CALL	UPCASE
+	SUI	'A'-1		; 'A' -> 1, 'B' -> 2. 0 = the current drive.
+	STA	FCB
+	INX	H
+	INX	H		; step over "B:"
+	JMP	MF3
+MF2:	DCX	H		; back to the first character
 
-; The name: up to 8 characters, stopping at '.' or the end.
-MF3:    LXI     D,FCB+1
-        MVI     B,8
-MF4:    MOV     A,M
-        ORA     A
-        JZ      MF9             ; end of string: no extension at all
-        CPI     '.'
-        JZ      MF5
-        CALL    UPCASE
-        CALL    LEGAL           ; CY = CP/M cannot store this character
-        JC      MF4N
-        MOV     C,A             ; LEGAL gives A back; stash it
-        MOV     A,B
-        ORA     A
-        JZ      MF4N            ; field is full -- truncate, do not overflow
-        MOV     A,C
-        STAX    D
-        INX     D
-        DCR     B
-MF4N:   INX     H
-        JMP     MF4
+; The name: up to 8 characters, to the '.' or the end.
+MF3:	LXI	D,FCB+1
+	MVI	B,8
+MF4:	MOV	A,M
+	ORA	A
+	JZ	MF9		; the end: no extension
+	CPI	'.'
+	JZ	MF5
+	CALL	UPCASE
+	CALL	LEGAL		; CY = CP/M cannot store this character
+	JC	MF4N
+	MOV	C,A		; keep the character
+	MOV	A,B
+	ORA	A
+	JZ	MF4N		; the field is full: skip the rest
+	MOV	A,C
+	STAX	D
+	INX	D
+	DCR	B
+MF4N:	INX	H
+	JMP	MF4
 
-; The type: up to 3, after the '.'.
-MF5:    INX     H               ; step over the '.'
-        LXI     D,FCB+9
-        MVI     B,3
-MF6:    MOV     A,M
-        ORA     A
-        RZ
-        CALL    UPCASE
-        CALL    LEGAL
-        JC      MF6N
-        MOV     C,A
-        MOV     A,B
-        ORA     A
-        JZ      MF6N
-        MOV     A,C
-        STAX    D
-        INX     D
-        DCR     B
-MF6N:   INX     H
-        JMP     MF6
+; The type: up to 3 characters after the '.'.
+MF5:	INX	H		; step over the '.'
+	LXI	D,FCB+9
+	MVI	B,3
+MF6:	MOV	A,M
+	ORA	A
+	RZ
+	CALL	UPCASE
+	CALL	LEGAL
+	JC	MF6N
+	MOV	C,A
+	MOV	A,B
+	ORA	A
+	JZ	MF6N
+	MOV	A,C
+	STAX	D
+	INX	D
+	DCR	B
+MF6N:	INX	H
+	JMP	MF6
 
-MF9:    RET
+MF9:	RET
 
 ;-----------------------------------------------------------------------
-; UPCASE -- fold a lower case letter in A to upper case. Everything else
-;           passes through untouched. Clobbers nothing but A and the flags.
+; UPCASE: fold a lower case letter in A to upper case. Other values do
+;         not change. Changes only A and the flags.
 ;-----------------------------------------------------------------------
-UPCASE: CPI     'a'
-        RC
-        CPI     'z'+1
-        RNC
-        SUI     'a'-'A'
-        RET
+UPCASE: CPI	'a'
+	RC
+	CPI	'z'+1
+	RNC
+	SUI	'a'-'A'
+	RET
 
 ;-----------------------------------------------------------------------
-; LEGAL -- CY set if A is a character CP/M cannot put in a filename.
-;          A is preserved either way. Clobbers C.
+; LEGAL: CY set if CP/M cannot put the character in A in a name.
+;        A is kept. Changes C.
 ;
-; THE RANGE CHECK COMES BEFORE THE TABLE. A space or a control character
-; ends a name for the CCP, so a file stored with one can never be typed
-; again -- `zq a.txt` went into the directory as `ZQ A.TXT`. DEL and
-; anything with bit 7 set (a host name that is not ASCII) go the same
-; way: CP/M keeps the file attributes in bit 7 of a name byte.
+; A space or a control character ends a name for the CCP. DEL and a
+; byte with bit 7 set are bad too, because CP/M keeps the file
+; attributes in bit 7. R checks these ranges first, then ILLCHR.
 ;-----------------------------------------------------------------------
-LEGAL:  PUSH    H
-        MOV     C,A
-        CPI     21H             ; a space, or anything below it
-        JC      LGBAD
-        CPI     7FH             ; DEL, or bit 7 set
-        JNC     LGBAD
-        LXI     H,ILLCHR
-LG1:    MOV     A,M
-        ORA     A
-        JZ      LGOK            ; ran off the end of the table: it is fine
-        CMP     C
-        JZ      LGBAD
-        INX     H
-        JMP     LG1
-LGOK:   MOV     A,C
-        POP     H
-        ORA     A               ; ORA also CLEARS CARRY -- that is the point
-        RET
-LGBAD:  MOV     A,C
-        POP     H
-        STC
-        RET
+LEGAL:	PUSH	H
+	MOV	C,A
+	CPI	21H		; a space, or below
+	JC	LGBAD
+	CPI	7FH		; DEL, or bit 7 set
+	JNC	LGBAD
+	LXI	H,ILLCHR
+LG1:	MOV	A,M
+	ORA	A
+	JZ	LGOK		; the end of the table: it is legal
+	CMP	C
+	JZ	LGBAD
+	INX	H
+	JMP	LG1
+LGOK:	MOV	A,C
+	POP	H
+	ORA	A		; ORA clears CY
+	RET
+LGBAD:	MOV	A,C
+	POP	H
+	STC
+	RET
 
 ;=======================================================================
-; TALKING TO THE USER
+; MESSAGES TO THE USER
 ;=======================================================================
 
 ; "R: SRC/FOO.ASM -> B:FOO.ASM"
-SAYXFR: LXI     D,MPFX
-        MVI     C,PRSTR
-        CALL    BDOS
-        LXI     H,HNAME
-        CALL    PSTR
-        LXI     D,MARROW
-        MVI     C,PRSTR
-        CALL    BDOS
-        CALL    PRFCB
-        LXI     D,MCRLF
-        MVI     C,PRSTR
-        JMP     BDOS
+SAYXFR: LXI	D,MPFX
+	MVI	C,PRSTR
+	CALL	BDOS
+	LXI	H,HNAME
+	CALL	PSTR
+	LXI	D,MARROW
+	MVI	C,PRSTR
+	CALL	BDOS
+	CALL	PRFCB
+	LXI	D,MCRLF
+	MVI	C,PRSTR
+	JMP	BDOS
 
-; "  12 records, 1493 bytes"
-SAYREC: LHLD    RECS
-        CALL    PRDEC
-        LXI     D,MRECS         ; " records, "
-        MVI     C,PRSTR
-        CALL    BDOS
-        CALL    PRBYT           ; the exact number of host bytes we copied in
-        LXI     D,MBYTES        ; " bytes",CR,LF
-        MVI     C,PRSTR
-        JMP     BDOS
-
-;-----------------------------------------------------------------------
-; ADDBYT -- add A (0..128) to the 24-bit counter at BYTES. Destroys A;
-; HL is saved and restored, so a caller mid-record (CPPAD) keeps its
-; buffer pointer -- and B, its slot count, is never touched.
-;-----------------------------------------------------------------------
-ADDBYT: PUSH    H
-        LXI     H,BYTES
-        ADD     M               ; low byte + A
-        MOV     M,A
-        MVI     A,0
-        INX     H
-        ADC     M               ; carry into the middle byte
-        MOV     M,A
-        MVI     A,0
-        INX     H
-        ADC     M               ; ...and the top byte
-        MOV     M,A
-        POP     H
-        RET
+; "12 records, 1493 bytes"
+SAYREC: LHLD	RECS
+	CALL	PRDEC
+	LXI	D,MRECS		; " records, "
+	MVI	C,PRSTR
+	CALL	BDOS
+	CALL	PRBYT		; the bytes from the host
+	LXI	D,MBYTES	; " bytes",CR,LF
+	MVI	C,PRSTR
+	JMP	BDOS
 
 ;-----------------------------------------------------------------------
-; PRBYT -- print the 24-bit value at BYTES in decimal, the same backwards-
-; into-the-buffer way PRDEC prints HL. Divides BYTES by ten in place.
+; ADDBYT: add A (0..128) to the 24-bit count at BYTES. Changes A. HL
+; and B are kept, so CPPAD keeps its pointer and its count.
 ;-----------------------------------------------------------------------
-PRBYT:  LXI     D,NUMEND
-        MVI     A,'$'
-        STAX    D
-PRB1:   DCX     D
-        PUSH    D               ; DIV10T eats DE
-        CALL    DIV10T          ; BYTES = BYTES/10, A = the remainder
-        POP     D
-        ADI     '0'
-        STAX    D
-        LDA     BYTES           ; anything left?
-        LXI     H,BYTES+1
-        ORA     M
-        INX     H
-        ORA     M
-        JNZ     PRB1
-        MVI     C,PRSTR
-        JMP     BDOS
-
-; DIV10T -- BYTES (24-bit) = BYTES/10, remainder returned in A. Long
-; division from the top byte down: a running remainder r<10 makes
-; r*256+byte < 2560, which fits in DE, so each byte is one small divide.
-DIV10T: XRA     A               ; the running remainder starts at 0
-        LXI     H,BYTES+2       ; most significant byte first
-        CALL    DT1
-        DCX     H
-        CALL    DT1
-        DCX     H
-        JMP     DT1             ; tail: A = the final remainder
-
-; DT1 -- acc = A*256 + (HL); (HL) = acc/10; A = acc MOD 10.  HL is left
-; where it was, so DIV10T just steps it down a byte between calls.
-DT1:    MOV     D,A             ; DE = acc, D the high byte (< 10)
-        MOV     E,M
-        MVI     B,0             ; the quotient byte
-DT2:    MOV     A,D
-        ORA     A
-        JNZ     DT3             ; high byte set -> acc >= 256, so >= 10
-        MOV     A,E
-        CPI     10
-        JC      DT4             ; acc < 10 -> E is the remainder
-DT3:    MOV     A,E
-        SUI     10
-        MOV     E,A
-        MOV     A,D
-        SBI     0
-        MOV     D,A
-        INR     B
-        JMP     DT2
-DT4:    MOV     M,B             ; store the quotient byte back in place
-        MOV     A,E             ; the remainder feeds the next byte down
-        RET
-
-; PSTR -- print the NUL-terminated string at HL.
-; HL is pushed around the BDOS call because BDOS EATS EVERY REGISTER.
-PSTR:   MOV     A,M
-        ORA     A
-        RZ
-        PUSH    H
-        MOV     E,A
-        MVI     C,CONOUT
-        CALL    BDOS
-        POP     H
-        INX     H
-        JMP     PSTR
-
-; PRFCB -- print the FCB as "d:NAME.EXT".
-PRFCB:  LDA     FCB
-        ORA     A
-        JZ      PF1             ; drive 0 = "the current one"; do not print it
-        ADI     'A'-1
-        CALL    PUTCH
-        MVI     A,':'
-        CALL    PUTCH
-PF1:    LXI     H,FCB+1
-        MVI     B,8
-        CALL    PFLD
-        LDA     FCB+9
-        CPI     ' '
-        RZ                      ; no extension: nothing to print
-        MVI     A,'.'
-        CALL    PUTCH
-        LXI     H,FCB+9
-        MVI     B,3
-PFLD:   MOV     A,M             ; print B characters at HL, skipping the
-        CPI     ' '             ; blanks an FCB pads with
-        JZ      PFL2
-        PUSH    B
-        PUSH    H
-        CALL    PUTCH
-        POP     H
-        POP     B
-PFL2:   INX     H
-        DCR     B
-        JNZ     PFLD
-        RET
-
-PUTCH:  MOV     E,A
-        MVI     C,CONOUT
-        JMP     BDOS
+ADDBYT: PUSH	H
+	LXI	H,BYTES
+	ADD	M		; low byte + A
+	MOV	M,A
+	MVI	A,0
+	INX	H
+	ADC	M		; carry into the middle byte
+	MOV	M,A
+	MVI	A,0
+	INX	H
+	ADC	M		; and the top byte
+	MOV	M,A
+	POP	H
+	RET
 
 ;-----------------------------------------------------------------------
-; PRDEC -- print HL in decimal.
-;
-; Built backwards from the end of a buffer, so no digit reversal is
-; needed, and terminated with '$' so BDOS 9 can print the whole thing in
-; one call.
+; PRBYT: print the 24-bit value at BYTES in decimal, as PRDEC does.
+; It divides BYTES by ten in place.
 ;-----------------------------------------------------------------------
-PRDEC:  LXI     D,NUMEND
-        MVI     A,'$'
-        STAX    D
-PD1:    DCX     D
-        CALL    DIV10           ; HL = HL/10, A = remainder
-        ADI     '0'
-        STAX    D
-        MOV     A,H
-        ORA     L
-        JNZ     PD1             ; ...until nothing is left
-        MVI     C,PRSTR
-        JMP     BDOS            ; DE already points at the first digit
+PRBYT:	LXI	D,NUMEND
+	MVI	A,'$'
+	STAX	D
+PRB1:	DCX	D
+	PUSH	D		; DIV10T changes DE
+	CALL	DIV10T		; BYTES = BYTES/10, A = the remainder
+	POP	D
+	ADI	'0'
+	STAX	D
+	LDA	BYTES		; is any of it left?
+	LXI	H,BYTES+1
+	ORA	M
+	INX	H
+	ORA	M
+	JNZ	PRB1
+	MVI	C,PRSTR
+	JMP	BDOS
 
-; DIV10 -- HL = HL/10, A = the remainder. The 8080 has no divide, so this
-; is repeated subtraction; a record count is small and this is not a hot
-; loop.
-DIV10:  PUSH    B
-        LXI     B,0
-DV1:    MOV     A,H
-        ORA     A
-        JNZ     DV2             ; H nonzero -> definitely >= 10
-        MOV     A,L
-        CPI     10
-        JC      DV3             ; < 10: what is left is the remainder
-DV2:    MOV     A,L
-        SUI     10
-        MOV     L,A
-        MOV     A,H
-        SBI     0
-        MOV     H,A
-        INX     B
-        JMP     DV1
-DV3:    MOV     A,L             ; the remainder -- grab it BEFORE clobbering L
-        MOV     H,B
-        MOV     L,C             ; HL = the quotient
-        POP     B
-        RET
+; DIV10T: BYTES (24-bit) = BYTES/10, the remainder in A. It divides one
+; byte at a time from the top. The remainder r is below 10, so
+; r*256+byte is below 2560 and fits in DE.
+DIV10T: XRA	A		; the remainder starts at 0
+	LXI	H,BYTES+2	; the top byte first
+	CALL	DT1
+	DCX	H
+	CALL	DT1
+	DCX	H
+	JMP	DT1		; tail call: A = the remainder
+
+; DT1: acc = A*256 + (HL). (HL) = acc/10, A = acc MOD 10. HL does not
+; change.
+DT1:	MOV	D,A		; DE = acc, D the high byte (< 10)
+	MOV	E,M
+	MVI	B,0		; the quotient byte
+DT2:	MOV	A,D
+	ORA	A
+	JNZ	DT3		; acc >= 256, so >= 10
+	MOV	A,E
+	CPI	10
+	JC	DT4		; acc < 10: E is the remainder
+DT3:	MOV	A,E
+	SUI	10
+	MOV	E,A
+	MOV	A,D
+	SBI	0
+	MOV	D,A
+	INR	B
+	JMP	DT2
+DT4:	MOV	M,B		; the quotient byte goes back in place
+	MOV	A,E		; the remainder goes to the next byte down
+	RET
+
+; PSTR: print the string at HL. HL is pushed across the BDOS call.
+PSTR:	MOV	A,M
+	ORA	A
+	RZ
+	PUSH	H
+	MOV	E,A
+	MVI	C,CONOUT
+	CALL	BDOS
+	POP	H
+	INX	H
+	JMP	PSTR
+
+; PRFCB: print the FCB as "d:NAME.EXT".
+PRFCB:	LDA	FCB
+	ORA	A
+	JZ	PF1		; drive 0 = the current drive: no letter
+	ADI	'A'-1
+	CALL	PUTCH
+	MVI	A,':'
+	CALL	PUTCH
+PF1:	LXI	H,FCB+1
+	MVI	B,8
+	CALL	PFLD
+	LDA	FCB+9
+	CPI	' '
+	RZ			; no extension
+	MVI	A,'.'
+	CALL	PUTCH
+	LXI	H,FCB+9
+	MVI	B,3
+PFLD:	MOV	A,M		; print B characters at HL, and skip
+	CPI	' '		; the pad spaces
+	JZ	PFL2
+	PUSH	B
+	PUSH	H
+	CALL	PUTCH
+	POP	H
+	POP	B
+PFL2:	INX	H
+	DCR	B
+	JNZ	PFLD
+	RET
+
+PUTCH:	MOV	E,A
+	MVI	C,CONOUT
+	JMP	BDOS
+
+;-----------------------------------------------------------------------
+; PRDEC: print HL in decimal. The digits go into a buffer from the end,
+; and a '$' ends it, so one BDOS 9 call prints the number.
+;-----------------------------------------------------------------------
+PRDEC:	LXI	D,NUMEND
+	MVI	A,'$'
+	STAX	D
+PD1:	DCX	D
+	CALL	DIV10		; HL = HL/10, A = remainder
+	ADI	'0'
+	STAX	D
+	MOV	A,H
+	ORA	L
+	JNZ	PD1		; until HL is 0
+	MVI	C,PRSTR
+	JMP	BDOS		; DE points at the first digit
+
+; DIV10: HL = HL/10, A = the remainder, by repeated subtraction.
+DIV10:	PUSH	B
+	LXI	B,0
+DV1:	MOV	A,H
+	ORA	A
+	JNZ	DV2		; H not 0: HL >= 10
+	MOV	A,L
+	CPI	10
+	JC	DV3		; < 10: L is the remainder
+DV2:	MOV	A,L
+	SUI	10
+	MOV	L,A
+	MOV	A,H
+	SBI	0
+	MOV	H,A
+	INX	B
+	JMP	DV1
+DV3:	MOV	A,L		; the remainder, before L changes
+	MOV	H,B
+	MOV	L,C		; HL = the quotient
+	POP	B
+	RET
 
 ;=======================================================================
 ; ERRORS
 ;=======================================================================
-USAGE:  LXI     D,MUSAGE
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0
+USAGE:	LXI	D,MUSAGE
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0
 
-; EWILD IS REACHED FROM `MANY`, WHICH IS A JUMP TARGET, NOT A SUBROUTINE.
-; The stack is empty there, so ESAY's RET would pop garbage and execute it.
-; This one warm-boots instead. (The three below are all reached from inside
-; ONE, which WAS called, so their RET has somewhere to go.)
-EWILD:  LXI     D,MEWILD
-        MVI     C,PRSTR
-        CALL    BDOS
-        JMP     0
+; MANY is not called, so the stack is empty there. EWILD does a warm
+; boot, because a RET would pop data that is not a return address.
+; ENODIR, EDISK and ECLOSE come from inside ONE, which was called, so
+; ESAY returns.
+EWILD:	LXI	D,MEWILD
+	MVI	C,PRSTR
+	CALL	BDOS
+	JMP	0
 
-ENODIR: LXI     D,MENODIR
-        JMP     ESAY
-EDISK:  LXI     D,MEDISK
-        JMP     ESAY
-ECLOSE: LXI     D,MECLOSE
-        JMP     ESAY
+ENODIR: LXI	D,MENODIR
+	JMP	ESAY
+EDISK:	LXI	D,MEDISK
+	JMP	ESAY
+ECLOSE: LXI	D,MECLOSE
+	JMP	ESAY
 
-; Print the message and return with CARRY SET. COPY's caller tests it.
-ESAY:   MVI     C,PRSTR
-        CALL    BDOS
-        STC
-        RET
+; Print the message and return with CY set.
+ESAY:	MVI	C,PRSTR
+	CALL	BDOS
+	STC
+	RET
 
 ;=======================================================================
 ; DATA
 ;=======================================================================
-IDWANT: DB      'ALTAIRSIM HOSTBRIDGE',0
+IDWANT: DB	'ALTAIRSIM HOSTBRIDGE',0
 
-; The printable characters CP/M will not store in a filename -- LEGAL
-; refuses a space, a control character and anything from DEL up before
-; it ever looks here. Note 5CH is the
-; backslash and 2FH the slash -- a path separator has no business in an
-; FCB, and BASENM should have removed it long before we get here.
-ILLCHR: DB      '<>.,'
-        DB      3BH             ; ';' -- NOT in a string: ASM strips
-                                ; the comment before it parses the quotes, so a
-                                ; semicolon inside one truncates it and the line
-                                ; dies with a syntax error.
-        DB      ':=?*[]|'
-        DB      5CH,2FH,0
+; The printable characters that CP/M does not store in a name. LEGAL
+; checks a space, a control character and DEL and up before this table.
+; 5CH is the backslash and 2FH the slash. BASENM removed the path first.
+ILLCHR: DB	'<>.,'
+	DB	3BH		; ';' is not in a string. ASM takes
+				; a ';' in a string as a comment.
+	DB	':=?*[]|'
+	DB	5CH,2FH,0
 
-MNOHB:  DB      CR,LF,'R: no host bridge at B0H.',CR,LF
-        DB      'This machine has no `hostbridge` card in it, or it is at'
-        DB      ' another port.',CR,LF,'$'
+MNOHB:	DB	CR,LF,'R: no host bridge at B0H.',CR,LF
+	DB	'This machine has no `hostbridge` card in it, or it is at'
+	DB	' another port.',CR,LF,'$'
 
-MUSAGE: DB      CR,LF,'R -- copy a file from the host into CP/M.  (1.2)',CR,LF,CR,LF
-        DB      '   R <hostfile> [cpmfile]',CR,LF
-        DB      '   R <pattern>',CR,LF,CR,LF
-        DB      'Examples',CR,LF
-        DB      '   R FOO.ASM            host FOO.ASM -> CP/M FOO.ASM',CR,LF
-        DB      '   R FOO.ASM B:BAR.ASM  ...to B:, under another name',CR,LF
-        DB      '   R SRC/FOO.ASM        out of a subdirectory of hostdir',CR,LF
-        DB      '   R *.ASM              every match',CR,LF,CR,LF
-        DB      'Files are copied BYTE FOR BYTE. The last CP/M record is'
-        DB      ' padded with ^Z.',CR,LF
-        DB      'HDIR lists what is on the host. W copies the other way.'
-        DB      CR,LF,'$'
+MUSAGE: DB	CR,LF,'R -- copy a file from the host into CP/M.  (1.2)',CR,LF,CR,LF
+	DB	'   R <hostfile> [cpmfile]',CR,LF
+	DB	'   R <pattern>',CR,LF,CR,LF
+	DB	'Examples',CR,LF
+	DB	'   R FOO.ASM            host FOO.ASM -> CP/M FOO.ASM',CR,LF
+	DB	'   R FOO.ASM B:BAR.ASM  ...to B:, under another name',CR,LF
+	DB	'   R SRC/FOO.ASM        out of a subdirectory of hostdir',CR,LF
+	DB	'   R *.ASM              every match',CR,LF,CR,LF
+	DB	'Files are copied BYTE FOR BYTE. The last CP/M record is'
+	DB	' padded with ^Z.',CR,LF
+	DB	'HDIR lists what is on the host. W copies the other way.'
+	DB	CR,LF,'$'
 
-MPFX:   DB      'R: $'
-MARROW: DB      ' -> $'
-MRECS:  DB      ' records, $'
-MBYTES: DB      ' bytes',CR,LF,'$'
-MERR:   DB      'R: $'
-MCRLF:  DB      CR,LF,'$'
+MPFX:	DB	'R: $'
+MARROW: DB	' -> $'
+MRECS:	DB	' records, $'
+MBYTES: DB	' bytes',CR,LF,'$'
+MERR:	DB	'R: $'
+MCRLF:	DB	CR,LF,'$'
 
-MEWILD: DB      'R: a wildcard copies each file under its own name -- so a'
-        DB      ' second name',CR,LF,'   cannot mean anything. Drop it.'
-        DB      CR,LF,'$'
-MENODIR:DB      'R: the CP/M directory is full.',CR,LF,'$'
-MEDISK: DB      'R: the CP/M disk is full, or is read-only.',CR,LF,'$'
-MECLOSE:DB      'R: could not close the CP/M file.',CR,LF,'$'
+MEWILD: DB	'R: a wildcard copies each file under its own name -- so a'
+	DB	' second name',CR,LF,'   cannot mean anything. Drop it.'
+	DB	CR,LF,'$'
+MENODIR:DB	'R: the CP/M directory is full.',CR,LF,'$'
+MEDISK: DB	'R: the CP/M disk is full, or is read-only.',CR,LF,'$'
+MECLOSE:DB	'R: could not close the CP/M file.',CR,LF,'$'
 
-;---- Variables -------------------------------------------------------
-; THE DMA BUFFER -- one CP/M record. BDOS reads each record FROM here (we point
-; it at this with FSETDMA), and COPY fills it from the host a byte at a time.
-BUF:    DS      RECLEN
+;---- variables --------------------------------------------------------
+BUF:	DS	RECLEN		; the DMA buffer: one CP/M record
 
-RECS:   DS      2               ; records written to CP/M
-BYTES:  DS      3               ; and the true host byte count, 24 bits: even the
-                                ; card's 8 MB ceiling needs more than RECS's 16
-FCB:    DS      36              ; ours, not the CCP's at 5CH -- see PARSE
-HNAME:  DS      HNMAX+1         ; the host name (or the pattern, or a match).
-                                ; +1: RECVZ's truncate path writes its NUL one
-                                ; past the count it was given.
-CNAME:  DS      20              ; the CP/M name, if the user gave one
-IDBUF:  DS      IDMAX+1         ; what the card said its name was (+1: as above)
-NUMBUF: DS      8               ; wide enough for a 24-bit count: 16777215 is 8 digits
-NUMEND: DS      1               ; PRDEC and PRBYT build backwards from here
+RECS:	DS	2		; records written to CP/M
+BYTES:	DS	3		; the host byte count, 24 bits. 16 bits
+				; cannot count the board's 8 MB limit.
+FCB:	DS	36		; R's own FCB, not the CCP's at 5CH
+HNAME:	DS	HNMAX+1		; the host name, the pattern, or a match.
+				; +1: RECVZ can write its NUL one byte
+				; past the count.
+CNAME:	DS	20		; the CP/M name, if the user gave one
+IDBUF:	DS	IDMAX+1		; the board's signature (+1: as above)
+NUMBUF: DS	8		; 16777215, the largest 24-bit count, is
+NUMEND: DS	1		; 8 digits. PRDEC and PRBYT end here.
 
-        DS      64              ; stack: BDOS is the deepest thing we call
-STACK   EQU     $
+	DS	64		; the stack
+STACK	EQU	$
 
-        END     START
+	END	START

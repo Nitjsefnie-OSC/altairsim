@@ -54,6 +54,11 @@ number of files in the host folder, which can be much more than a CP/M disk hold
 does not print the 8.3 names that CP/M will see. That is the purpose of `HDIR`. When you cannot
 find the name of a file, ask `HDIR`.
 
+**A wildcard does not match a host file whose name starts with `.`**, such as `.DS_Store` or
+`.gitignore`. This is the rule of a host shell. `HDIR` and `R *.*` skip these files. To see
+them, type `HDIR .*`. To copy one, type its name and a CP/M name for it:
+`R .gitignore GITIGNOR.TXT`.
+
 ### `R`: host to CP/M
 
 ```
@@ -63,7 +68,8 @@ A>R SRC/FOO.ASM
 A>R SRC/FOO.ASM WORK.ASM
 ```
 
-Wildcards work. Folders work, and **`/` and `\` both work on every host**, so you do not have to
+Wildcards work, and they skip host files whose names start with `.`. Folders work, and
+**`/` and `\` both work on every host**, so you do not have to
 remember which computer you use. A second argument gives the name of the file on the CP/M side,
 instead of the automatic name.
 
@@ -74,9 +80,29 @@ A>W GAME.COM
 A>W GAME.COM game.com
 A>W NOTES.TXT
 A>W *.*
+A>W *.ASM SRC
 ```
 
 Wildcards work. A second argument gives the name of the file on the host side.
+
+**With a wildcard, the second argument is a host folder.** `W *.ASM SRC` writes each match into
+the folder `SRC`, and each file keeps its CP/M name:
+
+```
+A>W *.ASM SRC
+W: FOO.ASM -> SRC/FOO.ASM (text, by extension)
+```
+
+The folder must exist, because `W` does not make it. `W` checks the folder before it copies the
+first file. If the folder is not there, `W` prints one error and copies nothing:
+
+```
+A>W *.* NOPE
+W: NOPE: no such file
+```
+
+A `/` at the end of the folder name is optional. A lone `B` or `T` is a mode, not a folder. To
+use a folder that has one of these names, type `B/` or `T/`.
 
 ## `W` and text files: **B** and **T**
 
@@ -280,6 +306,7 @@ For this reason, the board does these steps, in this order:
 1. **An exact match wins.** If a file has exactly the name that you asked for, the board uses
    that file.
 2. **Otherwise, it ignores case and looks again.** `README.TXT` finds `readme.txt`.
+   The board does this for each folder in the name too. `WORK/FOO.ASM` finds `work/foo.asm`.
 3. **If more than one file matches, it REFUSES.**
 
 Step 3 is the important one. If your folder has `readme.txt`, `README.TXT` and `ReadMe.Txt`, the

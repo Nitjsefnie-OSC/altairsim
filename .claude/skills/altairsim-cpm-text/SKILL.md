@@ -1,6 +1,6 @@
 ---
 name: altairsim-cpm-text
-description: Rules for a text file that a CP/M program will read on an altairsim machine — CR/LF line ends, the 8.3 name, and the Ctrl-Z that ends the file. Use this whenever you create or edit a file on the host that goes into CP/M (an `.ASM` or `.MAC` source, a `.BAS` program, a `.SUB` or `.TXT` file), whenever you bring a text file back from CP/M, and when an assembly makes nothing or a BASIC program arrives as one line.
+description: Rules for a text file that a CP/M program will read on an altairsim machine — CR/LF line ends, the 8.3 name, the Ctrl-Z that ends the file, and tabs in assembler source. Use this whenever you create or edit a file on the host that goes into CP/M (an `.ASM` or `.MAC` source, a `.BAS` program, a `.SUB` or `.TXT` file), whenever you bring a text file back from CP/M, and when an assembly makes nothing or a BASIC program arrives as one line.
 ---
 
 # Text files for CP/M
@@ -27,6 +27,15 @@ byte. For this reason, the file must be correct for CP/M before you send it.
    at the first Ctrl-Z, and the host file is clean text. For a text file with another
    extension, such as `.BAS`, add the `T`: `W PROG.BAS PROG.BAS T`. Without it, the host file
    has up to 127 extra bytes at its end.
+5. **Use tabs, not spaces, to line up assembler source.** In a `.ASM`, `.MAC` or `.Z80` file,
+   put one or more tabs between the label, the opcode, the operand and the comment. Use the
+   8-column tab stops of CP/M. A tab is one byte, and a run of spaces can be seven. Disk space
+   on a CP/M disk is small. Keep the spaces inside a quoted string, such as `DB 'A  B'`.
+
+   ```
+   START:	LXI	SP,STACK	; set up the stack
+   	MVI	C,9		; BDOS print string
+   ```
 
 ## Check and correct the line ends on the host
 
@@ -34,6 +43,15 @@ byte. For this reason, the file must be correct for CP/M before you send it.
 file HELLO.ASM                              # must say "with CRLF line terminators"
 perl -pi -e 's/\r?\n/\r\n/' HELLO.ASM       # changes LF to CR/LF, and leaves CR/LF as it is
 ```
+
+## Check for spaces that line up source
+
+```sh
+grep -n "^[^;']*  " HELLO.ASM     # must print nothing
+```
+
+The `grep` finds two spaces before the first `;` or `'` of a line. Change each run of spaces
+that it finds to tabs. The text of a comment is not checked.
 
 ## How a file with LF line ends fails
 

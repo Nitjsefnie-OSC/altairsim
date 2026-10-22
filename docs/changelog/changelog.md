@@ -12,6 +12,28 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**Host bridge wildcards skip dot files.** A wildcard in `R` and `HDIR` matched a host file
+whose name starts with `.`, such as `.DS_Store`. `R *.*` copied the file to the CP/M disk as
+` .DS_`, a name with an empty first part. You cannot type that name at the `A>` prompt, so the
+file was hard to erase. Now a wildcard skips these files, as a host shell does. `HDIR .*`
+lists them, and `R .gitignore GITIGNOR.TXT` copies one.
+
+**`W` copies a wildcard into a host folder.** `W *.ASM SRC` writes each match into the host
+folder `SRC`, under its own name. Before, `W` refused a second word after a wildcard. The folder
+must exist. When it does not, `W` prints one error and copies nothing. The CP/M example disks
+have this version of `W` (1.3).
+
+**The host bridge sources are smaller.** `R.ASM`, `W.ASM`, `HDIR.ASM` and `HB.INC` were
+103,624 bytes, and now they are 62,364 bytes. Tabs line up the columns, and the comments say
+only how the code works now. The programs are the same, byte for byte. The
+`altairsim-cpm-text` skill now says to use tabs in assembler source.
+
+**Host bridge folder names ignore case on Linux.** The board ignored case only in the last
+part of a host path. The CP/M command line is in upper case, so `R SRC/FOO.ASM` did not find
+the folder `src` on a case-sensitive host, and the copy failed. Now each
+part of the path ignores case, with the same rules as a file name. macOS and Windows were
+not affected.
+
 **The 88-VI/RTC keeps real time.** The board counted its 60 Hz and 10 kHz intervals in
 processor T-states. At flat out (`clock_hz = 0`, the default), the clock ticked as fast as the
 host ran the guest, and the MP/M II time of day ran fast. A guest that counted ticks for 2

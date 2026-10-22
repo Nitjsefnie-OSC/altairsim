@@ -107,9 +107,13 @@ The CP/M CCP **folds the command tail to upper case before the program runs**. `
 
 So the card compensates. An **exact** match always wins. Failing that it folds case and looks again: if exactly one host file matches, that is the one; if **several** do, it refuses with `0x08` rather than guess. A *write* of a name nobody has creates it exactly as asked.
 
+**Every part of a path folds, not only the last.** `R SRC/FOO.ASM` and `W *.ASM OUT` reach the board in upper case too, and on a case-sensitive host the folder is `src` or `out`. `RealHostDir::resolve()` walks the path one part at a time. A part that does not exist as typed is looked up with the fold, in the folder found so far. A part before the last must match a folder, and two folders that fold to one name give `0x08`. A part with no match is kept as typed, so a write still creates a new file, and a read still fails with `0x01`. Before this, only the last part folded, so `R SRC/FOO.ASM` failed on Linux when the folder was `src`. macOS and Windows hid the fault, because their file systems fold case themselves.
+
 The burden belongs on the card, not on the human: there is no switch to tell the utilities which case to look for, because nobody should have to remember which of their files are in which.
 
 The other direction is `R`'s job. A host name that comes back off a wildcard match keeps the host's case, and a CP/M directory entry holds upper case — so `R` folds the name it builds the FCB from. Without that, `R *.asm` stores `lower.asm`, and nothing in CP/M can name it again: the CCP upper-cases everything typed, so `ERA`, `DIR` and the assembler all look straight past it.
+
+**A host name that starts with `.` matches only a glob that starts with `.`**, as in a shell. `R` drops the `.` from a CP/M name, so `.DS_Store` would become ` .DS_`. That CP/M name has an empty first part, and the CCP cannot type it. `*.*`, `*` and the empty glob therefore skip dot files, in `R` and in `HDIR`. `.*` and a full name such as `.gitignore` still reach them. Give `R` a second argument for the CP/M name, as in `R .gitignore GITIGNOR.TXT`. The rule is in `hostGlobMatch()`, so the real and the in-memory host directory agree (issue #829).
 
 ## Properties
 
@@ -142,6 +146,7 @@ So the two answer different questions. `configDir_` answers *where does this pat
 ```
 R  <hostfile> [cpmfile]         host -> CP/M      R *.ASM     R SRC/FOO.ASM
 W  <cpmfile> [hostfile] [B|T]   CP/M -> host      W *.HEX     W FOO.DAT T
+W  <pattern> [hostfolder] [B|T]                   W *.ASM SRC
 HDIR [pattern]                  what is on the host
 ```
 
@@ -166,6 +171,12 @@ CP/M stores whole 128-byte records and **keeps no byte count anywhere**, so a fi
 
 **The choice is never silent.** When the extension picked text, the transfer line says so — `W: FOO.HEX -> FOO.HEX (text, by extension)`. With a switch, or for a binary file, the line is what it always was.
 
+### `W`: a wildcard into a host folder
+
+With a wildcard, a second word is a host folder: `W *.ASM SRC` writes `SRC/FOO.ASM`, as `cp *.asm src` does. Each file keeps its own name, so a folder is the only thing the second word can name. `W` adds the `/` unless the word ends in `/` or `\`. A lone `B` or `T` is still the switch, so a folder with one of these names is typed `B/`. `W *.* OUT T` gives a folder and a switch.
+
+**The folder must exist, and `W` checks it once, before the first file.** It sends `DIR_FIRST` with the folder as the glob (`OUT/`). That listing fails on a missing folder, or on a file, and it creates and changes nothing on the host. `W` prints the board's error, `W: NOPE: no such file`, and exits without a copy. A check for each file would print one error for each match. `W` also refuses a folder name too long to leave room for a 12-character `FILENAME.EXT` in its name buffer.
+
 ### 8.3 mapping
 
 The CP/M name defaults to the host name uppercased, with characters CP/M cannot store simply **dropped**, and then the base truncated to 8 and the extension to 3. What is dropped is a space, a control character, anything that is not ASCII, and `< > . , ; : = ? * [ ] | \ /` — the characters that end a name for the CCP, and the two path separators. Everything else stays, `-` and parentheses included: `notes[old].txt` becomes `NOTESOLD.TXT`, and `my-notes(2).txt` becomes `MY-NOTES.TXT`, the `(2)` falling past the eighth character. A space is dropped because a name stored with one could never be typed at the CCP again. Dropping rather than refusing is the friendly choice for a name that came off a host filesystem. A subdirectory prefix cannot survive (`SRC/FOO.ASM` → `FOO.ASM`), because a CP/M file has no directory to live in. An explicit second argument overrides all of it, and **`HDIR` always prints true host names** — so when `R` cannot name something, you can still see what it was.
@@ -181,4 +192,4 @@ The CP/M name defaults to the host name uppercased, with characters CP/M cannot 
 
 - `tests/test_hostdir.cpp` — the sandbox, against a **real** filesystem: `../SECRET.TXT`, `../../etc/passwd`, `/etc/passwd`, `\etc\passwd`, `C:\windows`, and a **symlink pointing out** (both a file and a directory) must each fail `0x03` and touch nothing.
 - `tests/test_hostbridge.cpp` — the protocol, against a `MemHostDir` with `bus.setVerify(true)`: `IDENT`; the stream rule; the enumerator surviving a transfer; an unclosed write discarded; both resets; `readonly`; every error code; and `!decodes(0x30)`, *because that is a floppy controller*.
-- `tests/acceptance/hostbridge.cmake` — the whole chain, on a scratch copy of the image, in two modes. `acceptance-hostbridge` `PIP`s the committed `.HEX` in through the console, `LOAD`s each, and round-trips **256 bytes containing every value from `00` to `FF`** — including `00`, `1A` and `FF`, the three a careless transfer mangles. It runs on the **tracked** floppy, so it needs no download. `acceptance-hostbridge-build` (`slow`) instead `PIP`s the three `.ASM` in and assembles them, proving the sources still build the committed artifacts; 78 KB of source needs the 8 MB image, which is not in git, so that one skips without it. Both modes also pin `W`'s choice of mode: a `.TXT` with no switch comes back trimmed, a switch wins over the extension in both directions, and one `W MIX.*` brings back two text files trimmed and a binary whole. Either way the verdict is read off the host's disk, not the terminal: *"2 records"* means the guest counted to two, not that the bytes are right.
+- `tests/acceptance/hostbridge.cmake` — the whole chain, on a scratch copy of the image, in two modes. `acceptance-hostbridge` `PIP`s the committed `.HEX` in through the console, `LOAD`s each, and round-trips **256 bytes containing every value from `00` to `FF`** — including `00`, `1A` and `FF`, the three a careless transfer mangles. It runs on the **tracked** floppy, so it needs no download. `acceptance-hostbridge-build` (`slow`) instead `PIP`s the three `.ASM` in and assembles them, proving the sources still build the committed artifacts; 57 KB of source needs the 8 MB image, which is not in git, so that one skips without it. Both modes also pin `W`'s choice of mode: a `.TXT` with no switch comes back trimmed, a switch wins over the extension in both directions, and one `W MIX.*` brings back two text files trimmed and a binary whole. Either way the verdict is read off the host's disk, not the terminal: *"2 records"* means the guest counted to two, not that the bytes are right.

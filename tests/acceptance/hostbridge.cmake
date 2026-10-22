@@ -13,7 +13,7 @@
 #                .ASM changes. Labelled `slow`, and it also carries the minidisk phase.
 #
 # WHY THE SPLIT, in one number: `PIP FOO.ASM=CON:` is the only slow thing here. The three
-# sources are 78 KB, PIP ECHOES every byte it is fed, and a 2SIO is a real serial line --
+# sources are 57 KB, PIP ECHOES every byte it is fed, and a 2SIO is a real serial line --
 # so the bootstrap is ~156 KB of wire time and nothing else. R and W themselves never touch
 # the console at all: they read the disk and OUT to the bridge, so a whole transfer costs
 # about as much as one prompt. Rebuilding the assembler on every edit to test a card that
@@ -55,6 +55,9 @@ endif()
 set(work "${BIN}/hostbridge-${MODE}")   # per-mode: the two must never share a scratch dir
 file(REMOVE_RECURSE "${work}")
 file(MAKE_DIRECTORY "${work}/host/SRC")
+# LOWER CASE ON PURPOSE. The CCP folds `W MIX.* OUT` to capitals, so on a case-sensitive host
+# (the Linux leg) only the card's fold on every part of a path finds this folder.
+file(MAKE_DIRECTORY "${work}/host/out")
 
 # ---------------------------------------------------------------------------
 # THE HOST SIDE, STAGED.
@@ -116,7 +119,7 @@ endmacro()
 set(keys "")
 
 if(MODE STREQUAL build)
-  # FROM SOURCE. 78 KB through the console, and this is the whole cost of this mode.
+  # FROM SOURCE. 57 KB through the console, and this is the whole cost of this mode.
   foreach(u R W HDIR)
     pip("${SRC}/cpm/hostbridge/${u}.ASM" "${u}.ASM")
     cmd("ASM ${u}")                     # -> .HEX and .PRN
@@ -173,6 +176,8 @@ cmd("R HELLO.TXT MIX.Z80")
 cmd("R HELLO.TXT MIX.SYM")
 cmd("R BIN.DAT MIX.DAT")
 cmd("W MIX.*")
+cmd("W MIX.* OUT")                      # a wildcard into a host folder: each keeps its name
+cmd("W MIX.* NOPE")                     # ...which must exist: one error, nothing written
 cmd("R ../SECRET.TXT")                  # THE SANDBOX, through the whole stack
 cmd("R SP*.TXT")                        # a wildcard: the ONLY way a space reaches R
 cmd("W SPACED1.TXT SPBACK.TXT T")       # ...and the CCP can name what R stored
@@ -216,7 +221,7 @@ file(WRITE "${work}/dcdd.keys" "${keys}")
 #          them: 12.5 KB of .HEX, plus the three small files we move in. Tight, and
 #          deliberately so -- see the ERA below.
 #
-#   build  the 8 MB image, because PIPing R/W/HDIR.ASM in needs 78 KB of free disk. It is
+#   build  the 8 MB image, because PIPing R/W/HDIR.ASM in needs 57 KB of free disk. It is
 #          not in git, so CMakeLists.txt gates this mode on finding it.
 #
 # NEVER MUTATE A REPO IMAGE: both are copied to scratch first. For the tracked one that is
@@ -232,7 +237,7 @@ configure_file("${image}" "${work}/work.dsk" COPYONLY)
 # NO `SET ... BAUD` HERE, AND RESIST THE URGE.
 #
 # The console is a 9600-baud line and this test lives with it, which is why `fast` PIPs the
-# 12 KB of .HEX and only `build` PIPs the 78 KB of source.
+# 12 KB of .HEX and only `build` PIPs the 57 KB of source.
 #
 # An earlier draft turned the line up to 76800 to make the bootstrap bearable, and it was
 # chasing the wrong thing: at the time the test took 17 seconds and only ~2 of them were the
@@ -462,6 +467,36 @@ if(NOT mixbin STREQUAL orig)
     "hostbridge(${MODE}): `W MIX.*` DAMAGED THE BINARY FILE IN THE SET.\n"
     "  MIX.DAT is not a text extension and must come back byte for byte.\n"
     "  sent: ${orig}\n  got : ${mixbin}")
+endif()
+
+# A WILDCARD INTO A FOLDER. `W MIX.* OUT` puts the same three files, the same bytes, into the
+# host folder `out` -- which the CCP made `OUT`, so the card had to fold the folder's name.
+foreach(ext Z80 SYM DAT)
+  want_ran("W: MIX.${ext} -> OUT/MIX.${ext}" "W did not name the folder in front of each file")
+  if(NOT EXISTS "${work}/host/out/MIX.${ext}")
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `W MIX.* OUT` did not write MIX.${ext} into host folder out.\n${ran}")
+  endif()
+endforeach()
+foreach(ext Z80 SYM)
+  file(SIZE "${work}/host/out/MIX.${ext}" mixsz)
+  if(NOT mixsz EQUAL origsz)
+    message(FATAL_ERROR
+      "hostbridge(${MODE}): `W MIX.* OUT` wrote out/MIX.${ext} as ${mixsz} bytes, not ${origsz}.")
+  endif()
+endforeach()
+file(READ "${work}/host/out/MIX.DAT" mixbin HEX)
+if(NOT mixbin STREQUAL orig)
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W MIX.* OUT` DAMAGED out/MIX.DAT.\n  sent: ${orig}\n  got : ${mixbin}")
+endif()
+
+# A FOLDER THAT IS NOT THERE STOPS W BEFORE THE FIRST FILE. One error line, no file, no folder.
+want_ran("W: NOPE: no such file" "W did not refuse a host folder that does not exist")
+string(FIND "${ran}" "-> NOPE/" nope)
+if(NOT nope LESS 0 OR EXISTS "${work}/host/NOPE" OR EXISTS "${work}/host/nope")
+  message(FATAL_ERROR
+    "hostbridge(${MODE}): `W MIX.* NOPE` tried to copy into a folder that does not exist.\n${ran}")
 endif()
 
 # ---------------------------------------------------------------------------

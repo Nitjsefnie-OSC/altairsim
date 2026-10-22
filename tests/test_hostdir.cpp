@@ -144,6 +144,15 @@ void test_hostdir() {
         CHECK(!hostGlobMatch("*.ASM", "FOO.COM"), "*.ASM does not match FOO.COM");
         CHECK(!hostGlobMatch("R.ASM", "RW.ASM"), "a literal does not match a longer name");
         CHECK(hostGlobMatch("*O*.A*", "FOO.ASM"), "several stars backtrack correctly");
+
+        // A DOT FILE needs a glob that starts with a dot (issue #829). R would fold
+        // `.DS_Store` to ` .DS_`, a CP/M name nobody can type at the CCP.
+        CHECK(!hostGlobMatch("*.*", ".DS_Store"), "*.* skips a dot file");
+        CHECK(!hostGlobMatch("*", ".HIDDEN"), "* skips a dot file");
+        CHECK(!hostGlobMatch("", ".HIDDEN"), "the empty glob skips a dot file");
+        CHECK(!hostGlobMatch("?HIDDEN", ".HIDDEN"), "? does not match the leading dot");
+        CHECK(hostGlobMatch(".*", ".HIDDEN"), ".* finds a dot file");
+        CHECK(hostGlobMatch(".HIDDEN", ".hidden"), "a dot file named in full matches, folded");
     }
 
     SECTION("hostdir: an ordinary round trip");
@@ -173,6 +182,14 @@ void test_hostdir() {
 
         CHECK(d.list("*.TXT", names, err) && names.size() == 1 && names[0] == "HELLO.TXT",
               "the glob filters");
+
+        CHECK(d.write(".HIDDEN", bytes, err), "a dot file writes");
+        CHECK(d.list("", names, err) && names.size() == 2, "the empty glob does not list it");
+        CHECK(d.list("*.*", names, err) && names.size() == 2, "*.* does not list it");
+        CHECK(d.list(".*", names, err) && names.size() == 1 && names[0] == ".HIDDEN",
+              ".* lists it");
+        CHECK(d.read(".HIDDEN", 0, back, err) && back == bytes, "...and it still reads by name");
+        CHECK(d.remove(".HIDDEN", err), "...and deletes by name");
 
         CHECK(d.remove("HELLO.TXT", err), "delete works");
         CHECK(!sb.exists(sb.root / "HELLO.TXT"), "...and the file is gone");
@@ -251,6 +268,57 @@ void test_hostdir() {
             CHECK(!d.read("TWO.DAT", 0, back, err),
                   "a name matching two host files by fold is refused");
             CHECK(err.code == HbError::Ambiguous, "...as Ambiguous (0x08), never by guessing");
+        }
+    }
+
+    SECTION("hostdir: THE CASE FOLD on every part of a path, folders included");
+    {
+        // The CCP upper-cases the FOLDER as well as the file: `R SRC/FOO.ASM` and
+        // `W *.* OUT` reach the card as typed in capitals, and on a case-sensitive host
+        // the folders are `src` and `out`. Folding only the last part left every
+        // lower-case folder unreachable from CP/M. On a Mac these pass on the file
+        // system's own fold; the Linux CI leg is where the card's fold is proved.
+        Sandbox sb;
+        RealHostDir d(sb.root.string());
+        HbFail err;
+        std::vector<uint8_t> back;
+
+        fs::create_directories(sb.root / "src" / "sub");
+        Sandbox::write(sb.root / "src" / "foo.asm", "in a lower-case folder");
+        Sandbox::write(sb.root / "src" / "sub" / "deep.txt", "two folders down");
+
+        CHECK(d.read("SRC/FOO.ASM", 0, back, err) && str(back) == "in a lower-case folder",
+              "an UPPER-CASE folder name finds a lower-case host folder");
+        err = {};
+        CHECK(d.read("SRC/SUB/DEEP.TXT", 0, back, err) && str(back) == "two folders down",
+              "...at every depth");
+        err = {};
+        CHECK(d.write("SRC/NEW.TXT", bytes("new"), err), "a write into a folded folder lands");
+        CHECK(sb.read(sb.root / "src" / "NEW.TXT") == "new", "...inside the existing folder");
+
+        std::vector<std::string> names;
+        err = {};
+        CHECK(d.list("SRC/*.ASM", names, err) && names.size() == 1,
+              "a glob in a folded folder lists");
+        err = {};
+        CHECK(d.list("SRC/SUB/", names, err) && names.size() == 1,
+              "a folder named last folds too (HDIR SRC/SUB/)");
+        err = {};
+        CHECK(!d.write("NOPE/X.TXT", bytes("x"), err), "a folder that is not there is a failure");
+        CHECK(!sb.exists(sb.root / "NOPE"), "...and nothing is created");
+
+        // Two folders differing only in case: needs a case-sensitive host, as above.
+        fs::create_directories(sb.root / "Two");
+        fs::create_directories(sb.root / "two");
+        Sandbox::write(sb.root / "Two" / "a.txt", "a");
+        Sandbox::write(sb.root / "two" / "a.txt", "b");
+        if (sb.read(sb.root / "Two" / "a.txt") != "a") {
+            std::printf("  SKIP  the host filesystem is case-INSENSITIVE; two folders "
+                        "differing only in case cannot exist here\n");
+        } else {
+            err = {};
+            CHECK(!d.read("TWO/A.TXT", 0, back, err) && err.code == HbError::Ambiguous,
+                  "a folder matching two host folders by fold is refused as Ambiguous");
         }
     }
 
