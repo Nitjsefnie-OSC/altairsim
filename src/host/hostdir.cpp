@@ -281,6 +281,25 @@ bool RealHostDir::resolve(const std::string& name, bool mustExist, std::string& 
                 err = f;  // never guess between two files, or two folders
                 return false;
             } else if (mustExist) {
+                // A part that leads out of the root is Outside, whether or not anything
+                // is there. On Windows, create_symlink to a folder makes a FILE symlink:
+                // exists() says no, and weakly_canonical() fails with "Access is denied".
+                // So read the link and check where it points. A link that cannot be
+                // read is refused as Outside too.
+                std::error_code ec2;
+                fs::path        probe = next;
+                const bool      link  = fs::is_symlink(next, ec2);
+                ec2.clear();  // a part that is not there is not an error here
+                if (link) {
+                    fs::path to = fs::read_symlink(next, ec2);
+                    if (!ec2) probe = to.is_absolute() ? to : next.parent_path() / to;
+                }
+                fs::path canon = ec2 ? fs::path() : fs::weakly_canonical(probe, ec2);
+                if ((link && ec2) || (!ec2 && !within(canonRoot, canon))) {
+                    err.code = HbError::Outside;
+                    err.msg  = "'" + name + "' resolves outside the host directory";
+                    return false;
+                }
                 err = f;  // NotFound, and it names the part that is missing
                 return false;
             }
