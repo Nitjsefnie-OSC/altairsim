@@ -96,16 +96,21 @@ bool Ss1Board::decodes(const BusCycle& c) const {
 // (IR7 = the slave), the SLAVE supplies the vector -- and both in-service bits are set,
 // which is why the handler must EOI both chips. Otherwise the master's own vector is
 // used. Setting the in-service bit drops the master's INT, so we re-drive pin 73 here.
+//
+// A chip with nothing serviceable answers with its DEFAULT IR7 (the IR7 vector, no ISR
+// bit). For the slave that is its own IR7 address. A master default IR7 is level 7,
+// which is the cascade input here, so it goes to the slave the same way -- the data
+// sheet does not spell that corner out. decodes() claims the cycle only while the
+// master's INT is live, so from the bus neither default is reached today.
 uint8_t Ss1Board::intAckByte() {
     if (intaByte_ == 0) {
         int mlvl = master_.acknowledge(masterLive());
-        if (mlvl < 0) return 0xFF;  // nothing serviceable (decodes() shouldn't have said yes)
 
         Intel8259a* src = &master_;
         int         lvl = mlvl;
         if (mlvl == kMasterCascadeIr) {  // cascade: the slave owns this interrupt
-            int slvl = slave_.acknowledge(slaveLive());
-            if (slvl >= 0) { src = &slave_; lvl = slvl; }
+            src = &slave_;
+            lvl = slave_.acknowledge(slaveLive());
         }
         intChanged();  // the in-service bit just dropped the master's INT off pin 73
 
