@@ -3,10 +3,6 @@
 #include "core/bus.h"
 #include "core/statefile.h"
 
-#include <algorithm>
-#include <chrono>
-#include <numeric>
-
 namespace altair {
 
 // The control register, bit by bit. Named, so the code below reads like the manual.
@@ -17,17 +13,6 @@ constexpr uint8_t kClearRtcInt = 0x10;  // bit 4
 constexpr uint8_t kClearDivider = 0x20;  // bit 5
 constexpr uint8_t kRtcEnable = 0x40;  // bit 6
 constexpr uint8_t kViEnable = 0x80;  // bit 7
-
-// Paced, pump() leaves a tick to the Clock deadline unless host time is this far past
-// the schedule. A host's sleep can overshoot by a whole scheduler quantum (15.6 ms on
-// Windows), and that is not lateness worth moving a tick off its T-state for.
-constexpr uint64_t kPacedSlackNs = 100000000;  // 100 ms
-
-uint64_t steadyNs() {
-    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-}
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -70,7 +55,7 @@ void VirtcBoard::write(const BusCycle& c) {
     // Enabling or disabling the RTC starts or stops it too. ANY OTHER WRITE LEAVES THE
     // CHAIN COUNTING: the service routine writes this port on every tick to clear bit
     // 4, and a chain restarted there would lose the handler's latency on every tick.
-    if ((d & kClearDivider) || rtcObservable() != (wake_ != Clock::kNone)) armRtc();
+    if ((d & kClearDivider) || rtcObservable() != rtc_.running()) armRtc();
 
     // The interrupt we just cleared (or the structure we just enabled) may have moved
     // pin 73.
@@ -118,103 +103,28 @@ int VirtcBoard::intWinner() const { return viEnabled_ ? winner() : -1; }
 //
 // "The RTC source may be selected from either a derivative of the 2 megahertz clock
 //  or the line frequency." 10 kHz off the bus CLOCK, or 60 Hz mains -- both real time
-// (the header note). The schedule is in host nanoseconds; this is one interval
-// converted to T-states, for the Clock deadline that delivers a tick into the
-// instruction stream.
+// (the header note).
 //
-// In T-STATES, not hertz, because three of the eight jumper combinations are
-// fractional (60 Hz / 1000 = 0.06 Hz) and would round to nothing. tStatesPer() gives
-// the base tick exactly and the divider is then just multiplication.
-uint64_t VirtcBoard::rtcPeriod() const {
-    if (!clock_) return 0;
-    return clock_->tStatesPer((long long)rtcDen()) * (uint64_t)rtcDivide_;
-}
-
-// hostDueNs_ = rollover number rtcTicks_. Every den/g rollovers are a whole number of
-// nanoseconds (num/g), so those fold into the anchor: the schedule is exact forever and
-// the products below stay far from overflow.
-void VirtcBoard::rtcSetDue() {
-    const uint64_t num  = rtcNum();
-    const uint64_t den  = rtcDen();
-    const uint64_t g    = std::gcd(num, den);
-    const uint64_t step = den / g;
-    anchorNs_ += (rtcTicks_ / step) * (num / g);
-    rtcTicks_ %= step;
-    hostDueNs_ = anchorNs_ + rtcTicks_ * num / den;
-}
-
-// Rollovers between the last one we delivered and `now` are gone: the flip-flop is a
-// latch, and it was set once. The schedule moves to the first rollover AFTER now.
-void VirtcBoard::rtcPassed(uint64_t now) {
-    const uint64_t num     = rtcNum();
-    const uint64_t den     = rtcDen();
-    const uint64_t elapsed = now - anchorNs_;
-    rtcTicks_ = (elapsed / num) * den + (elapsed % num) * den / num + 1;
-    rtcSetDue();
-}
-
-// Restart the chain at host-now, and cancel and re-arm its Clock deadline -- the idiom
-// every clocked card here uses (see Sio2Board::refresh).
+// The schedule in host nanoseconds, the Clock deadline and the once-a-slice check are the HostTicker's
+// (core/hostticker.h). This card supplies the interval: the base rate, and the
+// divide jumper as the multiple.
 //
-// WE ONLY ARM IT WHEN IT CAN BE OBSERVED: the interrupt has to be enabled AND the RI
-// strap has to go somewhere. Otherwise the divider is a counter nobody can read, and
-// an always-armed periodic timer would leave Clock::queued() permanently non-zero --
-// which is one of the two things the run loop uses to decide a HLT has finished
-// (core/debug.cpp). A machine with an unstrapped RTC would never stop on a HLT again.
-//
-// AND WHEN IT CAN BE OBSERVED, WE ALWAYS ARM IT -- flat out too, where the deadline
-// does not decide when the tick lands. A guest that HALTs to wait for its clock needs
-// queued() non-zero, or that same test ends the run.
+// Restart the chain at host-now. WE ONLY RUN IT WHEN IT CAN BE OBSERVED: the interrupt
+// has to be enabled AND the RI strap has to go somewhere. Otherwise the divider is a
+// counter nobody can read, and the ticker's deadline would keep a HLT from ever ending
+// the run (see HostTicker::stop).
 void VirtcBoard::armRtc() {
     if (!clock_) return;
-    clock_->cancel(wake_);
-    wake_ = Clock::kNone;
-    if (!rtcObservable()) return;
-    anchorNs_  = hostNs_ ? hostNs_() : steadyNs();
-    rtcTicks_  = 1;
-    rtcSetDue();
-    uint64_t p = rtcPeriod();
-    if (p) wake_ = clock_->after(p, [this] { onRtcDeadline(); });
-}
-
-// PACED, the deadline IS the tick: T-states are real time here, and the rollover it
-// stands for is the one the schedule has next. FLAT OUT it only keeps the machine
-// alive (armRtc), so it looks at the host's time and goes back to sleep.
-void VirtcBoard::onRtcDeadline() {
-    wake_ = Clock::kNone;
-    if (!clock_->free()) {
-        rtcFire();
-        ++rtcTicks_;
-        rtcSetDue();
-    } else {
-        uint64_t now = hostNs_ ? hostNs_() : steadyNs();
-        if (now >= hostDueNs_) {
-            rtcFire();
-            rtcPassed(now);
-        }
+    if (!rtcObservable()) {
+        rtc_.stop(clock_);
+        return;
     }
-    uint64_t p = rtcPeriod();
-    if (p) wake_ = clock_->after(p, [this] { onRtcDeadline(); });
+    rtc_.start(clock_, rtcSource_ == RtcSource::Line ? 60 : 10000, (uint64_t)rtcDivide_,
+               [this] { rtcFire(); });
 }
 
-// Once a slice. Flat out, this is where the tick lands: the first slice that finds the
-// schedule due. Paced, the Clock deadline delivers it, and this fires only when host
-// time got well ahead of the T-states -- a host that cannot hold its crystal, or a
-// machine that sat stopped at the monitor -- and then puts the deadline where host
-// time says the next rollover is.
-void VirtcBoard::pump() {
-    if (wake_ == Clock::kNone || !clock_) return;
-    const bool     paced = !clock_->free();
-    const uint64_t now   = hostNs_ ? hostNs_() : steadyNs();
-    const uint64_t slack = paced ? std::max<uint64_t>(rtcNum() / rtcDen(), kPacedSlackNs) : 0;
-    if (now < hostDueNs_ + slack) return;
-    rtcFire();
-    rtcPassed(now);
-    if (!paced) return;  // the keep-alive deadline stays where it is
-    clock_->cancel(wake_);
-    const double ahead = (double)(hostDueNs_ - now) * 1e-9 * (double)clock_->hz();
-    wake_ = clock_->after(std::max<uint64_t>(1, (uint64_t)ahead), [this] { onRtcDeadline(); });
-}
+// Once a slice: is the divider's host-time schedule due?
+void VirtcBoard::pump() { rtc_.pump(clock_); }
 
 // The interval elapsed: the flip-flop sets and RI goes out onto its VI line. Only the
 // service routine's bit 4 clears the flip-flop -- "The RTC does not operate in this

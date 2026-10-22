@@ -12,6 +12,12 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The RTC-100 interrupts once a second of real time.** The board counted its one-second
+interrupt in processor T-states. At flat out (`clock_hz = 0`, the default), the interrupt came
+as fast as the host ran the guest, many times each second. A guest that counts the interrupts
+to keep time ran fast. Now the interrupt comes once a second of real time at every `clock_hz`.
+The time that the guest reads from the clock was always correct.
+
 **Host bridge wildcards skip dot files.** A wildcard in `R` and `HDIR` matched a host file
 whose name starts with `.`, such as `.DS_Store`. `R *.*` copied the file to the CP/M disk as
 ` .DS_`, a name with an empty first part. You cannot type that name at the `A>` prompt, so the
