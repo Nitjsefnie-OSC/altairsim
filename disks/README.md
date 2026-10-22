@@ -20,7 +20,7 @@ disks/<controller>/<operating system>/<disk set>/
 |---|---|---|
 | `mits-88dcdd/` | MITS 88-DCDD, the 8-inch floppy controller | `cpm22/` has several CP/M 2.2 disk sets. `diskbasic/` is for Altair Disk BASIC. |
 | `mits-88mds/` | MITS 88-MDS, the 5.25-inch minidisk controller | `cpm22/` has a two-disk CP/M 2.2 set, its BIOS and boot source, and a machine file. The minidisk acceptance tests boot this set. |
-| `tarbell-sd/` | Tarbell single-density floppy controller | `cpm22/` has a CP/M 2.2 disk set. |
+| `tarbell-sd/` | Tarbell single-density floppy controller | `cpm22/` has a CP/M 2.2 disk set and its BIOS source. The built-in `tarbell` machine boots the set. |
 
 ## Which images are in git
 
