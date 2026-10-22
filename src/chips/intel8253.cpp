@@ -1,6 +1,5 @@
 #include "chips/intel8253.h"
 
-#include "core/clock.h"
 #include "core/statefile.h"
 
 #include <cstdio>
@@ -12,7 +11,7 @@ namespace altair {
 // plain 8253 -- the read-back command is an 8254 addition, so we ignore it); RL1/RL0
 // pick the read/load format (00 = Counter Latch Command); M2/M1/M0 the mode; D0 BCD.
 // ---------------------------------------------------------------------------
-void Intel8253::writeControl(uint8_t v, const Clock& clk) {
+void Intel8253::writeControl(uint8_t v, uint64_t now) {
     int sc = (v >> 6) & 0x03;
     if (sc == 3) return;  // 11: illegal on the 8253 (no read-back command here)
     Counter& c = c_[sc];
@@ -22,7 +21,7 @@ void Intel8253::writeControl(uint8_t v, const Clock& clk) {
         // COUNTER LATCH COMMAND: freeze the current count for a stable multi-byte read.
         // It does NOT change the mode or the read/load format -- the latched value is
         // read back in whatever format the last real control word set.
-        c.latchVal    = (uint16_t)liveCount(c, clk);
+        c.latchVal    = (uint16_t)liveCount(c, now);
         c.latched     = true;
         c.readMsbNext = false;
         return;
@@ -47,7 +46,7 @@ void Intel8253::writeControl(uint8_t v, const Clock& clk) {
 // A COUNTER PORT WRITE (+0/+1/+2). Loads the count per the read/load format; counting
 // (re)starts the moment a COMPLETE count is present (for LSB-then-MSB, on the MSB).
 // ---------------------------------------------------------------------------
-void Intel8253::writeCounter(int n, uint8_t v, const Clock& clk) {
+void Intel8253::writeCounter(int n, uint8_t v, uint64_t now) {
     Counter& c = c_[n];
     bool full = false;
     switch (c.rl) {
@@ -71,7 +70,7 @@ void Intel8253::writeCounter(int n, uint8_t v, const Clock& clk) {
         break;
     }
     if (full) {
-        c.loadT_      = clk.now();
+        c.loadTick_   = (int64_t)now;
         c.armed       = true;
         c.latched     = false;
         c.readMsbNext = false;
@@ -80,9 +79,9 @@ void Intel8253::writeCounter(int n, uint8_t v, const Clock& clk) {
 
 // A COUNTER PORT READ (+0/+1/+2). Returns the latched value if a Latch Command is
 // pending, else the live count -- LSB, MSB, or LSB-then-MSB per the format.
-uint8_t Intel8253::readCounter(int n, const Clock& clk) {
+uint8_t Intel8253::readCounter(int n, uint64_t now) {
     Counter& c = c_[n];
-    uint32_t dec = c.latched ? c.latchVal : liveCount(c, clk);
+    uint32_t dec = c.latched ? c.latchVal : liveCount(c, now);
     uint16_t v   = c.bcd ? toBcd(dec) : (uint16_t)dec;
 
     uint8_t byte;
@@ -109,7 +108,7 @@ uint8_t Intel8253::readCounter(int n, const Clock& clk) {
     return byte;
 }
 
-void Intel8253::powerOn(const Clock&) {
+void Intel8253::powerOn() {
     for (Counter& c : c_) c = Counter{};
 }
 
@@ -118,13 +117,10 @@ void Intel8253::powerOn(const Clock&) {
 // register edges (fromBcd on the way in, toBcd on the way out) so the interior is
 // one arithmetic.
 // ---------------------------------------------------------------------------
-uint64_t Intel8253::elapsed(const Counter& c, const Clock& clk) const {
+uint64_t Intel8253::elapsed(const Counter& c, uint64_t now) const {
     if (!c.armed) return 0;
-    uint64_t per = clk.tStatesPer(counterHz);
-    if (per == 0) return 0;
-    uint64_t now = clk.now();
-    if (now <= c.loadT_) return 0;
-    return (now - c.loadT_) / per;
+    int64_t d = (int64_t)now - c.loadTick_;
+    return d > 0 ? (uint64_t)d : 0;
 }
 
 uint32_t Intel8253::modulus(const Counter& c) const { return c.bcd ? 10000u : 65536u; }
@@ -134,10 +130,10 @@ uint32_t Intel8253::effectiveN(const Counter& c) const {
     return raw == 0 ? modulus(c) : raw;  // a count of 0 means the full modulus
 }
 
-uint32_t Intel8253::liveCount(const Counter& c, const Clock& clk) const {
+uint32_t Intel8253::liveCount(const Counter& c, uint64_t now) const {
     if (!c.armed) return c.bcd ? fromBcd(c.initial) : c.initial;
     uint32_t M = modulus(c), N = effectiveN(c);
-    uint64_t e = elapsed(c, clk);
+    uint64_t e = elapsed(c, now);
     if (c.mode == 2) {
         // Rate generator: counts N..1 and reloads; it never rests at 0.
         uint32_t p = (uint32_t)(e % N);
@@ -148,11 +144,11 @@ uint32_t Intel8253::liveCount(const Counter& c, const Clock& clk) const {
     return (N - p + M) % M;
 }
 
-bool Intel8253::outOf(const Counter& c, const Clock& clk) const {
+bool Intel8253::outOf(const Counter& c, uint64_t now) const {
     if (!c.armed) return c.mode != 0;  // unloaded: mode 0 low, every other mode high
 
     uint32_t N = effectiveN(c);
-    uint64_t e = elapsed(c, clk);
+    uint64_t e = elapsed(c, now);
     switch (c.mode) {
     case 0:  // Interrupt on Terminal Count: low, then high at TC and stays high.
         return e >= N;
@@ -172,22 +168,20 @@ bool Intel8253::outOf(const Counter& c, const Clock& clk) const {
     }
 }
 
-bool     Intel8253::out(int n, const Clock& clk) const { return outOf(c_[n], clk); }
+bool     Intel8253::out(int n, uint64_t now) const { return outOf(c_[n], now); }
 
-uint16_t Intel8253::count(int n, const Clock& clk) const {
+uint16_t Intel8253::count(int n, uint64_t now) const {
     const Counter& c = c_[n];
-    uint32_t dec = c.latched ? c.latchVal : liveCount(c, clk);
+    uint32_t dec = c.latched ? c.latchVal : liveCount(c, now);
     return c.bcd ? toBcd(dec) : (uint16_t)dec;
 }
 
-uint64_t Intel8253::nextEdge(int n, const Clock& clk) const {
+uint64_t Intel8253::nextEdge(int n, uint64_t now) const {
     const Counter& c = c_[n];
     if (!c.armed) return 0;
-    uint64_t per = clk.tStatesPer(counterHz);
-    if (per == 0) return 0;
 
     uint32_t N = effectiveN(c);
-    uint64_t e = elapsed(c, clk);
+    uint64_t e = elapsed(c, now);
     uint64_t eNext = 0;  // the tick index of the next OUT change; 0 == none from here
 
     switch (c.mode) {
@@ -214,7 +208,7 @@ uint64_t Intel8253::nextEdge(int n, const Clock& clk) const {
     }
 
     if (eNext == 0) return 0;
-    return c.loadT_ + eNext * per;
+    return (uint64_t)(c.loadTick_ + (int64_t)eNext);
 }
 
 uint16_t Intel8253::toBcd(uint32_t v) {
@@ -228,18 +222,18 @@ uint32_t Intel8253::fromBcd(uint16_t v) {
            (v & 0xF);
 }
 
-std::string Intel8253::describe(const Clock& clk) const {
+std::string Intel8253::describe(uint64_t now) const {
     std::string s;
     char buf[64];
     for (int n = 0; n < 3; ++n) {
         std::snprintf(buf, sizeof buf, "%sC%d mode%d count=%u OUT=%d", n ? "; " : "", n,
-                      c_[n].mode, (unsigned)count(n, clk), out(n, clk) ? 1 : 0);
+                      c_[n].mode, (unsigned)count(n, now), out(n, now) ? 1 : 0);
         s += buf;
     }
     return s;
 }
 
-void Intel8253::serialize(StateWriter& w) const {
+void Intel8253::serialize(StateWriter& w, uint64_t now) const {
     for (const Counter& c : c_) {
         w.u8(c.mode);
         w.boolean(c.bcd);
@@ -250,12 +244,12 @@ void Intel8253::serialize(StateWriter& w) const {
         w.boolean(c.readMsbNext);
         w.boolean(c.latched);
         w.u16(c.latchVal);
-        w.u64(c.loadT_);
+        w.u64(elapsed(c, now));  // the phase; the edge count itself does not travel
         w.boolean(c.armed);
     }
 }
 
-void Intel8253::deserialize(StateReader& r) {
+void Intel8253::deserialize(StateReader& r, uint64_t now) {
     for (Counter& c : c_) {
         c.mode         = r.u8();
         c.bcd          = r.boolean();
@@ -266,8 +260,9 @@ void Intel8253::deserialize(StateReader& r) {
         c.readMsbNext  = r.boolean();
         c.latched      = r.boolean();
         c.latchVal     = r.u16();
-        c.loadT_       = r.u64();
+        uint64_t e     = r.u64();
         c.armed        = r.boolean();
+        c.loadTick_    = (int64_t)now - (int64_t)e;  // before 0 if the count restarted
     }
 }
 

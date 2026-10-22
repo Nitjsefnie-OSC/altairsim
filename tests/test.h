@@ -17,6 +17,7 @@ extern int g_run;
 #define SECTION(name) std::printf("\n%s\n", name)
 
 void test_clock();
+void test_busclock();
 void test_statefile();
 void test_snapshot();
 void test_bus();

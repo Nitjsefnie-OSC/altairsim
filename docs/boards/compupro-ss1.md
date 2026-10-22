@@ -101,10 +101,13 @@ math socket) are tied inactive.
   and DSR status bits read asserted and PE/OE/FE read 0 — a byte-clean transport has no modem
   control to simulate and no line noise to report. The board owns the UART's clock deadline
   (`refresh()`/`nextEdge()`), the same shape as the SBC-100/200.
-- **The 8253 interval timer** (`src/chips/intel8253.h`) is not stepped — each counter remembers
-  the T-state its count was loaded and the current count and OUT level are **derived from the
-  elapsed clock ticks** (DESIGN.md 7.5). The counter clock is 2 MHz (the S-100 bus signal),
-  independent of the CPU clock, so one tick takes `cpu_hz / 2_000_000` T-states. Modes 0, 2, 3
+- **The 8253 interval timer** (`src/chips/intel8253.h`) is not stepped. Each counter remembers
+  the counter-clock tick at which its count was loaded. The current count and OUT level are
+  **derived from the ticks since then** (DESIGN.md 7.5). The three counter clocks are the S-100
+  bus CLOCK (pin 49), so the board gives the chip the tick count of the bus's pin-49 model
+  (`BusClock`, `src/core/busclock.h`). The count is 2 MHz of real time at every `clock_hz`. With
+  a crystal set, one tick takes `cpu_hz / 2_000_000` T-states. Flat out, one tick is 500 ns of
+  host time. Modes 0, 2, 3
   and 4 have their real OUT behaviour; mode 3's count read-back is approximate (a real chip
   decrements it by two per tick), but OUT is exact. Modes 1 and 5 are gate-triggered and the
   board ties every gate high, so they idle (no gate edge ever arrives). The Counter Latch Command
@@ -156,7 +159,7 @@ math socket) are tied inactive.
 | 2651 status TxRDY=D0/RxRDY=D1 active-high; DCD/DSR (D6/D7) and DTR/RTS command bits **inverting** | A polled driver reads the ready flags in the wrong bit; a modem-control test sees the RS-232 sense backwards |
 | 2651 baud comes from Mode Register 2, not a strap | A guest that sets 300 baud via MR2 still runs at the wrong rate if the model ignores MR2 |
 | 2651 MR1 must be written before MR2 (shared address, one-bit pointer) | The frame and the baud land in each other's register |
-| 8253 counter clock is 2 MHz, not the CPU clock | A timing loop calibrated against the timer runs at the wrong rate on any machine whose CPU is not 2 MHz |
+| 8253 counter clock is 2 MHz of real time at every `clock_hz`, flat out too, not the CPU clock | A timing loop calibrated against the timer runs at the wrong rate on any machine whose CPU is not 2 MHz. Flat out, a timer interrupt, such as an MP/M tick from counter 0, comes as fast as the host runs the guest |
 | 8253 control word for a counter stops it until a fresh count is loaded | A program that rewrites the mode and expects the old count to keep running reads a stale OUT |
 | 8253 a count of 0 means the full modulus (65536, or 10000 in BCD) | A "divide by 65536" that loads 0 undercounts to nothing if 0 is taken literally |
 | 8259A master IR0–6 = the S-100 VI lines; the master's INT drives pin 73 | An SS-1 that ignored the VI lines could not act as the machine's interrupt controller for other cards; one that did not drive pin 73 would never interrupt the CPU |
@@ -181,6 +184,8 @@ math socket) are tied inactive.
   always enabled and the gate-triggered one-shot modes (1 and 5) never trigger — no gate edge is
   modelled. **Mode 3's count read-back is approximate** (OUT is exact); the terminal-count timing
   folds the load clock into the write instant rather than modelling the extra load cycle.
+- **The 8253 counts only the bus CLOCK.** The external clock input on J4, and a counter cascaded
+  into another, are not modelled. Every counter counts pin 49.
 - **8259A: the standard shunt only.** The master/slave source assignments are wired by
   construction (the factory J7/J8 shunt); the dip-header rewiring the manual allows (any source to
   any input) is not modelled. **Special fully-nested mode** (ICW4 D4) is accepted but treated as
@@ -207,7 +212,9 @@ the RxEN gate, snapshot of the programmed frame/baud, the four-port decode, an e
 receive/transmit through the bus, and the RxRDY interrupt jumper. The 8253 is pinned as a bare
 chip and over the bus: mode 0 interrupt-on-terminal-count, the Counter Latch Command freezing a
 16-bit read, the mode 2 rate generator and mode 3 square wave (even and odd counts), `nextEdge`,
-BCD counting, the 2 MHz counter clock being independent of the CPU clock, a snapshot round-trip,
+BCD counting, the 2 MHz counter clock being independent of the CPU clock, the counters keeping
+real time flat out (a mode 0 terminal count interrupts through the slave 8259A after host time,
+not T-states, reaches it), a snapshot round-trip,
 the four-port decode, and programming/reading a counter over the bus. The 8259As are pinned as
 bare chips and over the bus: the ICW init sequence and MCS-80/85 CALL address, priority/masking
 and fully-nested in-service blocking, the EOI variants and priority rotation, edge- vs

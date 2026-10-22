@@ -9,6 +9,8 @@
 // heard of ROM. Every one of those lives in a board. When you are tempted to
 // add "if (board is a ROM)" here, you have found a bug in your board instead.
 
+#include "core/busclock.h"
+
 #include <bitset>
 #include <cstdint>
 #include <functional>
@@ -413,7 +415,15 @@ public:
     // the rest. Valid only immediately after a cycle, like lastContended().
     Board* lastResponder() const { return responder_; }
 
+    // PIN 49, CLOCK: 2 MHz of real time, from every CPU board (core/busclock.h). A
+    // signal like the others here, so the bus carries it; a board that divides it reads
+    // the count from here and arms its own deadline.
+    BusClock&       busClock() { return busClock_; }
+    const BusClock& busClock() const { return busClock_; }
+
 private:
+    BusClock busClock_;
+
     bool anyAssertsPhantom(const BusCycle& c) const;
 
     // THE SAME QUESTION AS decoders(), WITHOUT THE VECTOR.

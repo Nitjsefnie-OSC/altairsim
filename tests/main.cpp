@@ -61,6 +61,7 @@ const struct {
     {"tapecodec", test_tapecodec},
     {"roms", test_roms},
     {"clock", test_clock},
+    {"busclock", test_busclock},
     {"statefile", test_statefile},
     {"snapshot", test_snapshot},
     {"bus", test_bus},

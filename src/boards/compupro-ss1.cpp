@@ -26,6 +26,12 @@ Clock& deadCard() {
 
 }  // namespace
 
+// The 8253's counter clock: the bus CLOCK, pin 49, in real time (core/busclock.h). The
+// SS-1 ties all three counter inputs to it (§2.7). No clock or no bus: a dead card, 0.
+uint64_t Ss1Board::pin49() const {
+    return clock_ && bus_ ? bus_->busClock().now(*clock_) : 0;
+}
+
 void Ss1Board::setResolver(EndpointResolver r) { g_resolver = std::move(r); }
 
 Ss1Board::Ss1Board() {
@@ -132,14 +138,14 @@ uint8_t Ss1Board::read(const BusCycle& c) {
     if (p == picSlave0Port())  return slave_.read(false, slaveLive());
     if (p == picSlave1Port())  return slave_.read(true, slaveLive());
 
-    const Clock& clk = clock_ ? *clock_ : deadCard();
-
     // The 8253 counter reads are pure (they derive the count from the clock and touch
     // only the read-pointer/latch state), and the timer drives no interrupt yet, so
     // they do not go through refresh().
-    if (p == timer0Port()) return timer_.readCounter(0, clk);
-    if (p == timer1Port()) return timer_.readCounter(1, clk);
-    if (p == timer2Port()) return timer_.readCounter(2, clk);
+    if (p == timer0Port()) return timer_.readCounter(0, pin49());
+    if (p == timer1Port()) return timer_.readCounter(1, pin49());
+    if (p == timer2Port()) return timer_.readCounter(2, pin49());
+
+    const Clock& clk = clock_ ? *clock_ : deadCard();
 
     uint8_t v = 0xFF;
     if (p == uartDataPort())        v = uart_.readData(clk);    // clears RxRDY
@@ -171,14 +177,14 @@ void Ss1Board::write(const BusCycle& c) {
     if (p == picSlave0Port())  { slave_.write(false, c.data); refresh(); return; }
     if (p == picSlave1Port())  { slave_.write(true, c.data); refresh(); return; }
 
-    const Clock& clk = clock_ ? *clock_ : deadCard();
-
     // The 8253. Its OUT lines feed the slave 8259A now (Phase 4), so a programming
     // write can change an interrupt input -- refresh() re-samples and re-arms.
-    if (p == timerCtlPort()) { timer_.writeControl(c.data, clk); refresh(); return; }
-    if (p == timer0Port())   { timer_.writeCounter(0, c.data, clk); refresh(); return; }
-    if (p == timer1Port())   { timer_.writeCounter(1, c.data, clk); refresh(); return; }
-    if (p == timer2Port())   { timer_.writeCounter(2, c.data, clk); refresh(); return; }
+    if (p == timerCtlPort()) { timer_.writeControl(c.data, pin49()); refresh(); return; }
+    if (p == timer0Port())   { timer_.writeCounter(0, c.data, pin49()); refresh(); return; }
+    if (p == timer1Port())   { timer_.writeCounter(1, c.data, pin49()); refresh(); return; }
+    if (p == timer2Port())   { timer_.writeCounter(2, c.data, pin49()); refresh(); return; }
+
+    const Clock& clk = clock_ ? *clock_ : deadCard();
 
     if (p == uartDataPort())      uart_.writeData(c.data, clk);     // transmit
     else if (p == uartModePort()) uart_.writeMode(c.data);          // MR1 then MR2
@@ -193,10 +199,11 @@ void Ss1Board::write(const BusCycle& c) {
 // header). This is what keeps assertsInt() pure while its inputs move on other clocks.
 uint8_t Ss1Board::slaveLive() const {
     const Clock& clk = clock_ ? *clock_ : deadCard();
-    uint8_t v = 0;
-    if (timer_.out(0, clk)) v |= (uint8_t)(1u << kSlaveTimer0);  // slave IR1 = Timer 0 OUT
-    if (timer_.out(1, clk)) v |= (uint8_t)(1u << kSlaveTimer1);  // slave IR2 = Timer 1 OUT
-    if (timer_.out(2, clk)) v |= (uint8_t)(1u << kSlaveTimer2);  // slave IR3 = Timer 2 OUT
+    uint64_t     now = pin49();
+    uint8_t      v   = 0;
+    if (timer_.out(0, now)) v |= (uint8_t)(1u << kSlaveTimer0);  // slave IR1 = Timer 0 OUT
+    if (timer_.out(1, now)) v |= (uint8_t)(1u << kSlaveTimer1);  // slave IR2 = Timer 1 OUT
+    if (timer_.out(2, now)) v |= (uint8_t)(1u << kSlaveTimer2);  // slave IR3 = Timer 2 OUT
     if (uart_.txReady(clk)) v |= (uint8_t)(1u << kSlaveTxRdy);   // slave IR6 = 2651 TxRDY
     if (uart_.rxReady())    v |= (uint8_t)(1u << kSlaveRxRdy);   // slave IR7 = 2651 RxRDY
     // slave IR0/IR4/IR5 are unassigned / the empty math socket -- always inactive.
@@ -253,7 +260,7 @@ void Ss1Board::reset(Reset r) {
     if (!clock_) return;
     if (r == Reset::PowerOn) {
         uart_.powerOn(*clock_);
-        timer_.powerOn(*clock_);  // the 8253 has no bus-reset pin either -- power-on only
+        timer_.powerOn();  // the 8253 has no bus-reset pin either -- power-on only
         master_.powerOn();        // ...nor the 8259As: undefined until ICW1, so all-masked
         slave_.powerOn();
     }
@@ -314,9 +321,17 @@ uint64_t Ss1Board::nextEdge() const {
     // A timer OUT feeding an UNMASKED slave interrupt input can move the interrupt on
     // the 8253's own schedule -- arm for the next edge so the card wakes to re-sample.
     // (Masked inputs are skipped: a free-running masked counter would wake us for
-    // nothing, exactly the trap the 88-VI's armRtc() calls out.)
-    for (int n = 0; n < 3; ++n)
-        if (slave_.irEnabled(n + 1)) consider(timer_.nextEdge(n, clk));
+    // nothing, exactly the trap the 88-VI's armRtc() calls out.) The edge is a pin-49
+    // tick; the bus clock turns it into a T-state. Flat out that T-state is only a
+    // keep-alive, and pump() -> refresh() sees the edge land in host time.
+    if (clock_ && bus_) {
+        uint64_t now = pin49();
+        for (int n = 0; n < 3; ++n) {
+            if (!slave_.irEnabled(n + 1)) continue;
+            if (uint64_t tick = timer_.nextEdge(n, now))
+                consider(bus_->busClock().tStateOf(tick, *clock_));
+        }
+    }
 
     return best;
 }
@@ -325,7 +340,7 @@ void Ss1Board::serialize(StateWriter& w) const {
     Board::serialize(w);
     rtc_.serialize(w);
     uart_.serialize(w);
-    timer_.serialize(w);
+    timer_.serialize(w, pin49());
     master_.serialize(w);
     slave_.serialize(w);
     // intaByte_/intaAddr_ do not travel: a snapshot lands at an instruction boundary,
@@ -336,7 +351,7 @@ void Ss1Board::deserialize(StateReader& r) {
     Board::deserialize(r);
     rtc_.deserialize(r);
     uart_.deserialize(r);
-    timer_.deserialize(r);
+    timer_.deserialize(r, pin49());
     master_.deserialize(r);
     slave_.deserialize(r);
     intaByte_ = 0;
@@ -380,10 +395,7 @@ std::vector<Property> Ss1Board::properties() {
         x.name = "timer";
         x.help = "LIVE: the three 8253 counters -- mode, current count and OUT level";
         x.kind = Kind::Str;
-        x.get = [this] {
-            const Clock& clk = clock_ ? *clock_ : deadCard();
-            return Value::ofStr(timer_.describe(clk));
-        };
+        x.get = [this] { return Value::ofStr(timer_.describe(pin49())); };
         p.push_back(std::move(x));
     }
     {

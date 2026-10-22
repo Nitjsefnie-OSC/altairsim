@@ -17,6 +17,12 @@ gets to that address, before the instruction there runs. The reply gives `stoppe
 `stop-at`. The stop is for that one call only, so there is no breakpoint to remove after it.
 For example, an assistant at a BDOS call can run to the return address to time the call.
 
+**The SS-1 interval timer counts 2 MHz of real time.** The CompuPro SS-1's 8253 counted its
+2 MHz bus clock in processor T-states. At flat out (`clock_hz = 0`, the default), the timers
+counted as fast as the host ran the guest. A timer interrupt, such as the MP/M tick from
+counter 0, came many times too often. Now the 8253 counts the 2 MHz bus clock in real time at
+every `clock_hz`. With a crystal set, the timer was always correct.
+
 **The RTC-100 interrupts once a second of real time.** The board counted its one-second
 interrupt in processor T-states. At flat out (`clock_hz = 0`, the default), the interrupt came
 as fast as the host ran the guest, many times each second. A guest that counts the interrupts

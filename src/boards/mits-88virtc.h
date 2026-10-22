@@ -118,7 +118,8 @@
 // runs at. Neither is the CPU's crystal, and the CPU's crystal never leaves the CPU
 // board. So the divider keeps its schedule in HOST time, through a HostTicker
 // (core/hostticker.h, which explains how a tick reaches the guest paced and flat out).
-// The host clock is injected (setHostNs), and a test sets the time.
+// The ticker reads host time from the bus's model of pin 49 (core/busclock.h, #836), so
+// a machine has one host clock, and a test sets it there.
 
 #include "core/board.h"
 #include "core/clock.h"
@@ -166,10 +167,6 @@ public:
 
     // Once a slice: is the divider's host-time schedule due? See the header note.
     void pump() override;
-
-    // The HOST clock the divider counts in, in nanoseconds. Defaults to steady_clock;
-    // a test drives it.
-    void setHostNs(std::function<uint64_t()> f) { rtc_.setHostNs(std::move(f)); }
 
     // SNAPSHOT/RESTORE (DESIGN.md 13). The VI section's enable/level latches and the
     // RTC's enable and interrupt flip-flop. The port, source, divide and jumper are

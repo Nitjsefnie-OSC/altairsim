@@ -59,7 +59,7 @@ struct Rig {
 
         m.add("8080", "cpu0", err);
         vi  = dynamic_cast<VirtcBoard*>(m.add("virtc", "vi0", err));
-        vi->setHostNs([this] { return hostNs; });
+        m.bus.busClock().setHostNs([this] { return hostNs; });
         sio = dynamic_cast<Sio2Board*>(m.add("2sio", "sio0", err));
         setProperty(*sio, "port", "10", err);  // hex: a port is on the wire
 

@@ -10,19 +10,23 @@
 //
 // It knows nothing about S-100. The CARD decodes A1/A0 into four ports -- counter 0/1/2
 // (+0/+1/+2) and the control word (+3) -- and hands the accesses here. On the SS-1 the
-// three counter clock inputs are all tied to the S-100 2 MHz signal (bus pin 49); that
-// is the default here (`counterHz`), a strap for the J4-jumper external-clock case.
+// three counter clock inputs are all tied to the S-100 2 MHz signal (bus pin 49), and the
+// CARD hands the chip that count (`now`, in counter-clock edges). A J4 external clock is
+// not modelled.
 //
 // ---------------------------------------------------------------------------
 // TIME IS NOT STEPPED, IT IS COMPUTED (DESIGN.md 7.5). A real 8253 decrements each
 // counter on every 2 MHz edge; doing that here would burn two million callbacks a
 // second per counter for a chip nobody may be reading. Instead each counter remembers
-// the T-state its count was loaded (`loadT_`) and the emulation DERIVES the current
-// count and OUT level from how many counter-ticks have elapsed since -- exactly the
+// the counter-clock edge its count was loaded at (`loadTick_`) and the emulation DERIVES
+// the current count and OUT level from how many edges have elapsed since -- exactly the
 // deadline-not-a-loop stance the UART's transmitter and the Clock header describe.
 //
-// So the whole chip is a pure function of (the programmed state, clk.now()). readCounter
-// computes; out() computes; nextEdge() -- the next T-state OUT flips, for the card's
+// The count of edges is NOT T-states: CLOCK is real time (DESIGN.md 7.5, issue #836), and
+// flat out T-states are not. The card reads it from the bus (core/busclock.h).
+//
+// So the whole chip is a pure function of (the programmed state, now). readCounter
+// computes; out() computes; nextEdge() -- the next edge OUT flips at, for the card's
 // interrupt matrix -- computes. Nothing is scheduled here; the CARD arms one alarm when
 // an OUT it routes to an enabled interrupt is going to move (Phase 4).
 //
@@ -47,7 +51,6 @@
 
 namespace altair {
 
-class Clock;
 class StateWriter;
 class StateReader;
 
@@ -57,30 +60,30 @@ public:
     const std::string& name() const { return name_; }
 
     // ---- bus register access. The CARD decodes A1/A0 to these. ----
-    void    writeControl(uint8_t v, const Clock& clk);   // +3, write-only
-    void    writeCounter(int n, uint8_t v, const Clock& clk);  // +0/+1/+2
-    uint8_t readCounter(int n, const Clock& clk);              // +0/+1/+2
+    // `now` is the count of counter-clock edges, on every call.
+    void    writeControl(uint8_t v, uint64_t now);          // +3, write-only
+    void    writeCounter(int n, uint8_t v, uint64_t now);   // +0/+1/+2
+    uint8_t readCounter(int n, uint64_t now);               // +0/+1/+2
 
     // POWER-ON: every counter mode 0, disarmed, OUT low. A real 8253's state is
     // indeterminate until programmed; low is the safe default and matches mode 0.
-    void powerOn(const Clock& clk);
-
-    // ---- straps (config; NOT serialized) ----
-    long long counterHz = 2000000;  // the counter clock input. SS-1 ties it to 2 MHz.
+    void powerOn();
 
     // ---- the OUT pins and live count, for the card's interrupt matrix and for SHOW ----
-    bool     out(int n, const Clock& clk) const;    // the OUT pin level
-    uint16_t count(int n, const Clock& clk) const;  // the count you'd read back (BCD if set)
+    bool     out(int n, uint64_t now) const;    // the OUT pin level
+    uint16_t count(int n, uint64_t now) const;  // the count you'd read back (BCD if set)
 
-    // The next absolute T-state at which counter n's OUT changes level, or 0 if it is
+    // The next counter-clock edge at which counter n's OUT changes level, or 0 if it is
     // static from here (mode 0/4 past terminal count; ungated mode 1/5; disarmed). The
     // CARD's nextEdge() folds these in once an OUT feeds an enabled interrupt (Phase 4).
-    uint64_t nextEdge(int n, const Clock& clk) const;
+    uint64_t nextEdge(int n, uint64_t now) const;
 
-    std::string describe(const Clock& clk) const;  // "C0 mode2 count=1234 OUT=1; ..."
+    std::string describe(uint64_t now) const;  // "C0 mode2 count=1234 OUT=1; ..."
 
-    void serialize(StateWriter& w) const;
-    void deserialize(StateReader& r);
+    // A snapshot keeps each counter's phase (the edges since its load), not the edge it
+    // was loaded at: the count of edges is not in the snapshot.
+    void serialize(StateWriter& w, uint64_t now) const;
+    void deserialize(StateReader& r, uint64_t now);
 
 private:
     struct Counter {
@@ -98,16 +101,18 @@ private:
         bool     latched     = false;
         uint16_t latchVal    = 0;
 
-        uint64_t loadT_ = 0;      // the T-state counting began
+        // The counter-clock edge counting began. Signed: after a RESTORE into a machine
+        // whose count is younger than the snapshot's phase, it lies before edge 0.
+        int64_t  loadTick_ = 0;
         bool     armed  = false;  // a full count has been loaded -- counting is live
     };
 
     // The counting math, all in decimal counter-ticks (BCD is decoded at the edges).
-    uint64_t elapsed(const Counter& c, const Clock& clk) const;  // ticks since load
-    uint32_t modulus(const Counter& c) const;                    // 65536 or 10000
-    uint32_t effectiveN(const Counter& c) const;                 // initial, 0 => modulus
-    uint32_t liveCount(const Counter& c, const Clock& clk) const;  // decimal count now
-    bool     outOf(const Counter& c, const Clock& clk) const;
+    uint64_t elapsed(const Counter& c, uint64_t now) const;    // ticks since load
+    uint32_t modulus(const Counter& c) const;                  // 65536 or 10000
+    uint32_t effectiveN(const Counter& c) const;               // initial, 0 => modulus
+    uint32_t liveCount(const Counter& c, uint64_t now) const;  // decimal count now
+    bool     outOf(const Counter& c, uint64_t now) const;
 
     static uint16_t toBcd(uint32_t v);
     static uint32_t fromBcd(uint16_t v);
