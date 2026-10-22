@@ -34,7 +34,7 @@ TapeFormat cuts1200() {
     f.cycleCounted = false; f.stopBits = 2;
     // Lay the tones with a clock-divider flip-flop on the 2400 Hz grid, the way U2 does,
     // so the crossings a real Sol's transition-timing decoder reads sit where it expects
-    // them. See TapeFormat::gridToggled and investigations/cuts-write-path.
+    // them. See TapeFormat::gridToggled and PR #151.
     f.gridToggled = true;
     return f;
 }
@@ -423,7 +423,7 @@ DemodResult demodulate(const AudioBuffer& a, const TapeFormat& f) {
 
 // ---------------------------------------------------------------------------
 // THE CLOCK-DIVIDER GENERATOR -- what a real Sol CUTS modem does, and the only thing a
-// real Sol reads back (investigations/cuts-write-path). Models U2, the JK flip-flop that
+// real Sol reads back (PR #151). Models U2, the JK flip-flop that
 // divides a continuous 2*markHz master clock: a mark cell is one whole cycle of markHz
 // (the flip-flop toggles at the cell start and again at mid-cell), a space cell a half
 // cycle of spaceHz (one toggle, at the cell start). Every toggle is placed at its exact

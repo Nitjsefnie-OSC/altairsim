@@ -60,7 +60,7 @@ bool same(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
 // rejected). The real read path counts transitions per cell, so those off-grid crossings
 // misread -- but our own energy-based demodulator is blind to placement and round-trips
 // them happily, which is exactly how the write-path bug survived every round-trip test
-// until it hit real hardware. See investigations/cuts-write-path and TapeFormat::gridToggled.
+// until it hit real hardware. See PR #151 and TapeFormat::gridToggled.
 double offGridFraction(const AudioBuffer& a, const TapeFormat& f) {
     const double markHalf  = double(a.rate) / (2.0 * f.markHz);
     const double spaceHalf = double(a.rate) / (2.0 * f.spaceHz);
@@ -219,7 +219,7 @@ void test_tapecodec() {
     // oscillator this replaced carried phase across the mark<->space boundary and smeared a
     // blended crossing in at every symbol change -- invisible to our energy demodulator (the
     // round-trip section above passes either way) but rejected by real hardware. This asserts
-    // the property directly. See investigations/cuts-write-path.
+    // the property directly. See PR #151.
     for (uint32_t rate : {44100u, 48000u}) {
         const AudioBuffer a = modulate(payload(512), cuts, rate, 0.25);
         CHECK(offGridFraction(a, cuts) < 0.02,

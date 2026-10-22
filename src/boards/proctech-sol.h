@@ -194,7 +194,7 @@ private:
         // rejected) and a 4000 Hz one-pole low-pass (its tone spends ~72% of the time near
         // its peak, the dub's curvature, rather than a flip-flop's flat tops). Both are what
         // makes a CUTS tape THIS deck writes load on a real Sol-20 -- see host/tapemodem.h
-        // and investigations/cuts-write-path.
+        // and PR #151.
         long long level = 36;      // percent of full scale, 1..100
         long long rc    = 4000;    // edge-rounding low-pass corner, Hz
 

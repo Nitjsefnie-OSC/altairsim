@@ -142,7 +142,7 @@ struct TapeFormat {
     // which is blind to placement, but a genuine dub loads on a real Sol where our writes
     // did not. Measured on a real Sol-20: a phase-carried CUTS tape shows ~17% of its
     // half-cycles at neither tone's interval and is rejected; a genuine dub shows 0% and
-    // loads. See investigations/cuts-write-path.
+    // loads. See PR #151.
     //
     // Only true for cuts1200. The 88-ACR's FSK holds a tone for 6.17 cycles a cell -- not a
     // whole/half pair, no 2:1 grid -- and its read path is a PLL that tolerates phase, so it
