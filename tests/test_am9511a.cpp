@@ -163,7 +163,8 @@ void test_am9511a() {
         CHECK(a.pop32() == (uint32_t)-200000 && (st & Am9511a::kCarry), "DSUB 100000 - 300000");
         a.push32(100000); a.push32((uint32_t)-30000);
         st = a.run(0x2E);  // DMUL
-        CHECK(a.pop32() == (uint32_t)(int32_t)-3000000000LL && (st & Am9511a::kOverflow),
+        // 0x4D2FA200 = the low 32 bits of -3000000000
+        CHECK(a.pop32() == 0x4D2FA200u && (st & Am9511a::kOverflow),
               "DMUL 100000 x -30000 overflows; low 32 bits returned");
         a.push32(0x40000000); a.push32(0x10);
         a.run(0x36);  // DMUU
