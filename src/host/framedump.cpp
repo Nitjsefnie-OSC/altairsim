@@ -9,6 +9,11 @@ namespace altair {
 std::vector<uint8_t> frameRgb(const Surface& s, std::span<const Color> pal) {
     const auto           px = s.pixels();
     std::vector<uint8_t> out;
+    if (s.format() == PixelFormat::Rgb32) {   // already colors: drop the alpha byte
+        out.reserve(px.size() / 4 * 3);
+        for (size_t i = 0; i < px.size(); i += 4) out.insert(out.end(), {px[i], px[i + 1], px[i + 2]});
+        return out;
+    }
     out.reserve(px.size() * 3);
     for (uint8_t i : px) {
         if (i < pal.size()) {
@@ -57,7 +62,13 @@ std::string frameText(const Surface& s, const TextGridOpts& o) {
     out.reserve((size_t)((s.width() + xs - 1) / xs + 1) * (size_t)((s.height() + ys - 1) / ys));
     for (int y = 0; y < s.height(); y += ys) {
         for (int x = 0; x < s.width(); x += xs) {
-            uint8_t i = px[(size_t)y * (size_t)s.pitch() + (size_t)x];
+            const size_t at = (size_t)y * (size_t)s.pitch() + (size_t)x * (size_t)bytesPerPixel(s.format());
+            if (s.format() == PixelFormat::Rgb32) {
+                const bool black = px[at] == 0 && px[at + 1] == 0 && px[at + 2] == 0;
+                out.push_back(black ? (o.legend.empty() ? '?' : o.legend[0]) : '#');
+                continue;
+            }
+            uint8_t i = px[at];
             out.push_back(i < o.legend.size() ? o.legend[i] : '?');
         }
         out.push_back('\n');

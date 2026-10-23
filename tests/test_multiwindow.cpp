@@ -44,6 +44,19 @@ void test_multiwindow() {
         CHECK(disp.surface(b)->pixels()[0] == 2, "owner B keeps what B drew, undisturbed by A");
     }
 
+    SECTION("multi-window -- an owner that asks for another format gets a surface of that format");
+    {
+        NullDisplay disp;
+        char tag = 0;
+        Display::Owner a = &tag;
+        Surface* s8 = disp.acquire(a, "a", 16, 8, PixelFormat::Indexed8, 0);
+        CHECK(s8 && s8->pixels().size() == 128, "Indexed8: a byte a pixel");
+        Surface* s32 = disp.acquire(a, "a", 16, 8, PixelFormat::Rgb32, 0);
+        CHECK(s32 && s32->format() == PixelFormat::Rgb32 && s32->pixels().size() == 512 && s32->pitch() == 64,
+              "Rgb32 at the same size: four bytes a pixel, the buffer replaced");
+        CHECK(disp.acquire(a, "a", 16, 8, PixelFormat::Rgb32, 0) == s32, "and kept while the format holds");
+    }
+
     SECTION("multi-window -- frames and palette are counted per owner, not pooled");
     {
         NullDisplay disp;

@@ -23,11 +23,11 @@ method each, and the other two are the Limitations section.
 | 2 | **I/O footprint** — which ports, and *separately* which answer `IN` vs `OUT`: the bus decodes by cycle type | one 8-port block from `port`: `+0`/`+2` the ACRTC (both directions, different registers each way), `+1` the board's own MODE register (write-only), `+4`..`+7` the Bt453 (both directions); `+3`, the high byte of a 16-bit transfer an 8-bit host never makes, answers nothing | `decodes()`, `ioMap()` |
 | 3 | **Memory footprint.** On-board screen RAM the CPU addresses (VDM-1 decodes a 1 KB window), a framebuffer in main RAM (Dazzler decodes none, reads RAM), or private memory (CADzilla decodes none, and the CPU never sees it) | none | `decodes()`, `memMap()` |
 | 4 | **Where pixels come from and how you know they moved.** A write to on-board RAM latches a dirty flag; main RAM has to be polled against a shadow; a chip with its own memory tells you | `Hd63484::takeDirty()`, `Bt453::takeDirty()` | `pump()` |
-| 5 | **Geometry.** Native w×h — fixed, decoded from registers each frame, or **the monitor's**: a board with a real CRT controller can carry a fixed-frequency display and place the chip's picture in it. `PixelFormat::Indexed8` is the only format the seam has | the `mode` strap's VESA frame (one of the three primary VESA resolutions, 1024x768 by default); the ACRTC's picture placed by HDS/VDS against the mode's porches | `render()`, `acquire()` |
-| 6 | **Palette.** How many entries, from where. Dazzler: 16 from an RGBI nibble. VDM-1: 2. CADzilla: **256, and they are a chip** | `Bt453::palette()` | `setPalette()` |
+| 5 | **Geometry.** Native w×h — fixed, decoded from registers each frame, or **the monitor's**: a board with a real CRT controller can carry a fixed-frequency display and place the chip's picture in it. `PixelFormat::Indexed8` (an index into the palette) or `PixelFormat::Rgb32` (the color itself) — §3 says when a board needs the second | the `mode` strap's VESA frame (one of the three primary VESA resolutions, 1024x768 by default); the ACRTC's picture placed by HDS/VDS against the mode's porches | `render()`, `acquire()` |
+| 6 | **Palette.** How many entries, from where. Dazzler: 16 from an RGBI nibble. VDM-1: 2. CADzilla: **256 plus the overlay colors, and they are a chip** — so the chip, not the host, resolves them | `Bt453::lookup(p, ol)` | `render()` |
 | 7 | **Observable timing.** A status bit a guest can *time* (vblank, scan parity) comes off `clock_->now()` — never a poll counter. An oscillator the guest cannot observe (a cursor blink) comes off `Display::hostSeconds()` | the drawing time at `draw_rate=real`: T-states carried into 2CLK (`sync()`, remainder kept), one Clock deadline at the command's end (`arm()`) so an interrupt lands with no bus cycle; the raster counter is not modeled | `sync()`, `arm()` |
-| 8 | **Straps vs live status.** A strap has a setter and round-trips through `CONFIG SAVE`; live status has **no setter**, and that absence is the whole signal. A register that is write-only *on the wire* (a chip's format byte, or a board's own glue register) is still reflected as read-only live status — the board keeps the shadow the wire cannot give back. A fixed hardware fact with no jumper on the board (CADzilla's 2 MB of SRAM) is neither a strap nor live status — it is a constant. Every video board pushes `Display::widthProperty(videoWidth_)` | `port`, `mode`, `draw_rate`, `width`, `interrupt`; live `video`, `picture`, `wiring`, `hspol`/`vspol`/`amode`/`olen`, `status`, `irq` | `properties()` |
-| 9 | **Snapshot.** Runtime state only — never a strap, never the `Display*`. If no memory board holds your pixels, **they travel with you** | both chips, frame memory as a `blob` | `serialize()` |
+| 8 | **Straps vs live status.** A strap has a setter and round-trips through `CONFIG SAVE`; live status has **no setter**, and that absence is the whole signal. A register that is write-only *on the wire* (a chip's format byte, or a board's own glue register) is still reflected as read-only live status — the board keeps the shadow the wire cannot give back. A fixed hardware fact with no jumper on the board (CADzilla's 2 MB of SRAM) is neither a strap nor live status — it is a constant. Every video board pushes `Display::widthProperty(videoWidth_)` | `port`, `mode`, `draw_rate`, `width`, `interrupt`; live `video`, `picture`, `wiring`, `hspol`/`vspol`/`amode`/`olen`/`olsel`, `status`, `irq` | `properties()` |
+| 9 | **Snapshot.** Runtime state only — never a strap, never the `Display*`. If no memory board holds your pixels, **they travel with you** | both chips, frame memory and overlay SRAM as `blob`s | `serialize()` |
 
 Two things that are *not* the board's business, and each is the classic mistake: a **keyboard**
 is a separate board or an endpoint, never the window (`host/display.h`'s header note); and the
@@ -84,7 +84,7 @@ and a test's frame count depends on the machine it ran on.
 `render()` is one call that is the window, and its arguments are not decoration:
 
 ```cpp
-Surface* s = g_display->acquire(this, id, m.width, m.height, PixelFormat::Indexed8, videoWidth_);
+Surface* s = g_display->acquire(this, id, m.width, m.height, PixelFormat::Rgb32, videoWidth_);
 ```
 
 `this` keys **this board's own window** (issue #234: two boards of the same resolution would
@@ -92,18 +92,23 @@ otherwise land on one Surface), `id` **titles** it, `videoWidth_` **sizes** it �
 monitor mode, so the frame is the monitor's, not the chip's. Get that line right and the SDL
 back end's windowing, integer scaling, CRT look, focus policy and close box all arrive with no
 further code — and a `NullDisplay` keeps the same Surface per owner for a test to read. Then
-paint every pixel (the Surface may be last frame's buffer), hand over the palette, and present:
+paint every pixel (the Surface may be last frame's buffer) and present:
 
 ```cpp
-g_display->setPalette(this, dac_.palette());     // the RAMDAC IS the palette, verbatim
-s->clear(0);                                     // blanking is black
-if (on) paintFrame(s, m.width, m.height);        // the shift register, over the ACRTC's addresses
+paintFrame(m.width, m.height);                   // the shift registers: P7..0, OL1..0, BLANK per pixel
+// ...each bus value through the Bt453 -- dac_.lookup(p, ol), black for BLANK -- into s...
 g_display->present(this, s);
 ```
 
-That is the seam's whole shape, and for a board with a RAMDAC it is not an abstraction: an
-`Indexed8` Surface *is* the eight-bit pixel bus and `setPalette()` *is* the look-up table.
-Nothing gets translated.
+**Indexed8 or Rgb32.** The Dazzler and the VDM-1 paint `Indexed8`: one byte per pixel, an index
+the host resolves through `setPalette()`, so a color change is a palette away with no repaint.
+That is the right format whenever the board's color logic has **one input of at most eight
+bits**. CADzilla's has two: the Bt453 takes the frame memory's P7..0 *and* the overlay's
+OL1..0, and an overlay select replaces the palette entry rather than indexing it. Folding that
+into one host-side table would teach the host the RAMDAC's rules. So the board keeps the
+RAMDAC's input bus itself (`busPixel`: what a test reads to see pixel *values*), runs the chip
+(`Bt453::lookup`, Table 3), and paints `Rgb32`: the colors, which the host shows as they are.
+The palette RAM and the overlay registers stay separate, as they are in the part.
 
 ## 4. Wiring — every file a video board touches
 
@@ -130,21 +135,25 @@ can look at when it fails. Two pieces fix that.
 **`host/framedump.h`** takes a Surface and its palette out of the seam in the forms a person
 and a test can use: `frameText()` renders it as a **text grid**, one character per pixel from a
 legend; `framePpm()` / `writePpm()` resolve it through the palette into a **PPM image** any
-viewer opens; `frameCrc()` hashes the resolved RGB, so a palette-only change moves it. For a
-board with a RAMDAC, `frameRgb()` is literally the DAC in software — what the wire carries.
+viewer opens; `frameCrc()` hashes the resolved RGB, so a palette-only change moves it. An
+`Rgb32` Surface is already resolved: `frameRgb()` passes its colors through, and `frameText()`
+prints black as the legend's first character and any other color as `#`.
 
 **`tests/framecheck.h`** builds the assertion on top. The expected picture is a raw string
 literal *in the test*, readable by a person; on a mismatch the failure prints the first row that
 differs with a caret under the column **and writes what the board drew as a `.ppm`**, naming the
 path. A 640x480 frame is not readable one character per pixel, so CADzilla's end-to-end test
 draws its rectangle, line and dot on a 32-pixel grid and samples the frame at the same pitch —
-20 x 15 characters that a person can check against the commands that drew them:
+20 x 15 characters that a person can check against the commands that drew them. CADzilla
+paints `Rgb32`, so its test checks pixel *values* on the RAMDAC's input instead: `busView()`
+copies the board's `busPixel` P7..0 into an `Indexed8` frame on a second `NullDisplay`, and the
+same checks run on that:
 
 ```cpp
 TextGridOpts every32;
 every32.xStep = 32;
 every32.yStep = 32;
-CHECK_FRAME_OPTS(g.disp, g.cad, R"(
+CHECK_FRAME_OPTS(g.busView(), g.cad, R"(
 11111111111111111111
 1..................1
 1..................1
@@ -181,7 +190,7 @@ auto oracle = [](int x, int y) -> uint8_t {
                                         : ((x == 0 || x == 608) && y < 448);   // the sides
     return onRect ? 1 : 0;
 };
-CHECK_FRAME_PIXELS(g.disp, g.cad, oracle, "all 307,200 pixels match the oracle");
+CHECK_FRAME_PIXELS(g.busView(), g.cad, oracle, "all 307,200 pixels match the oracle");
 ```
 
 A single wrong pixel anywhere fails it, and the failure names the first differing pixel, how

@@ -35,6 +35,30 @@ std::vector<uint8_t> slurp(const std::string& path) {
 // no window. A board's test then uses CHECK_FRAME and trusts these.
 
 void test_framedump() {
+    SECTION("framedump -- an Rgb32 Surface is colors: 4 bytes a pixel, no palette, frameText by black");
+    {
+        Surface s(3, 2, PixelFormat::Rgb32);
+        CHECK(s.pitch() == 12 && s.pixels().size() == 24, "four bytes per pixel, pitch in bytes");
+        s.clear(7);
+        CHECK(s.pixels()[0] == 0 && s.pixels()[2] == 0 && s.pixels()[3] == 255,
+              "clear() is opaque black whatever the index");
+        s.put(0, 0, 9);
+        CHECK(s.pixels()[0] == 0, "put() takes an index, which an Rgb32 Surface has none of: a no-op");
+        auto px = s.pixels();
+        px[4] = 0x11; px[5] = 0x22; px[6] = 0x33;            // pixel (1,0)
+        px[12 + 8] = 0xFF;                                   // pixel (2,1): red
+        std::vector<Color> pal = {{9, 9, 9, 255}, {8, 8, 8, 255}};
+        std::vector<uint8_t> rgb = frameRgb(s, pal);
+        CHECK(rgb.size() == 18, "three bytes per pixel out, the alpha dropped");
+        CHECK(rgb[0] == 0 && rgb[3] == 0x11 && rgb[4] == 0x22 && rgb[5] == 0x33 && rgb[15] == 0xFF,
+              "the colors as painted -- the palette is not consulted");
+        CHECK(frameText(s) == ".#.\n..#\n", "frameText: black is legend[0], any other color '#'");
+        const uint32_t before = frameCrc(s, {});
+        CHECK(frameCrc(s, pal) == before, "frameCrc does not move with a palette it does not use");
+        px[4] = 0x12;
+        CHECK(frameCrc(s, {}) != before, "and does move with a color");
+    }
+
     SECTION("framedump -- frameRgb resolves indices through the palette; strays go black");
     {
         Surface s(2, 2, PixelFormat::Indexed8);

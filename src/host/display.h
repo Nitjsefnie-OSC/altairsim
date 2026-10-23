@@ -55,9 +55,18 @@ struct Color {
 //                 the VDM-1 is two colors. The host resolves index->Color when it
 //                 uploads the frame, so normal/reverse video and a Dazzler color
 //                 change are a setPalette() away, with no re-render.
+//   Rgb32      -- four bytes per pixel, R,G,B,A, the color itself; the palette is not
+//                 used. For a board whose color logic has more inputs than one 8-bit
+//                 index: CADzilla's Bt453 takes P7..0 AND an overlay select OL1..0, so the
+//                 board runs the RAMDAC itself (Bt453::lookup) and hands the host colors,
+//                 rather than teaching the host the part's rules.
 enum class PixelFormat {
     Indexed8,
+    Rgb32,
 };
+
+// Bytes one pixel of `fmt` takes in a Surface.
+constexpr int bytesPerPixel(PixelFormat fmt) { return fmt == PixelFormat::Rgb32 ? 4 : 1; }
 
 // A drawable buffer the board fills and present()s. Concrete and owns its pixels --
 // a board does not allocate host memory, it asks the Display to acquire() one and
@@ -67,16 +76,16 @@ enum class PixelFormat {
 class Surface {
 public:
     Surface(int w, int h, PixelFormat fmt)
-        : w_(w), h_(h), fmt_(fmt), pixels_((size_t)w * (size_t)h, 0) {}
+        : w_(w), h_(h), fmt_(fmt), pixels_((size_t)w * (size_t)h * (size_t)bytesPerPixel(fmt), 0) {}
 
     int width() const { return w_; }
     int height() const { return h_; }
     PixelFormat format() const { return fmt_; }
 
-    // Bytes per row. Indexed8 is tightly packed, so pitch == width; kept explicit
-    // so a future format (or a host that wants row alignment) does not force every
-    // board's inner loop to change.
-    int pitch() const { return w_; }
+    // Bytes per row. Both formats are tightly packed, so pitch == width x bytesPerPixel;
+    // kept explicit so a host that wants row alignment does not force every board's inner
+    // loop to change.
+    int pitch() const { return w_ * bytesPerPixel(fmt_); }
 
     // The pixel bytes, row-major, top-left origin. Mutable for the board to paint;
     // const for the host to upload.
@@ -84,13 +93,20 @@ public:
     std::span<const uint8_t> pixels() const { return pixels_; }
 
     // One pixel, bounds-checked to a no-op off the edge -- a glyph or a sprite that
-    // runs past the margin clips instead of corrupting the next row.
+    // runs past the margin clips instead of corrupting the next row. Indexed8 only: an
+    // Rgb32 board writes pixels() itself (a no-op here, never a byte of a color).
     void put(int x, int y, uint8_t index) {
+        if (fmt_ != PixelFormat::Indexed8) return;
         if (x < 0 || y < 0 || x >= w_ || y >= h_) return;
         pixels_[(size_t)y * (size_t)w_ + (size_t)x] = index;
     }
 
+    // Indexed8: every pixel `index`. Rgb32: every pixel opaque black (there is no index).
     void clear(uint8_t index = 0) {
+        if (fmt_ == PixelFormat::Rgb32) {
+            for (size_t i = 0; i < pixels_.size(); ++i) pixels_[i] = (i & 3) == 3 ? 255 : 0;
+            return;
+        }
         for (auto& p : pixels_) p = index;
     }
 
@@ -136,7 +152,8 @@ public:
     // on vsync, because emulated time, not the monitor, owns the clock.
     virtual void present(Owner owner, Surface* s) = 0;
 
-    // The palette the owner's Indexed8 Surface resolves against. Up to 256 entries; a board
+    // The palette the owner's Indexed8 Surface resolves against (an Rgb32 one uses none).
+    // Up to 256 entries; a board
     // sets only as many as it uses (2 for the VDM-1, 16 for the Dazzler). Entries a board
     // never sets stay black. Cheap enough to call every frame or only on a change -- the host
     // caches it per window.

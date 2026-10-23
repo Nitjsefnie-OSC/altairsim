@@ -1146,11 +1146,12 @@ CADzilla: an HD63484 ACRTC graphics board with a Bt453 RAMDAC and 2 MB of fixed 
 | `interrupt` | enum | `none` | `none` \| `int` \| `vi0` \| `vi1` \| `vi2` \| `vi3` \| `vi4` \| `vi5` \| `vi6` \| `vi7` | SW1-8: the S-100 line for the ACRTC's IRQ*. none (default) disconnects it. int (pin 73) or vi0..vi7 is asserted while an enabled status flag is set *(interrupt strap)* |
 | `video` | string | — | — | LIVE: whether the ACRTC is displaying -- OMR STR and DCR SE1 both set. Read-only **(read-only — not a key you may set)** |
 | `picture` | string | — | — | LIVE: the size in pixels of the picture that the ACRTC is set to show, and the position of its top-left corner in the monitor's frame. Read-only **(read-only — not a key you may set)** |
-| `wiring` | string | — | — | LIVE: 'ok' when the ACRTC settings agree with the board's wiring (CCR GBM 8 bpp, OMR GAI +8 words, OMR ACM the same as MODE AMODE). If not, it names the setting that is wrong, and the picture is scrambled. Read-only **(read-only — not a key you may set)** |
+| `wiring` | string | — | — | LIVE: 'ok' when the ACRTC settings agree with the board's wiring (CCR GBM 8 bpp, OMR GAI +8 words, OMR ACM the same as MODE AMODE, no displayed screen with MWR CHR set). If not, it names the setting that is wrong, and the picture is scrambled. Read-only **(read-only — not a key you may set)** |
 | `hspol` | string | — | — | LIVE: MODE register bit 0, the horizontal sync polarity. The simulator shows the value but does not use it. Read-only **(read-only — not a key you may set)** |
 | `vspol` | string | — | — | LIVE: MODE register bit 1, the vertical sync polarity. The simulator shows the value but does not use it. Read-only **(read-only — not a key you may set)** |
 | `amode` | string | — | — | LIVE: MODE register bit 2, the access mode of the board's fetch logic: single or interleaved. The ACRTC's OMR ACM bit must agree (see wiring). Read-only **(read-only — not a key you may set)** |
-| `olen` | bool | — | — | LIVE: MODE register bit 3, overlay enable. The board does not use this bit. Read-only **(read-only — not a key you may set)** |
+| `olen` | bool | — | — | LIVE: MODE register bit 3, overlay display enable. Off, the overlay is not shown; drawing into it still works. Read-only **(read-only — not a key you may set)** |
+| `olsel` | int | — | — | LIVE: MODE register bit 4, overlay select. Which half of the overlay memory a CHR screen draws into: 0 the half for the lower 1 MB of frame memory, 1 the upper. Read-only **(read-only — not a key you may set)** |
 | `status` | int | — | — | LIVE: the ACRTC status register -- CER ARD CED LPD RFF RFR WFR WFE. Read-only **(read-only — not a key you may set)** |
 | `irq` | bool | — | — | LIVE: whether IRQ* is asserted right now -- an enabled status flag pending AND the interrupt strap not 'none'. Read-only **(read-only — not a key you may set)** |
 

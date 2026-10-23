@@ -94,9 +94,25 @@
 //             until it is paid, the words behind it wait in the write FIFO and CED, the
 //             SR flags it raised and any words it answers stay unseen. Either way the
 //             raster counter is not modeled and DTACK/wait states do not exist.
-//   Not modeled: zoom, character screens, block/graphic cursors, light pen, blink
-//             attributes, DMA handshaking (DRD/DWT/DMOD run in the manual's "under
-//             program control" mode), interlace, master/slave sync.
+//   Character space: DRAWING only. A drawing access to a screen whose MWR CHR bit is set
+//             goes to the board's character memory (CHARACTER ADDRESS SPACE, below).
+//   Not modeled: zoom, character screen DISPLAY (raster addressing, RA0-RA4, block
+//             cursors), graphic cursors, light pen, blink attributes, DMA handshaking
+//             (DRD/DWT/DMOD run in the manual's "under program control" mode), interlace,
+//             master/slave sync.
+//
+// ---------------------------------------------------------------------------
+// THE CHARACTER ADDRESS SPACE (manual 3.1.1, 4.2.3.13)
+//
+// "The ACRTC controls two separate logical address spaces": each of the four screens is
+// graphic (MWR CHR = 0, a 20-bit address into the 1 M-word frame memory) or character
+// (MWR CHR = 1, a 64 K-word space, with the CHR pin high so the board can decode a
+// separate memory). Which memory answers a CHR access is the BOARD's wiring, so a board
+// that decodes CHR attaches its memory with setCharSpace(); a drawing access to a CHR
+// screen then reaches it at the low 16 bits of the address. A drawing access belongs to
+// the screen its pointer names: ORG's DN for the pixel commands, RWP's DN for the word
+// commands. With nothing attached, a CHR access goes to the frame memory as a graphic one
+// would -- a board that does not decode CHR.
 //
 // ---------------------------------------------------------------------------
 // DRAWING TIME (timed mode; datasheet Table 3, manual 2.2 and OMR ACP/RAM/ACM)
@@ -144,6 +160,15 @@ class StateReader;
 
 class Hd63484 {
 public:
+    // The board's character memory (CHARACTER ADDRESS SPACE above): one 16-bit word at a
+    // 16-bit address, read and written by the drawing processor with CHR high.
+    class CharSpace {
+    public:
+        virtual ~CharSpace() = default;
+        virtual uint16_t charRead(uint16_t addr) = 0;
+        virtual void     charWrite(uint16_t addr, uint16_t v) = 0;
+    };
+
     // `vramWords` is how much frame memory the BOARD fitted, in 16-bit words. The chip
     // emits a 20-bit word address; a smaller memory aliases (the DRAM does not decode
     // the high bits), which is what the silicon on a real board does too.
@@ -160,6 +185,10 @@ public:
     void reset();
     // Power-on: everything zero, then reset(). The frame memory comes up zero.
     void power();
+
+    // Wire the CHR pin to a memory of the board's (nullptr = not decoded). Not state: the
+    // board attaches it once, and a snapshot carries the memory with the board.
+    void setCharSpace(CharSpace* cs) { charSpace_ = cs; }
 
     // ---- DRAWING TIME (see DRAWING TIME above) ----
 
@@ -354,8 +383,29 @@ private:
     void     buildTimeline();                           // slotFree_/rasterFree_ from the registers
     uint64_t xferCost() const;                          // the transfer word about to move
 
-    void     vramWrite(uint32_t addr, uint16_t v) { vram_[addr & vmask_] = v; dirty_ = true; }
-    uint16_t vramRead(uint32_t addr) const { return vram_[addr & vmask_]; }
+    // A drawing access to word `addr` of screen `dn`: the frame memory, or the board's
+    // character memory when that screen's MWR CHR bit is set and the board decodes CHR.
+    //
+    // KEEP THIS SHAPE. Written as one `charSpace_ && (regWord(..) & 0x8000)` expression, MSVC
+    // 14.51 (Visual Studio 18) compiles the function to `xor al, al; ret` -- always false -- so a
+    // CHR screen drew into the frame memory on Windows alone. The early return and the separate
+    // bit test compile correctly there; the CHR tests in test_hd63484 and test_cadzilla guard it.
+    bool     charScreen(int dn) const {
+        if (charSpace_ == nullptr) return false;
+        const uint16_t mwr = regWord((uint8_t)(0xC2 + dn * 8));
+        return (mwr & 0x8000) != 0;
+    }
+    void     vramWrite(int dn, uint32_t addr, uint16_t v) {
+        if (charScreen(dn)) {
+            charSpace_->charWrite((uint16_t)addr, v);
+            return;
+        }
+        vram_[addr & vmask_] = v;
+        dirty_ = true;
+    }
+    uint16_t vramRead(int dn, uint32_t addr) const {
+        return charScreen(dn) ? charSpace_->charRead((uint16_t)addr) : vram_[addr & vmask_];
+    }
 
     // Status bits.
     static constexpr uint8_t kCER = 0x80, kARD = 0x40, kCED = 0x20, kLPD = 0x10;
@@ -403,6 +453,7 @@ private:
     std::vector<uint16_t> vram_;
     uint32_t vmask_;
     bool     dirty_ = true;
+    CharSpace* charSpace_ = nullptr;  // the board's CHR decode, or none
 
     // Drawing time. timed_ is the board's strap and does not travel in a snapshot.
     bool     timed_ = false;

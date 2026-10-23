@@ -17,10 +17,13 @@ namespace {
 
 // A machine with a cadzilla and a NullDisplay wired to it -- the SAME injection main()
 // does (CadzillaBoard::setDisplay), one backend down. The board builds the monitor's frame
-// in memory and the test reads the whole picture back with CHECK_FRAME.
+// in memory and hands the host colors (an Rgb32 Surface, through the Bt453). A test reads
+// the colors from `disp`, and reads what the shift registers put on the RAMDAC's input --
+// the pixel VALUES, P7..0 -- from busView(), with CHECK_FRAME.
 struct Rig {
     Machine        m;
     NullDisplay    disp;
+    NullDisplay    bus;    // busView()'s: the RAMDAC's P7..0 input as an Indexed8 frame
     CadzillaBoard* cad = nullptr;
 
     static constexpr uint8_t kAcrtc     = 0x70;   // BASE+0: ACRTC RS=0 (address/status)
@@ -102,9 +105,70 @@ struct Rig {
     }
     void color(uint8_t idx) { cmd(0x0801, {(uint16_t)((idx << 8) | idx)}); }   // CL1, both bytes
 
-    uint8_t px(int x, int y) const {
+    // P7..0 at frame pixel (x, y) in the last frame; a BLANK pixel reads 0.
+    uint8_t px(int x, int y) const { return (uint8_t)cad->busPixel(x, y); }
+
+    // The last frame's P7..0 as an Indexed8 frame under the Bt453's palette RAM, for the
+    // CHECK_FRAME family: the frame the board drew, as pixel values. BLANK reads as 0.
+    NullDisplay& busView() {
+        const auto& md = cad->currentMode();
+        Surface*    s  = bus.acquire(cad, "bus", md.width, md.height, PixelFormat::Indexed8, 0);
+        for (int y = 0; y < md.height; ++y)
+            for (int x = 0; x < md.width; ++x) s->put(x, y, px(x, y));
+        const auto pal = cad->dac().palette();
+        bus.setPalette(cad, pal);
+        bus.present(cad, s);
+        return bus;
+    }
+
+    // ---- the overlay ----
+    // ORG at word `addr` of screen `dn`, dot 0.
+    void org(int dn, uint32_t addr) {
+        cmd(0x0400, {(uint16_t)((dn << 14) | ((addr >> 12) & 0xFF)), (uint16_t)((addr & 0xFFF) << 4)});
+    }
+    // Draw the overlay: the Upper screen (0) made a CHR screen one bit per frame pixel wide
+    // (MW = width / 16 words), 1 bpp, its origin on the overlay word of the frame's bottom-left
+    // pixel -- so overlay (X, Y) is frame (X, Y), the same coordinates programMode() gives
+    // the frame memory. Never display-enabled.
+    void overlayScreen() {
+        const auto& md = cad->currentMode();
+        reg(0xC2, (uint16_t)(0x8000 | (md.width / 16)));     // MWR0: CHR, MW
+        reg(0x02, 0x0000);                                    // CCR: GBM = 000 (1 bpp)
+        org(0, (uint32_t)(md.height - 1) * (uint32_t)(md.width / 16));
+        cmd(0x0801, {0xFFFF});                                // CL1: the bit set
+    }
+    // Back to drawing the frame memory: 8 bpp, ORG on screen 1 as programMode() left it.
+    void frameScreen() {
+        const auto& md = cad->currentMode();
+        reg(0x02, 0x0300);
+        org(1, (uint32_t)(md.height - 1) * (uint32_t)(md.width / 2));
+    }
+    void dot(int x, int y) {
+        cmd(0x8000, {(uint16_t)x, (uint16_t)y});
+        cmd(0xCC00);
+    }
+    // Bt453 overlay color `n` (1-3): its address through C1C0 = 00, R,G,B at C1C0 = 11.
+    void ovlColor(uint8_t n, uint8_t r, uint8_t g, uint8_t b) {
+        m.bus.ioWrite(kDac + 0, n);
+        m.bus.ioWrite(kDac + 3, r);
+        m.bus.ioWrite(kDac + 3, g);
+        m.bus.ioWrite(kDac + 3, b);
+    }
+    // The color the host was handed at frame pixel (x, y).
+    Color rgb(int x, int y) const {
         const Surface* s = disp.surface(cad);
-        return s->pixels()[(size_t)y * (size_t)s->pitch() + (size_t)x];
+        const size_t   i = (size_t)y * (size_t)s->pitch() + (size_t)x * 4;
+        return Color{s->pixels()[i], s->pixels()[i + 1], s->pixels()[i + 2], s->pixels()[i + 3]};
+    }
+
+    // Is the last frame black wherever it is sampled (every 97th pixel)? Colors, not values.
+    bool frameBlack(int w, int h) const {
+        const Surface* s = disp.surface(cad);
+        if (!s || s->width() != w || s->height() != h) return false;
+        const std::vector<uint8_t> rgb = frameRgb(*s, {});
+        for (size_t i = 0; i < rgb.size(); i += 97)
+            if (rgb[i] != 0) return false;
+        return true;
     }
 };
 
@@ -146,7 +210,7 @@ void test_cadzilla() {
         CHECK(!g.cad->decodes(c), "nowhere");
     }
 
-    SECTION("cadzilla -- the MODE register (BASE+3): write-only glue, decoded into live status");
+    SECTION("cadzilla -- the MODE register (BASE+1): write-only glue, decoded into live status");
     {
         Rig g;
         auto prop = [&](const char* name) -> Property {
@@ -160,17 +224,24 @@ void test_cadzilla() {
         };
         CHECK(val("hspol") == "positive" && val("vspol") == "positive" && val("amode") == "single",
               "the register comes up all zero");
-        CHECK(prop("olen").get().b() == false, "OLEN off");
-        CHECK(!prop("hspol").set && !prop("vspol").set && !prop("amode").set && !prop("olen").set,
-              "all four report read-only -- the register itself is write-only on the wire");
+        CHECK(prop("olen").get().b() == false && val("olsel") == "0", "OLEN off, OLSEL 0");
+        CHECK(!prop("hspol").set && !prop("vspol").set && !prop("amode").set && !prop("olen").set &&
+                  !prop("olsel").set,
+              "all five report read-only -- the register itself is write-only on the wire");
 
         g.mode_reg(0x01);                          // HSPOL alone
         CHECK(val("hspol") == "negative" && val("vspol") == "positive" && val("amode") == "single",
               "HSPOL decodes on its own");
-        g.mode_reg(0x0F);                           // every bit the spec names
+        g.mode_reg(0x1F);                           // every bit the board connects
         CHECK(val("hspol") == "negative" && val("vspol") == "negative" && val("amode") == "interleaved",
-              "all four bits decode independently");
-        CHECK(prop("olen").get().b() == true, "OLEN on -- TBD, wired to nothing else yet");
+              "all five bits decode independently");
+        CHECK(prop("olen").get().b() == true && val("olsel") == "1", "OLEN on, OLSEL 1");
+        g.mode_reg(0x10);
+        CHECK(prop("olen").get().b() == false && val("olsel") == "1", "OLSEL is its own bit");
+        g.mode_reg(0x1F);
+        g.m.reset(Reset::Bus);                      // the 74LS273's ~MR is on bus RESET*
+        CHECK(val("amode") == "single" && prop("olen").get().b() == false && val("olsel") == "0",
+              "RESET* clears the whole register");
 
         BusCycle c;
         c.type = Cycle::IoRead;
@@ -200,10 +271,7 @@ void test_cadzilla() {
         CHECK(g.disp.frames(g.cad) == 1, "the first pump presents a frame -- the window opens at the prompt");
         const Surface* s = g.disp.surface(g.cad);
         CHECK(s && s->width() == 1024 && s->height() == 768, "at the mode's size");
-        bool black = s != nullptr;
-        for (size_t i = 0; black && i < s->pixels().size(); i += 97)
-            if (s->pixels()[i] != 0) black = false;
-        CHECK(black, "and black: no signal");
+        CHECK(g.frameBlack(1024, 768), "and black: no signal");
         g.cad->pump();
         CHECK(g.disp.frames(g.cad) == 1, "and nothing repaints it until something changes");
     }
@@ -242,7 +310,7 @@ void test_cadzilla() {
         TextGridOpts every32;
         every32.xStep = 32;
         every32.yStep = 32;
-        CHECK_FRAME_OPTS(g.disp, g.cad, R"(
+        CHECK_FRAME_OPTS(g.busView(), g.cad, R"(
 11111111111111111111
 1..................1
 1..................1
@@ -270,23 +338,24 @@ void test_cadzilla() {
                                                 : ((x == 0 || x == 608) && y > 0 && y < 448);
             return onRect ? 1 : 0;
         };
-        CHECK_FRAME_PIXELS(g.disp, g.cad, oracle, "all 307,200 pixels match the oracle for the three commands");
+        CHECK_FRAME_PIXELS(g.busView(), g.cad, oracle, "all 307,200 pixels match the oracle for the three commands");
 
-        // THE RAMDAC IS THE PALETTE: what the wire carries is the LUT, not the index.
-        const auto& pal = g.disp.palette(g.cad);
-        CHECK(pal.size() == 256 && pal[1].r == 0xFF && pal[3].b == 0xFF, "the 256 LUT entries, as loaded");
-        std::vector<uint8_t> rgb = frameRgb(*s, pal);
+        // THE RAMDAC: what the wire carries is the LUT's color, not the index.
+        const auto pal = g.cad->dac().palette();
+        CHECK(pal[1].r == 0xFF && pal[3].b == 0xFF, "the 256 LUT entries, as loaded");
+        CHECK(s->format() == PixelFormat::Rgb32, "the host is handed colors");
+        std::vector<uint8_t> rgb = frameRgb(*s, {});
         size_t dot = ((size_t)352 * 640 + 320) * 3;
         CHECK(rgb[dot] == 0 && rgb[dot + 1] == 0xFF && rgb[dot + 2] == 0, "the dot resolves to green");
 
         // A palette-only change: no drawing command, yet the picture on the wire moves.
-        uint32_t before = frameCrc(*s, pal);
+        uint32_t before = frameCrc(*s, {});
         g.cad->pump();
         CHECK(g.disp.frames(g.cad) == 1, "nothing changed: no new frame");
         g.lut(1, 0xFF, 0xFF, 0xFF);
         g.cad->pump();
         CHECK(g.disp.frames(g.cad) == 2, "a LUT write is a change the host must see");
-        CHECK(frameCrc(*g.disp.surface(g.cad), g.disp.palette(g.cad)) != before, "and the resolved frame differs");
+        CHECK(frameCrc(*g.disp.surface(g.cad), {}) != before, "and the resolved frame differs");
         CHECK(g.px(0, 0) == 1, "while the pixel values are what they were");
     }
 
@@ -344,8 +413,11 @@ void test_cadzilla() {
         g.reg(0x04, 0x4000);                       // GAI = 000: the ACRTC steps ONE word per cycle
         g.cad->pump();
         CHECK(g.cad->wiring() == "OMR GAI is +1 words, the board fetches 8", "SHOW names the mismatch");
-        CHECK(g.px(0, 0) == 0x10 && g.px(16, 0) == 0x11 && g.px(17, 0) == 0x21,
-              "the board still fetches eight words per cycle, so the picture repeats itself, as the hardware would");
+        // A fetch reads row A >> 3 of all eight banks (MA2..0 select no bank on a display
+        // cycle), so fetches at A = 0..7 all show words 0..7 and A = 8 is the next row.
+        CHECK(g.px(0, 0) == 0x10 && g.px(16, 0) == 0x10 && g.px(17, 0) == 0x20 && g.px(112, 0) == 0x10 &&
+                  g.px(128, 0) == 0x18,
+              "the board still fetches the aligned eight-word row, so the picture repeats itself, as the hardware would");
         g.reg(0x04, 0x4030);
 
         g.reg(0x02, 0x0200);                       // GBM = 010: 4 bpp
@@ -401,7 +473,7 @@ void test_cadzilla() {
         TextGridOpts every32;
         every32.xStep = 32;
         every32.yStep = 32;
-        CHECK_FRAME_OPTS(g.disp, g.cad, R"(
+        CHECK_FRAME_OPTS(g.busView(), g.cad, R"(
 ....................
 ....................
 ....................
@@ -440,7 +512,7 @@ void test_cadzilla() {
         TextGridOpts every64;
         every64.xStep = 64;
         every64.yStep = 64;
-        CHECK_FRAME_OPTS(g.disp, g.cad, R"(
+        CHECK_FRAME_OPTS(g.busView(), g.cad, R"(
 1111111111111111
 1..............1
 1..............1
@@ -455,7 +527,7 @@ void test_cadzilla() {
 1111111111111111
 )", every64, "sampled every 64th pixel: the border, at 1024x768 through the interleaved fetch");
         // Every pixel: the perimeter of (0,63)-(960,767) is rows 0 and 704, columns 0 and 960.
-        CHECK_FRAME_PIXELS(g.disp, g.cad, [](int x, int y) -> uint8_t {
+        CHECK_FRAME_PIXELS(g.busView(), g.cad, [](int x, int y) -> uint8_t {
             bool on = (y == 0 || y == 704) ? (x <= 960) : ((x == 0 || x == 960) && y < 704);
             return on ? 1 : 0;
         }, "all 786,432 pixels of the interleaved 1024x768 frame match");
@@ -482,7 +554,7 @@ void test_cadzilla() {
             const Surface* s = g.disp.surface(g.cad);
             CHECK(s && s->width() == md.width && s->height() == md.height, "the frame is the mode's size");
             std::string what = std::string(md.name) + ": every pixel of the frame is the fill";
-            CHECK_FRAME_PIXELS(g.disp, g.cad, [](int, int) -> uint8_t { return 1; }, what.c_str());
+            CHECK_FRAME_PIXELS(g.busView(), g.cad, [](int, int) -> uint8_t { return 1; }, what.c_str());
         }
     }
 
@@ -504,6 +576,173 @@ void test_cadzilla() {
         CHECK(g.px(15, 3) == 0 && g.px(16, 3) == 5 && g.px(31, 3) == 5 && g.px(32, 3) == 0,
               "raster 3: the window's 16 pixels at x = 16..31");
         CHECK(g.px(16, 4) == 5 && g.px(16, 2) == 0 && g.px(16, 5) == 0, "two rasters tall, from raster 3");
+    }
+
+    // ---- THE OVERLAY: a one-bit plane in its own SRAM, shifted into the Bt453's OL1 ----
+
+    SECTION("cadzilla -- the overlay is drawn through a CHR screen, into its own SRAM");
+    {
+        Rig g;
+        std::string err;
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.programMode();
+        g.overlayScreen();
+        g.dot(320, 127);                           // frame (320, 352)
+        g.dot(335, 127);                           // (335, 352): the same 16 pixels, the last one
+        const uint32_t o = 352u * 40u + 20u;       // frame pixel p = 352 x 640 + 320 -> word p >> 4
+        CHECK(g.cad->overlayWord(o) == 0x8001, "pixels 320 and 335 are bits 0 and 15 of overlay word p >> 4");
+        bool clean = true;
+        for (uint16_t v : g.cad->acrtc().vram())
+            if (v) clean = false;
+        CHECK(clean, "no frame-memory bank is enabled on a CHR access: the frame memory is untouched");
+        CHECK(g.cad->overlayWord(0x10000 + o) == 0, "OLSEL 0: the lower half only");
+
+        g.mode_reg(0x10);                          // OLSEL: A16 on drawing cycles
+        g.dot(321, 127);
+        CHECK(g.cad->overlayWord(0x10000 + o) == 0x0002 && g.cad->overlayWord(o) == 0x8001,
+              "OLSEL 1: the same drawing address reaches the upper half");
+        g.mode_reg(0x00);
+
+        g.frameScreen();
+        g.color(1);
+        g.dot(0, 0);                               // frame (0, 479): word 479 x 320
+        CHECK(g.cad->acrtc().peekWord(479u * 320u) == 0x0001 && g.cad->overlayWord(479u * 40u) == 0,
+              "a graphic screen (CHR = 0) draws the frame memory again");
+        CHECK(g.cad->wiring() == "ok", "an undisplayed CHR screen is what the board is wired for");
+    }
+
+    SECTION("cadzilla -- OLEN shows the overlay as overlay color 2, single and interleaved");
+    for (bool il : {false, true}) {
+        Rig g;
+        std::string err;
+        const std::string how = il ? " (interleaved)" : " (single)";
+        std::string       msg;
+        auto              say = [&](const char* t) { return (msg = t + how).c_str(); };
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.programMode(il);
+        const uint8_t amode = il ? 0x04 : 0x00;
+        g.lut(1, 0xFF, 0, 0);                      // 1 = red
+        g.ovlColor(1, 0xFF, 0, 0xFF);              // the overlay colors the board never selects...
+        g.ovlColor(3, 0xFF, 0xFF, 0);
+        g.ovlColor(2, 0, 0xFF, 0xFF);              // ...and the one it does: cyan
+        g.color(1);
+        g.cmd(0x8000, {304, 127});
+        g.cmd(0x8800, {352, 127});                 // a red line under the overlay, x 304..351
+        g.overlayScreen();
+        g.dot(320, 127);
+        g.dot(335, 127);
+        g.frameScreen();
+
+        g.cad->pump();
+        CHECK(g.px(320, 352) == 1 && g.cad->busPixel(320, 352) == 0x0001, say("OLEN 0: OL1..0 stay 0"));
+        CHECK(g.rgb(320, 352).r == 0xFF && g.rgb(320, 352).g == 0, say("and the palette shows: red"));
+
+        g.mode_reg((uint8_t)(amode | 0x08));       // OLEN
+        g.cad->pump();
+        CHECK(g.cad->busPixel(320, 352) == 0x0201 && g.cad->busPixel(335, 352) == 0x0201,
+              say("OLEN 1: the set bits drive OL1 -- OL1..0 = 10, P7..0 still the frame's"));
+        CHECK(g.cad->busPixel(319, 352) == 0x0001 && g.cad->busPixel(321, 352) == 0x0001 &&
+                  g.cad->busPixel(336, 352) == 0x0001,
+              say("bit 0 is the fetch's leftmost pixel, bit 15 its rightmost, and nothing else is lit"));
+        const Color c = g.rgb(320, 352);
+        CHECK(c.r == 0 && c.g == 0xFF && c.b == 0xFF, say("the Bt453 shows overlay color 2 over the palette"));
+        CHECK(g.rgb(321, 352).r == 0xFF && g.rgb(321, 352).b == 0, say("its neighbor is the palette's red"));
+        CHECK(g.cad->wiring() == "ok", say("wired as the board is"));
+    }
+
+    SECTION("cadzilla -- the overlay word goes with its fetch: A >> 3, OLSEL's half behind the upper 1 MB");
+    {
+        Rig g;
+        std::string err;
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.programMode();
+        g.ovlColor(2, 0xFF, 0xFF, 0xFF);
+        g.overlayScreen();
+        g.org(0, 0);                               // overlay word 0, dot 0: Y counts down from here
+        g.mode_reg(0x10);                          // OLSEL 1: draw word $10000
+        g.dot(0, 0);
+        g.mode_reg(0x08);                          // OLEN, OLSEL 0
+        g.dot(1, 0);                               // word 0, bit 1
+        CHECK(g.cad->overlayWord(0x10000) == 0x0001 && g.cad->overlayWord(0) == 0x0002, "both halves drawn");
+        g.frameScreen();
+
+        g.cad->pump();                             // SAR1 = 0: the top raster fetches A = 0
+        CHECK(g.cad->busPixel(1, 0) == 0x0200 && g.cad->busPixel(0, 0) == 0,
+              "SAR 0: the lower half's word 0 is the top-left 16 pixels");
+        g.reg(0xCC, 0x0008);
+        g.reg(0xCE, 0x0000);                       // SAR1 = $80000: the upper 1 MB
+        g.cad->pump();
+        CHECK(g.cad->busPixel(0, 0) == 0x0200 && g.cad->busPixel(1, 0) == 0,
+              "SAR $80000: fetch A >> 3 = $10000, the half OLSEL 1 drew");
+        g.reg(0xCC, 0x0000);
+        g.reg(0xCE, 0x0003);                       // SAR1 = 3: not a multiple of 8
+        g.cad->pump();
+        CHECK(g.cad->busPixel(1, 0) == 0x0200, "SAR 3: the same row, so the same overlay word");
+    }
+
+    SECTION("cadzilla -- a display fetch reads the aligned row: a start address's low 3 bits select nothing");
+    {
+        Rig g;
+        std::string err;
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.programMode();
+        for (uint32_t i = 0; i < 16; ++i) g.cad->acrtc().pokeWord(i, (uint16_t)(0x2010 + i * 0x0101));
+        g.reg(0xCE, 0x0003);                       // SAR1 = 3
+        g.cad->pump();
+        CHECK(g.px(0, 0) == 0x10 && g.px(1, 0) == 0x20 && g.px(15, 0) == 0x27,
+              "the first fetch is words 0-7, bank 0 first, as at SAR 0");
+        CHECK(g.px(16, 0) == 0x18, "the second, at A = 11, is the next row: words 8-15");
+    }
+
+    SECTION("cadzilla -- BLANK* is black, whatever the palette's entry 0 is");
+    {
+        Rig g;
+        std::string err;
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.lut(0, 0x40, 0x40, 0x40);                // entry 0: grey
+        g.cad->pump();
+        CHECK(g.frameBlack(640, 480), "before the ACRTC starts: no fetch anywhere, black");
+        g.programMode();
+        const uint16_t hdr = g.cad->acrtc().reg(0x84);
+        g.reg(0x84, (uint16_t)((hdr & 0xFF00) | 19));   // 20 cycles = 320 px
+        g.cad->pump();
+        CHECK(g.rgb(100, 0).r == 0x40 && g.px(100, 0) == 0, "a fetched pixel of value 0 is entry 0: grey");
+        CHECK(g.cad->busPixel(400, 0) == CadzillaBoard::kBusBlank && g.rgb(400, 0).r == 0 &&
+                  g.rgb(400, 0).g == 0 && g.rgb(400, 0).b == 0,
+              "past the display width the pixel is BLANK: black, not entry 0");
+    }
+
+    SECTION("cadzilla -- wiring names a displayed CHR screen; a snapshot carries the overlay");
+    {
+        Rig g;
+        std::string err;
+        CHECK(setProperty(*g.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        g.programMode();
+        g.ovlColor(2, 0, 0xFF, 0);
+        g.overlayScreen();
+        g.dot(32, 479);                            // the top raster, x 32: overlay word 2, bit 0
+        g.frameScreen();
+        g.mode_reg(0x18);                          // OLEN, OLSEL
+        CHECK(g.cad->wiring() == "ok", "screen 0 is CHR but not displayed: ok");
+        g.reg(0x06, 0x7000);                       // DCR: SE1, and the upper screen enabled too
+        CHECK(g.cad->wiring() == "MWR0 CHR is set on a displayed screen, the board has no character display path",
+              "a displayed CHR screen is named");
+        g.reg(0x06, 0x4000);
+
+        StateWriter w;
+        g.cad->serialize(w);
+        Rig h;
+        CHECK(setProperty(*h.cad, "mode", "640x480", err), "the mode strap takes 640x480");
+        StateReader r(w.data());
+        h.cad->deserialize(r);
+        CHECK(r.ok(), "the state reads back");
+        CHECK(h.cad->overlayWord(2) == 0x0001, "the overlay SRAM travelled");
+        h.cad->pump();
+        CHECK(h.cad->busPixel(32, 0) == 0x0200 && h.rgb(32, 0).g == 0xFF, "and OLEN with it: the overlay shows");
+        h.overlayScreen();
+        h.dot(48, 479);                            // OLSEL travelled too: it draws the upper half
+        CHECK(h.cad->overlayWord(0x10000 + 3) == 0x0001, "and OLSEL with it");
+        g.adopt();
     }
 
     SECTION("cadzilla -- interrupts (SW1-8): disconnected by default, strapped to pin 73 or a VI line");
@@ -629,7 +868,7 @@ void test_cadzilla() {
         TextGridOpts every32;
         every32.xStep = 32;
         every32.yStep = 32;
-        CHECK_FRAME_OPTS(h.disp, h.cad, R"(
+        CHECK_FRAME_OPTS(h.busView(), h.cad, R"(
 11111111111111111111
 1..................1
 1..................1
@@ -646,18 +885,14 @@ void test_cadzilla() {
 1..................1
 11111111111111111111
 )", every32, "the restored board repaints the same picture from its own frame memory");
-        CHECK(h.disp.palette(h.cad)[1].r == 0xFF, "with the same palette");
+        CHECK(h.cad->dac().lookup(1).r == 0xFF, "with the same palette");
 
         g.adopt();
         g.m.reset(Reset::Bus);                     // RESET*: the ACRTC stops (STR clears)
         CHECK(!g.cad->acrtc().displayOn(), "RESET* stops the display");
         CHECK(g.cad->dac().lookup(1).r == 0xFF, "the Bt453 has no reset pin: the LUT survives");
         g.cad->pump();
-        const Surface* s = g.disp.surface(g.cad);
-        bool black = s && s->width() == 640 && s->height() == 480;
-        for (size_t i = 0; black && i < s->pixels().size(); i += 97)
-            if (s->pixels()[i] != 0) black = false;
-        CHECK(black, "and the monitor shows a black 640x480 frame -- the window stays, the picture is gone");
+        CHECK(g.frameBlack(640, 480), "and the monitor shows a black 640x480 frame -- the window stays, the picture is gone");
     }
 
     // ---- DRAWING TIME: the draw_rate strap, 2CLK from the pixel clock, one deadline ----

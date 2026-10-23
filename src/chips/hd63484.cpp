@@ -245,7 +245,7 @@ void Hd63484::feedRead() {
     rpending_.erase(rpending_.begin(), rpending_.begin() + (std::ptrdiff_t)n);
     while (xferRead_ && xferLeft_ > 0 && rfifoN_ + 2 <= kFifoBytes) {
         const uint64_t cost = timed_ ? xferCost() : 0;
-        uint16_t w = vramRead(xferAddr());
+        uint16_t w = vramRead(rwpDn_, xferAddr());
         pushRead((uint8_t)(w >> 8));
         pushRead((uint8_t)w);
         xferAdvance();
@@ -355,7 +355,7 @@ void Hd63484::commandWord(uint16_t w) {
         uint32_t addr = xferAddr();
         int      mm   = cmd_ & 3;
         bool     mod  = (cmd_ & 0xFF00) == 0x2C00;
-        vramWrite(addr, mod ? modify(vramRead(addr), w, mm) : w);
+        vramWrite(rwpDn_, addr, mod ? modify(vramRead(rwpDn_, addr), w, mm) : w);
         xferAdvance();
         if (xferLeft_ == 0) commandEnd();
         if (timed_) occupy(cost, before);
@@ -524,19 +524,19 @@ void Hd63484::execute() {
 
     // ---- Data transfer (manual 6.5) ----
     if (op == 0x4400) {                        // RD: one word at RWP -> read FIFO; RWP++
-        queueRead(vramRead(rwp()));
+        queueRead(vramRead(rwpDn_, rwp()));
         setRwp(rwp() + 1);
         endRead();
         return;
     }
     if (op == 0x4800) {                        // WT D: one word at RWP; RWP++
-        vramWrite(rwp(), u(0));
+        vramWrite(rwpDn_, rwp(), u(0));
         setRwp(rwp() + 1);
         commandEnd();
         return;
     }
     if ((op & ~0x0003) == 0x4C00) {            // MOD (MM) D under MASK; RWP++
-        vramWrite(rwp(), modify(vramRead(rwp()), u(0), op & 3));
+        vramWrite(rwpDn_, rwp(), modify(vramRead(rwpDn_, rwp()), u(0), op & 3));
         setRwp(rwp() + 1);
         commandEnd();
         return;
@@ -957,7 +957,7 @@ void Hd63484::clearBlock(uint16_t d, int16_t ax, int16_t ay, bool masked, int mm
     for (int y = 0; y != ay + dy; y += dy) {
         for (int x = 0; x != ax + dx; x += dx) {
             uint32_t addr = org + (uint32_t)x - (uint32_t)y * w;
-            vramWrite(addr, masked ? modify(vramRead(addr), d, mm) : d);
+            vramWrite(rwpDn_, addr, masked ? modify(vramRead(rwpDn_, addr), d, mm) : d);
         }
     }
     setRwp(org - (uint32_t)ay * w);               // RWPe: RWP's column on the last raster (manual CLR-4)
@@ -981,8 +981,8 @@ void Hd63484::copyBlock(uint32_t src, int16_t ax, int16_t ay, bool s, int dsd, b
         for (int i = 0; i < nFast; ++i) {
             const uint32_t sa = (uint32_t)((int64_t)src + i * step(ss.fx, ss.fy) + j * step(ss.sx, ss.sy));
             const uint32_t da = (uint32_t)(dst + i * step(ds.fx, ds.fy) + j * step(ds.sx, ds.sy));
-            const uint16_t v  = vramRead(sa);
-            vramWrite(da, masked ? modify(vramRead(da), v, mm) : v);
+            const uint16_t v  = vramRead(rwpDn_, sa);
+            vramWrite(rwpDn_, da, masked ? modify(vramRead(rwpDn_, da), v, mm) : v);
         }
     }
     setRwp((uint32_t)(dst + nSlow * step(ds.sx, ds.sy)));
@@ -1086,7 +1086,7 @@ void Hd63484::drawPixel(int x, int y) {
             uint32_t addr = 0;
             int      shift = 0;
             wordAddress(x, y, addr, shift);
-            vramWrite(addr, applyOpm(vramRead(addr), color, addr, shift, bitsPerPixel()));
+            vramWrite(orgDn_, addr, applyOpm(vramRead(orgDn_, addr), color, addr, shift, bitsPerPixel()));
         }
     }
     if (!stopped_) stepPatternX();
@@ -1270,7 +1270,7 @@ void Hd63484::paint(bool e) {
         uint32_t addr = 0;
         int      shift = 0;
         wordAddress(x, y, addr, shift);
-        const uint16_t v = (uint16_t)((vramRead(addr) >> shift) & fm);
+        const uint16_t v = (uint16_t)((vramRead(orgDn_, addr) >> shift) & fm);
         const bool     edge = e ? v != ((edg_ >> shift) & fm) : v == ((edg_ >> shift) & fm);
         return !edge && v != ((cl0_ >> shift) & fm) && v != ((cl1_ >> shift) & fm);
     };
@@ -1358,7 +1358,7 @@ void Hd63484::graphicCopy(int xs, int ys, int dx, int dy, bool s, int dsd) {
             uint32_t sa = 0;
             int      sh = 0;
             wordAddress(xs + i * ss.fx + j * ss.sx, ys + i * ss.fy + j * ss.sy, sa, sh);
-            const uint16_t v  = (uint16_t)((vramRead(sa) >> sh) & fm);
+            const uint16_t v  = (uint16_t)((vramRead(orgDn_, sa) >> sh) & fm);
             const int      tx = x0 + i * ds.fx + j * ds.sx, ty = y0 + i * ds.fy + j * ds.sy;
             if (!areaAllows(tx, ty)) {
                 if (stopped_) return;
@@ -1367,7 +1367,7 @@ void Hd63484::graphicCopy(int xs, int ys, int dx, int dy, bool s, int dsd) {
             uint32_t da = 0;
             int      dsh = 0;
             wordAddress(tx, ty, da, dsh);
-            vramWrite(da, applyOpm(vramRead(da), (uint16_t)(v << dsh), da, dsh, bpp));
+            vramWrite(orgDn_, da, applyOpm(vramRead(orgDn_, da), (uint16_t)(v << dsh), da, dsh, bpp));
         }
     }
     cpx_ = (int16_t)(x0 + nSlow * ds.sx);
@@ -1477,7 +1477,7 @@ void Hd63484::scanline(int y, std::span<uint16_t> out) const {
 
     uint32_t addr = sar(dn) + (uint32_t)(y - top) * mw(dn);
     for (int x = 0; x < n; x += ppw) {
-        uint16_t word = lit ? vramRead(addr++) : 0;
+        uint16_t word = lit ? peekWord(addr++) : 0;   // scan-out: graphic screens only
         for (int b = 0; b < ppw && x + b < n; ++b) {
             out[(size_t)(x + b)] = (uint16_t)(word & fm);
             word >>= bpp;
@@ -1499,7 +1499,7 @@ void Hd63484::scanline(int y, std::span<uint16_t> out) const {
         const int x0  = (hws - hds) * cyc;
         uint32_t  wa  = sar(3) + (uint32_t)wy * mw(3);
         for (int x = x0; x < x0 + hww * cyc; x += ppw) {
-            uint16_t word = vramRead(wa++);
+            uint16_t word = peekWord(wa++);
             for (int b = 0; b < ppw; ++b) {
                 int px = x + b;
                 if (px >= 0 && px < n) out[(size_t)px] = (uint16_t)(word & fm);
