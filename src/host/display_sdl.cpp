@@ -730,6 +730,13 @@ void SdlDisplay::present(Owner owner, Surface* s) {
     // the painted height (a stale, shorter frame would clip the stretched picture).
     refitForCrt(win);
 
+    // An Rgb32 frame is already the texture's bytes (R,G,B,A): upload it as it is.
+    if (s->format() == PixelFormat::Rgb32) {
+        SDL_UpdateTexture(win.texture, nullptr, s->pixels().data(), s->pitch());
+        drawLastFrame(win);
+        return;
+    }
+
     // Resolve the indexed frame against the palette into RGBA32 (bytes R,G,B,A).
     auto px = s->pixels();
     const size_t n = px.size();

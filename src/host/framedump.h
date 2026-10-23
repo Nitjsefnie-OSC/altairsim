@@ -3,9 +3,9 @@
 // framedump -- get a video board's frame OUT of the simulator, for a person to look at
 // and for a test to diff (DESIGN.md 7.4).
 //
-// A board paints an Indexed8 Surface and hands the host a palette; that is all a
-// Display ever sees, and it is all a test can read back through a NullDisplay
-// (display_null.h). But a Surface is a pile of palette indices, and "is pixel (32,0)
+// A board paints an Indexed8 Surface and hands the host a palette -- or paints an Rgb32
+// Surface of finished colors; that is all a Display ever sees, and it is all a test can read
+// back through a NullDisplay (display_null.h). But a Surface is a pile of palette indices, and "is pixel (32,0)
 // index 1" is a poor way to say "the picture is right". These are the two forms a
 // frame takes once it leaves the seam:
 //
@@ -40,7 +40,7 @@ namespace altair {
 
 // The frame as packed 24-bit RGB, row-major, top-left origin, 3 bytes per pixel. An index
 // past the palette's end resolves to black -- the same answer the SDL back end gives for an
-// entry a board never set.
+// entry a board never set. An Rgb32 frame is already colors: `pal` is not used.
 std::vector<uint8_t> frameRgb(const Surface& s, std::span<const Color> pal);
 
 // The frame as a complete binary PPM (P6) file image: "P6\n<w> <h>\n255\n" then frameRgb().
@@ -55,7 +55,9 @@ bool writePpm(const std::string& path, const Surface& s, std::span<const Color> 
 //   legend  -- index i prints as legend[i]; an index past the legend's end prints '?', so a
 //              stray value is visible rather than aliased onto a real color. The default
 //              names the sixteen entries a Dazzler or a 4-bpp board uses; a test with a
-//              256-entry palette picks a legend that names the entries it loaded.
+//              256-entry palette picks a legend that names the entries it loaded. An
+//              Rgb32 frame has no indices: black prints legend[0] and any other color
+//              '#', so the grid shows where the board drew, and frameCrc() what.
 //   xStep,  -- sample every Nth column / row. A 64x64 frame reads 1:1; a 512x208 VDM-1
 //   yStep      frame does not, and stepping by the glyph cell makes each character one
 //              character cell. Must be >= 1.

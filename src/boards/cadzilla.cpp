@@ -3,6 +3,7 @@
 #include "core/statefile.h"
 #include "host/display.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -41,7 +42,9 @@ int CadzillaBoard::modeCount() { return (int)(sizeof kModes / sizeof kModes[0]);
 void CadzillaBoard::setDisplay(Display* d) { g_display = d; }
 
 // 2 MB (1 M sixteen-bit words) fixed -- the reference design's SRAM fit, not a strap.
-CadzillaBoard::CadzillaBoard() : acrtc_(kVramWords) {}
+CadzillaBoard::CadzillaBoard() : acrtc_(kVramWords) {
+    acrtc_.setCharSpace(this);   // the board decodes CHR: character-space drawing is the overlay
+}
 
 CadzillaBoard::~CadzillaBoard() {
     if (clock_) clock_->cancel(wake_);
@@ -151,7 +154,7 @@ void CadzillaBoard::write(const BusCycle& c) {
         return;
     }
     if (off == 1) {
-        if (c.data != modeReg_) dirty_ = true;      // AMODE moves the picture; the rest is status
+        if (c.data != modeReg_) dirty_ = true;      // AMODE and OLEN move the picture; the rest does not
         sync();                                     // AMODE is also 2CLK: the time so far at the old rate
         modeReg_ = c.data;
         arm();
@@ -184,6 +187,9 @@ void CadzillaBoard::power() {
     acrtc_.power();
     dac_.reset();
     modeReg_ = 0;
+    // The overlay SRAM, like the frame memory, comes up zero -- the one deterministic choice
+    // for a part that powers up holding whatever it holds.
+    std::fill(ovl_.begin(), ovl_.end(), uint16_t{0});
     dirty_   = true;   // the monitor shows its (black) frame from power-on, signal or not
     // 2CLK restarts with the Clock (powered first; its queue, and our deadline, are gone).
     lastT_   = clock_ ? clock_->now() : 0;
@@ -201,6 +207,14 @@ void CadzillaBoard::serialize(StateWriter& w) const {
     acrtc_.serialize(w);
     dac_.serialize(w);
     w.u8(modeReg_);
+    // The overlay SRAM, little-endian words, length-prefixed like the frame memory.
+    std::vector<uint8_t> bytes;
+    bytes.reserve(ovl_.size() * 2);
+    for (uint16_t v : ovl_) {
+        bytes.push_back((uint8_t)v);
+        bytes.push_back((uint8_t)(v >> 8));
+    }
+    w.blob(bytes);
     w.u64(lastT_);
     w.u64(acc2clk_);
     w.u64(rem_);
@@ -211,12 +225,29 @@ void CadzillaBoard::deserialize(StateReader& r) {
     acrtc_.deserialize(r);
     dac_.deserialize(r);
     modeReg_ = r.u8();
+    std::vector<uint8_t> bytes = r.blob();
+    if (bytes.size() == ovl_.size() * 2) {
+        for (size_t i = 0; i < ovl_.size(); ++i)
+            ovl_[i] = (uint16_t)(bytes[2 * i] | (bytes[2 * i + 1] << 8));
+    }
     lastT_   = r.u64();
     acc2clk_ = r.u64();
     rem_     = r.u64();
     dirty_   = true;  // the restored picture owes the host a full redraw
     arm();             // a Handle never travels: the command in flight re-arms its end
     intChanged();      // the restored SR/CCR may be mid-interrupt
+}
+
+// ---------------------------------------------------------------------------
+// The CHR decode. A drawing access to a CHR screen enables no frame-memory bank (U56-U58
+// decode DRAW & !CHR); the overlay SRAM answers instead, at MAD0-15 with OLSEL as A16.
+// ---------------------------------------------------------------------------
+uint16_t CadzillaBoard::charRead(uint16_t addr) { return ovl_[overlayAddr(addr)]; }
+
+void CadzillaBoard::charWrite(uint16_t addr, uint16_t v) {
+    uint16_t& w = ovl_[overlayAddr(addr)];
+    if (w != v && (modeReg_ & kModeOlen)) dirty_ = true;   // a hidden overlay moves no pixel
+    w = v;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +293,15 @@ std::string CadzillaBoard::wiring() const {
             s += "OMR ACM is " + std::string(acrtcInterleaved ? "interleaved" : "single") +
                  ", MODE AMODE says " + std::string(modeInterleaved ? "interleaved" : "single") + "; ";
     }
+    // A CHR screen is the overlay's drawing path and must never be displayed: the board
+    // ignores CHR on a display cycle, so the screen would show frame memory at its address.
+    const uint16_t dcr = acrtc_.dcr();
+    const bool shown[4] = {(dcr & 0x3000) == 0x3000, (dcr & 0x4000) != 0,
+                           (dcr & 0x0C00) == 0x0C00, (dcr & 0x0300) == 0x0300};
+    for (int dn = 0; dn < 4; ++dn)
+        if (shown[dn] && (acrtc_.reg((uint8_t)(0xC2 + dn * 8)) & 0x8000))
+            s += "MWR" + std::to_string(dn) + " CHR is set on a displayed screen, the board has no "
+                 "character display path; ";
     if (s.empty()) return "ok";
     s.erase(s.size() - 2);
     return s;
@@ -288,39 +328,72 @@ void CadzillaBoard::pump() {
 // so the window opens on the first pump after power -- like the Dazzler's and the VDM-1's --
 // at the mode's size, and the ACRTC's picture appears in it once a program starts the chip.
 void CadzillaBoard::render() {
-    const bool  on = acrtc_.displayOn();
-    const Mode& m  = currentMode();
+    const Mode& m = currentMode();
     // `this` keys this board's own window (issue #234); id titles it; videoWidth_ sizes it.
-    Surface* s = g_display->acquire(this, id, m.width, m.height, PixelFormat::Indexed8, videoWidth_);
+    Surface* s = g_display->acquire(this, id, m.width, m.height, PixelFormat::Rgb32, videoWidth_);
     if (!s) return;
 
-    // THE RAMDAC: its 256-entry table is the palette, verbatim.
-    g_display->setPalette(this, dac_.palette());
+    // The shift registers: the RAMDAC's input for every pixel of the frame.
+    paintFrame(m.width, m.height);
 
-    s->clear(0);                              // blanking is black
-    if (on) paintFrame(s, m.width, m.height);
+    // THE RAMDAC: Table 3 for every input the bus can carry, once per frame -- P7..0 under
+    // each OL1..0 -- and black for BLANK*, which overrides the look-up table.
+    std::vector<Color> lut(1024);
+    for (int ol = 0; ol < 4; ++ol)
+        for (int p = 0; p < 256; ++p) lut[(size_t)(ol << 8 | p)] = dac_.lookup((uint8_t)p, (uint8_t)ol);
+    auto out = s->pixels();
+    for (size_t i = 0; i < bus_.size(); ++i) {
+        const uint16_t b = bus_[i];
+        const Color    c = (b & kBusBlank) ? Color{0, 0, 0, 255} : lut[b & 0x3FF];
+        uint8_t*       o = &out[i * 4];
+        o[0] = c.r;
+        o[1] = c.g;
+        o[2] = c.b;
+        o[3] = c.a;
+    }
     g_display->present(this, s);
 }
 
-// The shift register, run over the ACRTC's addresses for every raster of the frame.
-void CadzillaBoard::paintFrame(Surface* s, int w, int h) {
+uint16_t CadzillaBoard::busPixel(int x, int y) const {
+    if (x < 0 || y < 0 || x >= busW_ || y >= busH_) return 0;
+    return bus_[(size_t)y * (size_t)busW_ + (size_t)x];
+}
+
+// The shift registers, run over the ACRTC's addresses for every raster of the frame: the
+// frame memory's onto P7..0 and, when OLEN loads it, the overlay's onto OL1. Every pixel no
+// display fetch reaches is BLANK -- the porches, and the whole frame when the chip is not
+// displaying.
+void CadzillaBoard::paintFrame(int w, int h) {
+    busW_ = w;
+    busH_ = h;
+    bus_.assign((size_t)w * (size_t)h, kBusBlank);
+    if (!acrtc_.displayOn()) return;
+
     const Mode& m    = currentMode();
     const int   acm  = glueAccessMode();          // the board's OWN glue, from MODE AMODE
     const int   ppmc = kPixelsPerFetch / acm;     // pixels one memory cycle is worth
     const int   gai  = acrtc_.gaiWords();         // the ACRTC's own step per display cycle
     const int   hbp  = m.hbp * acm;               // the porch, in this mode's memory cycles
-    auto        px   = s->pixels();
+    const bool  olen = (modeReg_ & kModeOlen) != 0;
 
-    // One run of display cycles: `cycles` memory cycles starting at frame x `x0`, fetching
-    // 8 words at `addr` (advancing by GAI) on every `acm`-th memory cycle.
-    auto run = [&](uint8_t* dst, int x0, int cycles, uint32_t addr) {
+    // One run of display cycles: `cycles` memory cycles starting at frame x `x0`, one fetch
+    // at `addr` (advancing by GAI) on every `acm`-th memory cycle. A fetch reads row
+    // addr >> 3 of all eight banks -- MA2..0 select no bank on a display cycle -- and the
+    // overlay word of the same row.
+    auto run = [&](uint16_t* dst, int x0, int cycles, uint32_t addr) {
         for (int mc = 0; mc < cycles; mc += acm) {
-            int x = x0 + mc * ppmc;
+            const int      x    = x0 + mc * ppmc;
+            const uint32_t row  = addr & ~(uint32_t)(kWordsPerFetch - 1);
+            const uint16_t ovl  = olen ? ovl_[(addr >> 3) & kOvlMask] : 0;
             for (int i = 0; i < kWordsPerFetch; ++i) {
-                uint16_t word = acrtc_.peekWord(addr + (uint32_t)i);
-                int      xa   = x + 2 * i;
-                if (xa >= 0 && xa < w) dst[xa] = (uint8_t)word;            // low byte first
-                if (xa + 1 >= 0 && xa + 1 < w) dst[xa + 1] = (uint8_t)(word >> 8);
+                const uint16_t word = acrtc_.peekWord(row + (uint32_t)i);
+                for (int b = 0; b < 2; ++b) {                       // low byte first
+                    const int k  = 2 * i + b;                       // pixel k of the fetch
+                    const int xa = x + k;
+                    if (xa < 0 || xa >= w) continue;
+                    const uint16_t ol1 = (uint16_t)((ovl >> k) & 1);   // OL0 is tied low
+                    dst[xa] = (uint16_t)(((word >> (8 * b)) & 0xFF) | (ol1 << 9));
+                }
             }
             addr += (uint32_t)gai;
         }
@@ -328,7 +401,7 @@ void CadzillaBoard::paintFrame(Surface* s, int w, int h) {
 
     const int vbp = m.vbp;
     for (int y = 0; y < h; ++y) {
-        uint8_t*  dst   = px.data() + (size_t)y * (size_t)s->pitch();
+        uint16_t* dst   = bus_.data() + (size_t)y * (size_t)w;
         const int vsync = y + vbp;                // this raster, counted from VSYNC's rise
         uint32_t  addr  = 0;
         const int r     = vsync - acrtc_.vds();   // which background raster, if any
@@ -448,8 +521,9 @@ std::vector<Property> CadzillaBoard::properties() {
         Property x;
         x.name = "wiring";
         x.help = "LIVE: 'ok' when the ACRTC settings agree with the board's wiring (CCR GBM 8 "
-                 "bpp, OMR GAI +8 words, OMR ACM the same as MODE AMODE). If not, it names the "
-                 "setting that is wrong, and the picture is scrambled. Read-only";
+                 "bpp, OMR GAI +8 words, OMR ACM the same as MODE AMODE, no displayed screen "
+                 "with MWR CHR set). If not, it names the setting that is wrong, and the "
+                 "picture is scrambled. Read-only";
         x.kind = Kind::Str;
         x.get  = [this] { return Value::ofStr(wiring()); };
         p.push_back(std::move(x));
@@ -487,10 +561,20 @@ std::vector<Property> CadzillaBoard::properties() {
     {
         Property x;
         x.name = "olen";
-        x.help = "LIVE: MODE register bit 3, overlay enable. The board does not use this bit. "
-                 "Read-only";
+        x.help = "LIVE: MODE register bit 3, overlay display enable. Off, the overlay is not "
+                 "shown; drawing into it still works. Read-only";
         x.kind = Kind::Bool;
         x.get  = [this] { return Value::ofBool((modeReg_ & kModeOlen) != 0); };
+        p.push_back(std::move(x));
+    }
+    {
+        Property x;
+        x.name = "olsel";
+        x.help = "LIVE: MODE register bit 4, overlay select. Which half of the overlay memory "
+                 "a CHR screen draws into: 0 the half for the lower 1 MB of frame memory, 1 the "
+                 "upper. Read-only";
+        x.kind = Kind::Int;
+        x.get  = [this] { return Value::ofInt((modeReg_ & kModeOlsel) ? 1 : 0); };
         p.push_back(std::move(x));
     }
     {
@@ -519,7 +603,7 @@ std::vector<MapEntry> CadzillaBoard::ioMap() const {
         {(uint32_t)port_, (uint32_t)port_, "read/write",
          "ACRTC RS=0 -- status (CER ARD CED LPD RFF RFR WFR WFE) / address register"},
         {(uint32_t)(port_ + 1), (uint32_t)(port_ + 1), "write",
-         "MODE -- board glue: HSPOL(0) VSPOL(1) AMODE(2) OLEN(3)"},
+         "MODE -- board glue: HSPOL(0) VSPOL(1) AMODE(2) OLEN(3) OLSEL(4)"},
         {(uint32_t)(port_ + 2), (uint32_t)(port_ + 2), "read/write",
          "ACRTC RS=1 -- the register the address names, or the command FIFOs at AR=0"},
         {(uint32_t)(port_ + 4), (uint32_t)(port_ + 7), "read/write",

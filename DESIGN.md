@@ -1051,6 +1051,8 @@ public:
 };
 ```
 
+**A Surface is `Indexed8` or `Rgb32`.** `Indexed8` — one byte per pixel, resolved by the host through `setPalette()` — fits a board whose color logic has one input of at most eight bits (the Dazzler, the VDM-1), and keeps a color change a palette away. `Rgb32` is the colors themselves, for a board whose color logic has more inputs than one index: CADzilla's Bt453 takes P7..0 *and* an overlay select OL1..0, and the overlay replaces the palette entry instead of indexing it. That board runs its RAMDAC itself (`Bt453::lookup`) and hands the host colors, so the host never learns a chip's rules (`docs/devguide/video-board.md` §3).
+
 The two boards this must serve are usefully different, and the API should be hand-checked against both:
 - **VDM-1** is *memory-mapped*: a 1K text window the CPU writes into, plus a character-generator ROM; renders 16×64 characters. Its keyboard is a **separate parallel board** — so the SDL window's keystrokes must route back through a **`ByteStream`**, not a private path.
 - **Dazzler** is *DMA-driven* on the real card: it steals bus cycles to read a bitmap out of main memory, and it is the concrete reason DMA is in the bus model at all. The simulated `dazzler` does **not** use that path: it reads main RAM with `Bus::peek` once a frame, because nothing on the S-100 side can read a pixel back (`docs/boards/cromemco-dazzler.md`). The **Dazzler II** (`dazzler2`) is a bus *slave*: it watches memory writes (`wantsSnoop()`) and keeps the picture in 4 KB of its own RAM, so a guest can see what the original hides.

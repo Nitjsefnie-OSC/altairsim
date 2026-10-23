@@ -3,6 +3,7 @@
 #include "chips/hd63484.h"
 #include "core/statefile.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -1537,5 +1538,81 @@ void test_hd63484() {
         CHECK((d.status() & 0x21) == 0, "CED and WFE still owed");
         d.advance(g.c.busyUntil() + 8);
         CHECK((d.status() & 0x21) == 0x21, "and both come when the CLR and the DOT behind it are paid");
+    }
+
+    // ---- THE CHARACTER ADDRESS SPACE (manual 3.1.1, 4.2.3.13) ----
+
+    SECTION("hd63484 -- a drawing access to a CHR screen goes to the board's character memory");
+    {
+        // The board's memory on the CHR decode: 64 K words, at the low 16 address bits.
+        struct Chars : Hd63484::CharSpace {
+            std::vector<uint16_t> mem = std::vector<uint16_t>(0x10000);
+            uint16_t charRead(uint16_t a) override { return mem[a]; }
+            void     charWrite(uint16_t a, uint16_t v) override { mem[a] = v; }
+        };
+        auto vramClean = [](const Hd63484& c) {
+            for (uint16_t v : c.vram())
+                if (v) return false;
+            return true;
+        };
+
+        {
+            Rig g;                                // no CHR decode: a CHR screen is frame memory
+            g.screen4bpp();
+            g.reg(0xCA, 0x8010);                  // MWR1: CHR, 16 words per raster
+            g.cmd(0x8000, {0, 0});
+            g.cmd(0xCC00);                        // DOT at the origin
+            CHECK(g.c.vram()[Rig::kOrg] == 0x000F, "a board that does not decode CHR: the frame memory");
+        }
+        {
+            Rig   g;
+            Chars ch;
+            g.c.setCharSpace(&ch);
+            g.screen4bpp();
+            g.cmd(0x8000, {0, 0});
+            g.cmd(0xCC00);
+            CHECK(g.c.vram()[Rig::kOrg] == 0x000F && ch.mem[Rig::kOrg] == 0, "CHR = 0: the frame memory");
+
+            g.reg(0xCA, 0x8010);                  // the same screen, now a character screen
+            g.cmd(0x8000, {4, 0});
+            g.cmd(0xCC00);                        // a pixel command: ORG's screen
+            CHECK(ch.mem[Rig::kOrg + 1] == 0x000F, "CHR = 1: the DOT lands in the character memory...");
+            CHECK(g.c.vram()[Rig::kOrg + 1] == 0, "...and not in the frame memory");
+
+            // A word command: RWP's screen. RWP = $10100 on screen 1 -- past 64 K, so only
+            // the low 16 bits reach the character memory (MA16-19 carry a raster address).
+            g.cmd(0x080C, {0x4010});              // WPR RWP high: DN = 01, $10
+            g.cmd(0x080D, {0x1000});              // WPR RWP low: $100
+            g.cmd(0x4800, {0xBEEF});              // WT: one word at RWP
+            CHECK(ch.mem[0x0100] == 0xBEEF, "WT on a CHR screen: the character memory at the low 16 bits");
+            g.cmd(0x080C, {0x4010});
+            g.cmd(0x080D, {0x1000});
+            g.cmd(0x4400);                        // RD: read it back through the same decode
+            CHECK(g.readWord() == 0xBEEF, "RD reads the character memory too");
+
+            g.reg(0xCA, 0x0010);                  // graphic again
+            g.cmd(0x080C, {0x4000});
+            g.cmd(0x080D, {0x2000});              // RWP = $200
+            g.cmd(0x4800, {0x1234});
+            CHECK(g.c.vram()[0x200] == 0x1234 && ch.mem[0x200] == 0, "WT on a graphic screen: the frame memory");
+        }
+        {
+            Rig   g;                              // the screen a pixel command draws is ORG's, not RWP's
+            Chars ch;
+            g.c.setCharSpace(&ch);
+            g.screen4bpp();                       // ORG on screen 1, graphic
+            g.reg(0xC2, 0x8010);                  // MWR0: screen 0 is a CHR screen
+            g.cmd(0x080C, {0x0000});              // RWP on screen 0
+            g.cmd(0x8000, {0, 0});
+            g.cmd(0xCC00);
+            CHECK(g.c.vram()[Rig::kOrg] == 0x000F && !std::count_if(ch.mem.begin(), ch.mem.end(),
+                                                                    [](uint16_t v) { return v != 0; }),
+                  "a DOT on ORG's graphic screen stays in the frame memory, whatever RWP names");
+            g.cmd(0x0400, {0x0000, (uint16_t)(Rig::kOrg << 4)});   // ORG: DN = 00, the CHR screen
+            g.cmd(0x8000, {0, 0});
+            g.cmd(0xCC00);
+            CHECK(ch.mem[Rig::kOrg] == 0x000F, "and moves to the character memory with ORG");
+            CHECK(!vramClean(g.c), "(the earlier DOT is still in the frame memory)");
+        }
     }
 }

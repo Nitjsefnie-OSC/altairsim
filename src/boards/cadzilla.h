@@ -26,23 +26,28 @@
 //              Dazzler's for decoding no address.
 //   DISPLAY -- once per pump() the board builds the MONITOR'S frame -- a fixed VESA raster
 //              chosen by the `mode` strap, 1024x768 by default -- by running its own shift
-//              register over the addresses the ACRTC puts out, and hands the host the
-//              Bt453's 256-entry look-up table as the palette. Never touches SDL: the
-//              Display is injected at the composition root (setDisplay), a headless build
-//              gets a NullDisplay, and the board runs and is tested with no window
-//              (DESIGN.md 7.4).
+//              registers over the addresses the ACRTC puts out, and has the Bt453 turn each
+//              pixel into the color the host shows. Never touches SDL: the Display is
+//              injected at the composition root (setDisplay), a headless build gets a
+//              NullDisplay, and the board runs and is tested with no window (DESIGN.md 7.4).
 //
-// THE PIPELINE IS THE POINT. ACRTC frame memory -> 8-bit pixel value -> Bt453 LUT -> 24-bit
-// RGB, and the Display seam is shaped exactly like it: an Indexed8 Surface IS the P0-P7
-// bus, and setPalette() IS the RAMDAC. Nothing is translated; the board just wires them.
+// THE PIPELINE IS THE POINT. Frame memory -> P7..0, and the overlay SRAM -> OL1..0, both
+// into the Bt453, which drives 24-bit RGB. The board keeps the RAMDAC's input bus as it is
+// (busPixel: P, OL and BLANK for every pixel of the frame) and resolves it through the chip
+// (Bt453::lookup, Table 3) into an Rgb32 Surface. The palette RAM and the overlay registers
+// stay two separate things, as they are in the part: the host is handed colors, not a
+// look-up table it would have to know the RAMDAC's rules for.
 //
 // ---------------------------------------------------------------------------
 // WHAT THE BOARD DECIDED (a chip cannot), and every one of them is visible from the bus:
 //
-//   THE SHIFT REGISTER IS WIRED FOR 8 BITS PER PIXEL AND 8 WORDS PER FETCH. Each display
-//   cycle the ACRTC puts one address on MAD; the board fetches EIGHT consecutive words
-//   there (128 bits) and shifts them out as SIXTEEN 8-bit pixels, low byte of the low word
-//   first (so the ACRTC's +X is rightward -- chips/hd63484.h). That is a hardware fact,
+//   THE SHIFT REGISTER IS WIRED FOR 8 BITS PER PIXEL AND 8 WORDS PER FETCH. The frame
+//   memory is EIGHT banks of SRAM side by side: drawing word W is bank W & 7, row W >> 3.
+//   Each display cycle the ACRTC puts one address A on MAD; the board ignores MA2..0 and
+//   reads row A >> 3 of all eight banks at once -- words (A & ~7) + 0..7, bank 0 first, so
+//   a start address that is not a multiple of 8 has its low three bits ignored -- and
+//   shifts them out as SIXTEEN 8-bit pixels, low byte of the low word first (so the
+//   ACRTC's +X is rightward -- chips/hd63484.h). That is a hardware fact,
 //   not a register: a program must set CCR GBM = 011 (8 bpp) so the drawing engine's
 //   pixel arithmetic agrees with the wire, and OMR GAI = 011 (+8 words) so the ACRTC's
 //   address steps over exactly the words the board fetched. A program that sets either
@@ -66,8 +71,24 @@
 //   worth 8 pixels of the frame instead of 16. Superimposed mode (ACM = 11) is not wired:
 //   the window's second phase would need its own fetch path.
 //
-//   Also: OL1..0 tied low (no overlay source); IRQ* wired to the `interrupt` strap (SW1-8
-//   on the board enables it; off, the default, disconnects it -- see below).
+//   THE OVERLAY IS A ONE-BIT PLANE IN ITS OWN SRAM: 128 K words (U19), one bit per frame
+//   pixel, shifted out beside the frame memory into the Bt453's OL1. OL0 is tied low, so a
+//   set bit shows OVERLAY COLOR 2 and a clear bit the palette; overlay colors 1 and 3 are
+//   never selected. It has no display cycles of its own: every display fetch at A also
+//   reads overlay word A >> 3, the bits of exactly those 16 pixels, bit 0 leftmost. So
+//   frame pixel p (p = 2 x word address + byte) is overlay word p >> 4, bit p & 15.
+//   MODE OLEN gates the display only -- off, the overlay is transparent.
+//   The ACRTC DRAWS the overlay through a screen whose MWR CHR bit is set: the board
+//   decodes the chip's CHR pin, enables no frame-memory bank, and sends the access to U19
+//   at MAD0-15, with MODE OLSEL as the seventeenth address bit (a character screen has only
+//   64 K words, and its MA16-19 carry a raster address). So overlay word O is drawing
+//   address O & FFFF with OLSEL = O >> 16. A CHR screen must never be DISPLAY-enabled: the
+//   board ignores CHR on display cycles and would show frame memory there -- `wiring`
+//   says so. The board decides nothing more than that: which screen, and the GBM a program
+//   draws the overlay with, are the program's.
+//
+//   Also: IRQ* wired to the `interrupt` strap (SW1-8 on the board enables it; off, the
+//   default, disconnects it -- see below).
 //
 //   2CLK IS THE BOARD'S. The ACRTC's clock comes from the monitor's pixel clock (PCLK, the
 //   VESA rate of `mode`): PCLK/8 in single access mode, PCLK/4 in interleaved -- selected
@@ -87,18 +108,21 @@
 // THE MODE REGISTER (BASE+1, write-only) is the board's own glue logic, not a register on
 // either chip -- the host programs it in tandem with the ACRTC's own OMR when it sets up
 // the picture, and it is what the board's OWN fetch logic (programmedWidth/X, paintFrame)
-// reads for single vs. interleaved access, not the ACRTC's OMR bit. The bit assignment
-// below (0..3 in the order the fields were specified) is this implementation's own choice
-// -- the spec names the four fields and their meanings, not their bit positions -- and this
-// comment is the one place that choice is recorded:
+// reads for single vs. interleaved access, not the ACRTC's OMR bit:
 //
 //   bit 0  HSPOL  horizontal sync polarity: 0 = positive sync pulse, 1 = negative
 //   bit 1  VSPOL  vertical sync polarity:   0 = positive sync pulse, 1 = negative
 //   bit 2  AMODE  access mode the board's glue expects: 0 = single, 1 = interleaved --
 //                 must agree with the ACRTC's own OMR ACM bit, or `wiring` says so
-//   bit 3  OLEN   overlay enable -- TBD; keep 0. Not wired to anything yet: OL1..0 stay
-//                 tied low regardless (see above), so a set OLEN changes nothing today.
-//   bits 4-7      unused
+//   bit 3  OLEN   overlay display enable: 0 = the overlay shift register is never loaded
+//                 and OL1 stays low (transparent); drawing into the overlay is unaffected
+//   bit 4  OLSEL  the overlay SRAM's A16 on drawing cycles: which 64 K-word half a CHR
+//                 screen draws into (1 = the half behind the upper 1 MB of frame memory)
+//   bits 5-7      not connected
+//
+// The positions of bits 0-3 were this implementation's own choice and the board's
+// schematic agrees with them; OLSEL is the schematic's. The register is a 74LS273 that bus
+// RESET* clears, and it cannot be read back, so a driver keeps its own copy.
 //
 // HSPOL/VSPOL are recorded and reported (`SHOW`'s hspol/vspol) but drive nothing: this
 // model has no separate sync-pulse signal for a polarity to invert. See Limitations.
@@ -123,7 +147,7 @@ namespace altair {
 
 class Display;  // host/display.h -- injected; the board never learns it is SDL
 
-class CadzillaBoard : public Board {
+class CadzillaBoard : public Board, private Hd63484::CharSpace {
 public:
     CadzillaBoard();
     ~CadzillaBoard() override;  // cancels the drawing deadline (a fired stale alarm is a UAF)
@@ -149,8 +173,8 @@ public:
     bool    assertsInt() const override { return irq_ == IrqJumper::Int && acrtc_.irq(); }
     uint8_t assertsVi() const override { return acrtc_.irq() ? viBit(irq_) : 0; }
 
-    // SNAPSHOT/RESTORE (DESIGN.md 13): both chips, frame memory included -- no memory board
-    // holds it, so it must travel here.
+    // SNAPSHOT/RESTORE (DESIGN.md 13): both chips, frame memory and overlay SRAM included --
+    // no memory board holds them, so they must travel here.
     void serialize(StateWriter& w) const override;
     void deserialize(StateReader& r) override;
 
@@ -188,20 +212,33 @@ public:
     int programmedX() const;
     int programmedY() const;
 
-    // What SHOW's `wiring` says: "ok", or which of GBM / GAI / ACM disagrees with the board.
+    // What SHOW's `wiring` says: "ok", or which of GBM / GAI / ACM disagrees with the board,
+    // or that a CHR screen is displayed.
     std::string wiring() const;
 
     // The ACRTC's 2CLK in Hz: the mode's pixel clock over 8 (MODE AMODE single) or 4
     // (interleaved).
     long long twoClkHz() const;
 
-    // ---- For tests: the chips themselves ----
+    // ---- For tests: the chips themselves, the overlay SRAM and the RAMDAC's input ----
     Hd63484& acrtc() { return acrtc_; }
     Bt453&   dac() { return dac_; }
+    uint16_t overlayWord(uint32_t o) const { return ovl_[o & kOvlMask]; }
+    // The last frame's RAMDAC input at frame pixel (x, y): P7..0 in bits 7-0, OL1..0 in
+    // bits 9-8, and kBusBlank where no display fetch reached (BLANK*: black whatever the
+    // look-up table says). 0 off the frame or before the first frame.
+    uint16_t busPixel(int x, int y) const;
+    static constexpr uint16_t kBusBlank = 0x8000;
 
 private:
     void render();
-    void paintFrame(Surface* s, int w, int h);
+    void paintFrame(int w, int h);   // the shift registers, into bus_
+
+    // The CHR decode (Hd63484::CharSpace): a drawing access to a CHR screen reaches the
+    // overlay SRAM at MAD0-15, with MODE OLSEL as A16.
+    uint16_t charRead(uint16_t addr) override;
+    void     charWrite(uint16_t addr, uint16_t v) override;
+    uint32_t overlayAddr(uint16_t addr) const { return ((modeReg_ & kModeOlsel) ? 0x10000u : 0u) | addr; }
 
     // Drawing time: bring the ACRTC's 2CLK count up to the Clock, at the rate in force
     // since the last sync; then (re)arm the deadline at the end of whatever it is drawing.
@@ -223,10 +260,14 @@ private:
     static constexpr uint8_t kModeVspol = 0x02;
     static constexpr uint8_t kModeAmode = 0x04;
     static constexpr uint8_t kModeOlen  = 0x08;
+    static constexpr uint8_t kModeOlsel = 0x10;
 
     // 2 MB (1 M sixteen-bit words) -- the reference design's fixed SRAM fit; the ACRTC's
     // own 20-bit address space, exactly. Not a strap: the board has no jumper for it.
     static constexpr size_t kVramWords = 1u << 20;
+    // The overlay SRAM: 128 K sixteen-bit words, one bit per frame-memory pixel.
+    static constexpr size_t   kOvlWords = 1u << 17;
+    static constexpr uint32_t kOvlMask  = kOvlWords - 1;
 
     // ---- Straps ----
     uint8_t   port_ = 0x70;       // the 8-port block's BASE; a multiple of 8
@@ -236,10 +277,13 @@ private:
     bool      drawReal_ = false;  // draw_rate: false = full (instant), true = real (Table 3)
 
     // ---- Runtime state written by the guest, not a strap ----
-    uint8_t modeReg_ = 0;         // MODE register (BASE+1): HSPOL/VSPOL/AMODE/OLEN
+    uint8_t modeReg_ = 0;         // MODE register (BASE+1): HSPOL/VSPOL/AMODE/OLEN/OLSEL
+    std::vector<uint16_t> ovl_ = std::vector<uint16_t>(kOvlWords);   // the overlay SRAM
 
     // ---- Render bookkeeping ----
     bool dirty_ = true;           // something in the picture moved since the last frame
+    std::vector<uint16_t> bus_;   // the last frame's RAMDAC input, busPixel's layout
+    int  busW_ = 0, busH_ = 0;
 
     // ---- Drawing time: the ACRTC's 2CLK count, kept in step with the Clock ----
     uint64_t      lastT_ = 0;     // the Clock's T-state at the last sync

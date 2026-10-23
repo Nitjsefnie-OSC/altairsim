@@ -12,6 +12,22 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The CADzilla board has its overlay.** The board has a second picture of 1 bit for each pixel,
+in its own memory. Where a bit is 1, the Bt453 shows overlay color 2 in place of the color from
+the table. A guest draws the overlay through an ACRTC screen with the CHR bit set, and the new
+`OLSEL` bit of the MODE register selects which half of the overlay memory it draws. The `OLEN`
+bit, which did nothing before, now shows the overlay. `SHOW` gives the new `olsel` line, and the
+`wiring` line names a CHR screen that is enabled for display.
+
+**Two CADzilla display errors are corrected.** A fetch now reads 8 words that start at a
+multiple of 8, as on the hardware, so a start address that is not a multiple of 8 no longer
+moves the picture by part of a fetch. The area outside the picture is now black, as on the
+hardware; before, it had the color of entry 0 of the table.
+
+**Snapshots have a new format.** A snapshot now holds the overlay memory of a CADzilla board, so
+the snapshot format is now version 5. `RESTORE` does not accept a snapshot from release 1.3.4 or
+earlier.
+
 **The SS-1 math socket takes a 9511A or a 9512.** The CompuPro System Support 1 has a new `math`
 property: `none` (the default, the empty socket of a stock board), `9511a` (AMD Am9511A, Intel
 8231A) or `9512` (AMD Am9512, Intel 8232). With a chip in the socket, ports `58` and `59` are

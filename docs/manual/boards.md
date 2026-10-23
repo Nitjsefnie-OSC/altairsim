@@ -1726,7 +1726,7 @@ The board decodes one block of 8 I/O ports from `port` (default `70`):
 | Port | What it is |
 |---|---|
 | `port` | The ACRTC address register (write) and status register (read). |
-| `port+1` | The board's own MODE register, write only. It holds the sync polarity and the access mode of the board's fetch logic. |
+| `port+1` | The board's own MODE register, write only. It holds the sync polarity, the access mode of the board's fetch logic, and the two overlay bits `OLEN` (bit 3) and `OLSEL` (bit 4). A bus reset sets it to 0. |
 | `port+2` | The ACRTC control register that the address names, one byte at a time. The high byte is at an even address, and the low byte is at the odd address. |
 | `port+3` | Not decoded. On the real board, it is the high byte of a 16-bit transfer. An 8080 or Z80 does only 8-bit transfers. |
 | `port+4` to `port+7` | The Bt453: the address register, the color table (red, green, then blue), the address again, and the overlay colors. |
@@ -1746,8 +1746,19 @@ back porch of the mode ends fills the frame. A picture that starts one cycle ear
 and its edge is cut off.
 
 The shift register of the board is wired for **8 bits per pixel and 8 words for each fetch**. A
-guest must set the ACRTC to 8 bits per pixel and an address increment of +8. `SHOW <id>` has a
-`wiring` line. The line shows `ok`, or it names the setting that is wrong.
+guest must set the ACRTC to 8 bits per pixel and an address increment of +8. Each fetch reads 8
+words that start at a multiple of 8, so the board ignores the low 3 bits of a start address.
+`SHOW <id>` has a `wiring` line. The line shows `ok`, or it names the setting that is wrong.
+
+**The overlay** is a second picture of 1 bit for each pixel, in its own memory. Where an overlay
+bit is 1, the Bt453 shows its **overlay color 2** in place of the color from the table. The
+overlay shows only when the `OLEN` bit of the MODE register is 1. To draw the overlay, the guest
+uses an ACRTC screen with the CHR bit set in its memory width register. The board sends each
+drawing access to that screen to the overlay memory, not to the frame memory. The `OLSEL` bit
+of the MODE register selects which half of the overlay memory the guest draws. Do not enable
+that screen for display: the board then shows frame memory in its area, and the `wiring` line
+names the screen. To set overlay color 2, write `02` to `port+4`, then red, green and blue to
+`port+7`.
 
 **The board needs a display.** An SDL3 build opens a window with the board's id as its title. A
 build with no display runs in the same way and shows nothing. The frame memory is 2 MB, and you
@@ -1762,7 +1773,7 @@ cannot change it.
 | `video` | Live. `on` when the ACRTC shows a picture. |
 | `picture` | Live. The size of the picture, and its position in the frame. |
 | `wiring` | Live. `ok`, or the ACRTC setting that does not agree with the board. |
-| `hspol`, `vspol`, `amode`, `olen` | Live. The bits of the MODE register. |
+| `hspol`, `vspol`, `amode`, `olen`, `olsel` | Live. The bits of the MODE register. |
 | `status` | Live. The ACRTC status register. |
 | `irq` | Live. Whether the board asserts an interrupt now. |
 
