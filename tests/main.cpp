@@ -115,6 +115,8 @@ const struct {
     {"bitserial", test_bitserial},
     {"i8257", test_i8257},
     {"bt453", test_bt453},
+    {"am9511a", test_am9511a},
+    {"am9512", test_am9512},
     {"hd63484", test_hd63484},
     {"cadzilla", test_cadzilla},
     {"versafloppy", test_versafloppy},

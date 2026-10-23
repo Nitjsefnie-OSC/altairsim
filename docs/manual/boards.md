@@ -220,7 +220,7 @@ The boards are in groups, in the same order as the sections below.
 | Type | What it is |
 |---|---|
 | `virtc` | MITS 88-VI/RTC: vectored interrupts and a clock |
-| `ss1` | CompuPro System Support 1: a real-time clock, a serial channel, an interval timer and two interrupt controllers |
+| `ss1` | CompuPro System Support 1: a real-time clock, a serial channel, an interval timer, two interrupt controllers and a math socket |
 | `rtc100` | SciTronics RTC-100: a battery-backed real-time clock, with an optional interrupt each second |
 
 **Host integration**
@@ -1970,7 +1970,8 @@ supply**. The package has no such tape, so its cassette deck starts empty.
 A **multifunction** board. On the real board, one block of 16 ports holds a serial channel, an
 interval timer, two interrupt controllers, a battery-backed **real-time clock and calendar**,
 and a socket for a math coprocessor. This board models the **clock**, the **serial channel**,
-the **interval timer** and the **two interrupt controllers**. The math socket is empty.
+the **interval timer**, the **two interrupt controllers** and the **math socket**. The math
+socket is empty by default.
 
 The clock is an OKI MSM5832. It starts with **the date and time of your computer**, so a guest
 program that reads it gets the real time. A guest can also **set** it. After that, the clock
@@ -2002,6 +2003,35 @@ source with the highest priority. `SHOW ss1` prints a live `pic` line with the r
 in-service and mask registers of each controller. The master is the interrupt priority encoder
 of the machine, so do not also add a `virtc`. The two boards would both answer the interrupt
 acknowledge.
+
+The math socket takes an **AMD 9511A** (Intel 8231A) or an **AMD 9512** (Intel 8232). The
+`math` property selects the chip: `none` (the default), `9511a` or `9512`. With no chip, the
+two ports read `FF`, as on a stock board. The chip is at `58` (data) and `59` (command and
+status). A guest pushes the operands, writes a command and pops the result.
+
+- The **9511A** does 16-bit and 32-bit fixed point, 32-bit floating point, and the functions
+  SQRT, SIN, COS, TAN, ASIN, ACOS, ATAN, LOG, LN, EXP and PWR.
+- The **9512** does 32-bit and 64-bit floating point in the format of the proposed IEEE standard:
+  add, subtract, multiply and divide.
+
+Each command takes the number of cycles that the data sheet gives, at 2 MHz. If the guest uses the data
+port or writes a command before a command ends, the board holds the processor in wait states
+until the command ends. The chip's END signal goes to slave IR5 and its SVREQ signal goes to slave IR4,
+so a guest can also wait for an interrupt. `SHOW ss1` prints a live `mathchip` line with the
+state of the chip, its status and the top of its stack.
+
+```
+altairsim> SET ss1 math=9511a
+```
+
+In a machine file:
+
+```toml
+[[board]]
+type = "ss1"
+id   = "ss1"
+math = "9511a"
+```
 
 The `compupro` machine has one: a stock Altair with the System Support 1 added, and its console
 still on the 2SIO. The clock is at `5A` (command) and `5B` (data). The board reference gives the
