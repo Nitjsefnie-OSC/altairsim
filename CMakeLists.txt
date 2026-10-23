@@ -462,6 +462,13 @@ add_library(altair_core STATIC
   # The Intel 8259A -- a programmable interrupt controller; INT is a pure function of the
   # live IR levels the card supplies. The CompuPro System Support 1 carries two (cascade).
   src/chips/intel8259a.cpp
+  # The AMD Am9511A (Intel 8231A) and Am9512 (Intel 8232) math chips -- the bus side they
+  # share (ports, byte stack, END/SVREQ/ERR), then each chip's command set: the 9511A's
+  # fixed, float and derived functions, the 9512's single and double precision floats.
+  # The CompuPro System Support 1's math socket takes either.
+  src/chips/am95xx.cpp
+  src/chips/am9511a.cpp
+  src/chips/am9512.cpp
   # The Brooktree Bt453 -- a 256 x 24 color-palette RAMDAC: four MPU locations, a hidden
   # modulo-3 R/G/B phase, and lookup() as the video side. The CADzilla video board
   # carries one between its ACRTC and the monitor (src/chips/bt453.h).
@@ -867,6 +874,8 @@ add_executable(altair_tests
   tests/test_bitserial.cpp
   tests/test_i8257.cpp
   tests/test_bt453.cpp
+  tests/test_am9511a.cpp
+  tests/test_am9512.cpp
   tests/test_hd63484.cpp
   tests/test_cadzilla.cpp
   tests/test_versafloppy.cpp
@@ -1125,6 +1134,16 @@ add_test(NAME acceptance-disk1
                  -DBIN=${CMAKE_CURRENT_BINARY_DIR}
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/disk1.cmake)
 set_tests_properties(acceptance-disk1 PROPERTIES LABELS acceptance TIMEOUT 140)
+
+# The System Support 1 math socket: the SS-1 manual's 9511A test program, assembled and run
+# under CP/M 2.2N, prints OK with a 9511A fitted and ERROR with the socket empty.
+add_test(NAME acceptance-ss1-math
+         COMMAND ${CMAKE_COMMAND}
+                 -DSIM=$<TARGET_FILE:altairsim>
+                 -DSRC=${CMAKE_CURRENT_SOURCE_DIR}
+                 -DBIN=${CMAKE_CURRENT_BINARY_DIR}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/acceptance/ss1-math.cmake)
+set_tests_properties(acceptance-ss1-math PROPERTIES LABELS acceptance TIMEOUT 180)
 
 # ---------------------------------------------------------------------------
 # THE SSM IO-4: the shipped example machine boots the SSM 8080 monitor on a real IO-4

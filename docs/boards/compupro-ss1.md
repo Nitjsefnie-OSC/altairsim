@@ -2,9 +2,9 @@
 
 **Status:** feature-complete for issue #392 — the OKI MSM5832 real-time clock, the 2651 UART
 serial channel, the 8253 interval timer, and the dual 8259A interrupt controllers are all
-implemented. The 9511A/9512 math-chip socket is deferred to its own issue (#393 — an empty socket
-is the real board's default) and the optional 4K RAM/EPROM block is out of scope (it is the one
-IEEE-696 part the Altair bus cannot carry — #344).
+implemented. The math socket (issue #393) takes an AMD 9511A or an AMD 9512, and is empty by
+default. The optional 4K RAM/EPROM block is out of scope (it is the one IEEE-696 part the
+Altair bus cannot carry — #344).
 
 ## The real hardware
 
@@ -29,6 +29,8 @@ CompuPro software assumes it, so that is this board's default. The MSM5832 is cr
 | Signetics 2651 (as documented in the SS-1 manual) | `reference/Signetics 2651 USART.md` | UART register model, baud table, status/command polarity |
 | Intel 8253 (as reprinted in the SS-1 manual) | `reference/Intel 8253.md` | Timer register map, control word, mode behaviour |
 | Intel 8259A (as reprinted in the SS-1 manual) | `reference/Intel 8259A.md` | Interrupt-controller registers, priority, cascade, the CALL vector |
+| AMD 9511A (Intel 8231A), data sheet and AMD's Floating Point Processor Manual | `reference/AMD 9511A.md` | Commands, cycle counts, status bits, the float format, the ch.9 function algorithms |
+| AMD 9512 (Intel 8232), data sheet and the same manual | `reference/AMD 9512.md` | Commands, cycle counts, status bits, the single and double formats, ERR |
 
 The manual's own clock section (pp.27–30) is the authority for the digit encoding. Two facts in
 it are easy to get wrong and were corrected against the manual text while implementing: the
@@ -50,6 +52,8 @@ The whole board occupies 16 ports from `base` (default 50H). What is implemented
 | base+5 (55) | 8253 counter 1: load per read/load format | counter 1 count |
 | base+6 (56) | 8253 counter 2: load per read/load format | counter 2 count |
 | base+7 (57) | 8253 control word: SC(7-6) RL(5-4) mode(3-1) BCD(0) | — (write-only, floats 0xFF) |
+| base+8 (58) | math chip: push a byte onto its stack | pop a byte off its stack |
+| base+9 (59) | math chip command: SR(7), opcode(6-0) | math chip status: BUSY(7) SIGN(6) ZERO(5), the rest per chip |
 | base+10 (5A) | MSM5832 command: Hold(6) / Write(5) / Read(4) / digit-select(3-0) | — (write-only, floats 0xFF) |
 | base+11 (5B) | MSM5832 data: BCD digit in the low nibble | the selected digit |
 | base+12 (5C) | 2651 data: byte to transmit | received byte (clears RxRDY) |
@@ -62,7 +66,9 @@ Week, 7/8 Days 1/10, 9/10 Months 1/10, 11/12 Years 1/10. **Hours-10 (5)** carrie
 bits 1:0, PM in bit2, and the 12/24-hour mode in bit3 (this model runs in 24-hour mode).
 **Days-10 (8)** carries the digit in bits 1:0 and the leap-year flag in bit2.
 
-The math socket `+8/+9` is unpopulated and floats `0xFF`.
+The math socket `+8/+9` is decoded only when `math` is `9511a` or `9512`. With `math = none`
+(the default, the stock empty socket) both ports float `0xFF`. The two chips' command sets and
+status bits are in `reference/AMD 9511A.md` and `reference/AMD 9512.md`.
 
 **The interrupt matrix** (the stock J7/J8 shunt) wires the two controllers like this:
 
@@ -70,18 +76,21 @@ The math socket `+8/+9` is unpopulated and floats `0xFF`.
 |:--:|---|:--:|---|
 | 0–6 | S-100 VI0*–VI6* | 1–3 | Timer 0 / 1 / 2 OUT |
 | 7 | slave INT (cascade) | 6 | 2651 TxRDY |
+| | | 4 | math chip SVREQ |
+| | | 5 | math chip END |
 | | | 7 | 2651 RxRDY |
 
 So the master is the machine's VI priority encoder, its INT drives pin 73, and the on-board
-sources reach the CPU through the slave and the cascade. Slave IR0/IR4/IR5 (unassigned / the empty
-math socket) are tied inactive.
+sources reach the CPU through the slave and the cascade. Slave IR0 is unassigned and tied
+inactive. With the socket empty, IR4 and IR5 are inactive too.
 
 ## How it is simulated
 
 - **Decodes** the 8259A ports `base+0..+3`, the timer ports `base+4..+7` (control at +7
   write-only), the clock ports `base+10` (write-only) and `base+11`, and the UART ports
   `base+12..+15` (status at +13 read-only) as I/O cycles — and the **IntAck** cycle when the master
-  would interrupt (or a CALL fetch is in progress). The math socket ports float.
+  would interrupt (or a CALL fetch is in progress). The math ports `base+8/+9` are decoded only
+  with a chip in the socket.
 - The clock is the host's own time-of-day. The `Msm5832` chip (`src/chips/msm5832.h`) reads
   `platform::localCalendar(std::time(nullptr) + offset_)` and returns the requested BCD digit.
   `offset_` is a signed second count, 0 at power-on (the guest sees real wall time) and moved
@@ -131,11 +140,43 @@ math socket) are tied inactive.
   memory — there is nothing for `PHANTOM*` to suppress, and modelling it would be a behaviour with
   no observable effect (DESIGN.md 4.0). The card simply keeps claiming the IntAck cycle until it
   has driven all three CALL bytes.
+- **The math chip** (`src/chips/am9511a.h`, `src/chips/am9512.h`). The bus side both chips share
+  is `Am95xx` (`src/chips/am95xx.h`): the two ports, the 16-byte stack ring (push LS byte first,
+  pop MS byte first), BUSY, END, SVREQ, ERR, reset and the snapshot. Each chip supplies its own
+  command set. A command is worked out when it is written, and the result goes onto the stack
+  at once. BUSY lasts for the command's cycle count, in pin-49 ticks (`BusClock`), and END,
+  SVREQ and the status follow the end of BUSY.
+  - **Cycle counts:** the data sheets give most counts as a range. The model takes the top of
+    each range, which is the time a program that waits with a delay loop had to allow. For the
+    9512, a command that its timing table does not list takes the count of the table's
+    example.
+  - **Wait states:** the board holds READY for 2 wait states on every math access (the SS-1
+    manual: PAUSE comes too late to catch the first one). A data access or a command write
+    while BUSY holds READY until the command ends, as PAUSE does. A status read never waits.
+  - **The wiring** (schematic p.98): the chip's CLK is pin 49 (the stock J5 strap). Its RESET is
+    the board's CLEAR (pRESET*, POC*, SLAVE CLR*). SVACK* and EACK* are tied to +5 V, so END
+    clears only on a chip access or a reset, and SVREQ clears only when a command with SR = 0
+    ends. J6 is taken as set to match the chip (9511A END is active low, 9512 END is active
+    high), so END reaches slave IR5 active high. SVREQ goes to slave IR4.
+  - **9511A arithmetic:** fixed point is exact two's complement. The four float operations
+    round to the 24-bit mantissa, to nearest even. The derived functions (SQRT … PWR) follow
+    the ch.9 algorithms of AMD's manual, with the Chebyshev coefficients, and each step is
+    rounded as the chip's own float operations round it.
+  - **9512 arithmetic:** single (24-bit mantissa, 8-bit exponent) and double (53-bit mantissa,
+    11-bit exponent), rounded to nearest even. An exponent field of 0 is zero. The documents
+    define no denormals, infinities or NaNs, so there are none. A zero result is all zero
+    bits. A divide by zero gives R = B and sets the D bit.
+  - **9512 ERR:** comes up at the end of a command that sets D, U or V, and stays up until a
+    status read or a reset. The SS-1 sends ERROR only to the J7 header, not to either 8259A,
+    so the board does not wire it.
 - **Interrupts, the legacy path:** the 2651's RxRDY can still be routed straight to pINT or an
   S-100 VI line by the `serial` unit's `interrupt` jumper (default `none`) for a machine that does
   not program the on-board controllers. Leave it `none` when using the 8259As. **DMA:** none.
-- **`properties()`:** `base` (the 16-port block base, default 50H), and read-only `clock`, `timer`
-  and `pic` strings (the last shows each controller's IRR/ISR/IMR and the master's INT pin). The
+- **`properties()`:** `base` (the 16-port block base, default 50H), `math` (`none`, `9511a` or
+  `9512`, default `none`), and read-only `clock`, `timer`, `pic` and `mathchip` strings. `pic`
+  shows each controller's IRR/ISR/IMR and the master's INT pin. `mathchip` shows busy or idle,
+  the stack pointer, the status and the top of the stack, and END, SVREQ and ERR when they are
+  up. The
   `serial` **unit** carries `baud`, `interrupt` and `connect`.
 
 ### Reset
@@ -146,6 +187,10 @@ math socket) are tied inactive.
   survives a power cycle just as it survives RESET.
 - `Reset::Bus` (RESET*, warm): clears the command latches, keeps the time. The 8259As have no
   bus-reset pin (as the 8253 does not), so they keep their programming across a front-panel RESET.
+- The math chip's RESET is the board's CLEAR, so both resets reset it: status 0, the stack
+  pointer to its start, END, SVREQ and ERR off. The stack bytes are kept (AMD: "may be
+  affected"; Intel: "not affected"). A reset is the only way to realign a stack that a guest
+  left misaligned.
 
 ## Quirks reproduced
 
@@ -165,6 +210,10 @@ math socket) are tied inactive.
 | 8259A master IR0–6 = the S-100 VI lines; the master's INT drives pin 73 | An SS-1 that ignored the VI lines could not act as the machine's interrupt controller for other cards; one that did not drive pin 73 would never interrupt the CPU |
 | 8259A cascade: a slave source vectors through master IR7, and BOTH chips latch an in-service bit | A handler that EOIs only one chip leaves the other's priority stuck, blocking that level (and, on the master, everything below IR7) forever |
 | 8259A acknowledge drives an MCS-80/85 3-byte CALL (`CD`, addr-lo, addr-hi) | A model that drove a single RST byte would send the CPU to the wrong vector — the SS-1 uses CALL, not RST |
+| Math chip stack: a 16-byte ring, pushed LS byte first and popped MS byte first | A guest's operands come back byte-swapped, or a misaligned stack realigns itself where the real chip stays misaligned until reset |
+| Math chip: a status read clears END, and does not wait while BUSY | An END interrupt handler that reads the status returns to a second IR5 interrupt, or a guest that polls BUSY stalls in its first status read |
+| Math chip: 2 wait states on every access, plus PAUSE while BUSY | A delay loop that does math accesses runs faster than on a real board |
+| 9512: an exponent field of 0 is zero, whatever the mantissa holds | CHSS, PTOS and the Z bit treat a zero with a stray mantissa as a number |
 | 8259A comes up all-masked until ICW1/OCW1 program it | An unprogrammed controller that let the timer or UART through would fire spurious interrupts on a machine that uses the SS-1 only for its clock |
 
 ## Limitations and deliberate departures
@@ -201,8 +250,21 @@ math socket) are tied inactive.
 - **Do not put an SS-1 (with its 8259As programmed) and an 88-VI in the same machine.** Both watch
   the VI lines and both claim the IntAck cycle, which is genuine bus contention — the contention
   detector reports it. A machine picks one interrupt controller.
-- The math socket (`+8/+9`) and the optional 4K RAM/EPROM block are not modelled; those ports
-  float.
+- The optional 4K RAM/EPROM block is not modelled.
+- ⚠ **9511A rounding is not verified.** The 9511A data sheet does not say how its float
+  operations round. The model rounds to nearest even, as the 9512 data sheet says the 9512 does.
+  A trace from a real chip would settle it (#393).
+- ⚠ **9512 overflow and underflow results are not documented.** The model keeps the rounded
+  mantissa, wraps the exponent field (by 256 or 2048) and sets V or U. That is what the 9511A
+  data sheet says its own float operations do. No real 9512 was available to compare against.
+- **9511A derived functions: the low bits are not verified.** The results follow AMD's
+  algorithms and fall inside the manual's error graphs, but the last bit may differ from a real
+  chip.
+- **Cycle counts are the top of each range.** A real chip often ends sooner, for example an
+  FADD of two close operands. A guest that polls BUSY or waits for END sees the longer time.
+- **The scratch stack cells** that a command leaves "undefined" keep what was there. An
+  undefined command byte does nothing and takes 4 cycles.
+- **J6 is always correct for the chip,** and the J7 ERROR header is not modelled.
 
 ## Verification
 
@@ -228,6 +290,16 @@ slave's CALL vector over three INTA cycles), the master prioritizes an S-100 VI 
 the master's vector), an interrupt **actually vectors a running CPU** to the CALL target, the board
 never asserts `PHANTOM*`, and a snapshot carries the 8259A registers and in-service state.
 
+`tests/test_am9511a.cpp` and `tests/test_am9512.cpp` pin the two math chips as bare chips:
+every command against the data sheets' worked examples, the number formats, rounding (ties,
+the carry into a new exponent, and for the 9512, 32,000 random results compared with host IEEE
+arithmetic), the error bits, the stack ring and its byte order, the cycle counts, BUSY, END,
+SVREQ, ERR and a snapshot. On the bus, `tests/test_ss1.cpp` checks the empty socket floats, the
+2 wait states and PAUSE, END on slave IR5 vectoring an interrupt, reset, the snapshot, and the
+SS-1 manual's 9512 test (1.0 + 1.0 = 2.0). `acceptance-ss1-math` boots CP/M 2.2N on the Disk 1
+machine, types in the SS-1 manual's 9511A test program, assembles it with ASM and LOAD, and runs
+it: it prints `OK` with a 9511A and `ERROR` with the empty socket.
+
 ## References
 
 - `reference/CompuPro System Support 1.md` — the distilled board reference.
@@ -235,4 +307,7 @@ never asserts `PHANTOM*`, and a snapshot carries the 8259A registers and in-serv
 - `reference/Signetics 2651 USART.md` — the UART chip.
 - `reference/Intel 8253.md` — the interval timer chip.
 - `reference/Intel 8259A.md` — the interrupt-controller chip.
+- `reference/AMD 9511A.md` — the 9511A math chip.
+- `reference/AMD 9512.md` — the 9512 math chip.
+- Issue #393 — the math socket.
 - Issue #392 — the board's scope and the IEEE-696 finding.

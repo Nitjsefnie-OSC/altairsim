@@ -7,19 +7,32 @@
 // One 16-port I/O block packs a serial channel (2651 UART), an interval timer
 // (Intel 8253), two cascaded interrupt controllers (Intel 8259A), a battery-backed
 // real-time clock/calendar (OKI MSM5832), and a socket for an AMD 9511A/9512 math
-// coprocessor. This board is being brought up in phases (issue #392):
+// coprocessor. This board was brought up in phases (issues #392, #393):
 //
 //   * PHASE 1: the MSM5832 real-time clock. Ports base+10/+11.
 //   * PHASE 2: the 2651 UART -- a serial channel at base+12..+15.
 //   * PHASE 3: the 8253 interval timer -- three counters + control at base+4..+7.
-//   * PHASE 4 (added here): the dual 8259A interrupt controllers (+0..+3), in the
-//     standard master/slave cascade. The master watches the S-100 VI lines and drives
-//     pin 73; the slave takes the on-board sources (timer OUTs, the UART's RxRDY/TxRDY).
-//   The math socket (+8/+9) is deferred to its own issue -- an empty socket is the real
-//   board's default, so those ports float.
+//   * PHASE 4: the dual 8259A interrupt controllers (+0..+3), in the standard
+//     master/slave cascade. The master watches the S-100 VI lines and drives pin 73;
+//     the slave takes the on-board sources (timer OUTs, the UART's RxRDY/TxRDY).
+//   * THE MATH SOCKET (#393): +8 data, +9 command/status. The `math` property fits a
+//     9511A or a 9512; the default `none` is the stock empty socket, and its two ports
+//     float 0xFF.
 //
-// Only the ports a landed phase actually implements are decoded; the rest of the
-// block floats 0xFF, which is exactly right for an unpopulated math socket.
+// Ports +8/+9 are decoded only with a chip in the socket.
+//
+// ---------------------------------------------------------------------------
+// THE MATH SOCKET (reference sec. 7.3, schematic p.98). The chip's CLK is pin 49 (the
+// stock J5 strap), so its cycle counts are pin-49 ticks. Its RESET is the board's CLEAR
+// (pRESET*/POC*/SLAVE CLR*), so every bus reset resets it. SVACK* and EACK* are both
+// tied to +5 V: END clears only on a chip access or reset, SVREQ only when an SR = 0
+// command ends or on reset. J6 is taken as set to match the chip (the 9511A's END is
+// active low, the 9512's active high), so END reaches slave IR5 active high; SVRQ goes to
+// slave IR4. The 9512's ERROR goes only to J7, not to either 8259A, so it is not wired.
+//
+// WAIT STATES: the board holds READY for 2 wait states on EVERY math access, and the
+// chip's PAUSE holds it longer while a command runs (a data access or a command write,
+// never a status read). The chip is handed the access at the tick PAUSE lets go.
 //
 // ---------------------------------------------------------------------------
 // THE INTERRUPT MATRIX (reference sec. 4.2, the stock J7/J8 shunt). The two 8259As
@@ -30,7 +43,9 @@
 //     slave  IR1-3  = 8253 Timer 0/1/2 OUT
 //     slave  IR6    = 2651 TxRDY
 //     slave  IR7    = 2651 RxRDY
-//     slave  IR0/4/5 = unassigned / the empty math socket's END & SVRQ (tied inactive)
+//     slave  IR4    = math chip SVRQ        (inactive with the socket empty)
+//     slave  IR5    = math chip END         (inactive with the socket empty)
+//     slave  IR0    = unassigned (tied inactive)
 //
 // The master's INT output is the card's pin-73 (pINT) driver, and the card claims the
 // IntAck cycle to feed the 8259A's CALL vector -- see read()/the INTA sequence in the
@@ -56,6 +71,8 @@
 // software convention that the block lives at 50H, so that is our default -- but the
 // base is a strap like any other, and the `base` property moves the whole block.
 
+#include "chips/am9511a.h"
+#include "chips/am9512.h"
 #include "chips/intel8253.h"
 #include "chips/intel8259a.h"
 #include "chips/msm5832.h"
@@ -136,6 +153,10 @@ public:
     const Intel8259a& master() const { return master_; }
     Intel8259a&       slave() { return slave_; }
     const Intel8259a& slave() const { return slave_; }
+    Am9511a&          math() { return apu_; }  // the chip `math = 9511a` fits
+    const Am9511a&    math() const { return apu_; }
+    Am9512&           fpu() { return fpu_; }   // the chip `math = 9512` fits
+    const Am9512&     fpu() const { return fpu_; }
 
     // The IR input levels the card wires to each controller, computed LIVE (the 8253
     // OUTs from the clock, the VI lines from the bus). Public for tests that drive the
@@ -153,6 +174,8 @@ private:
     uint8_t timer1Port() const { return (uint8_t)(base_ + 5); }
     uint8_t timer2Port() const { return (uint8_t)(base_ + 6); }
     uint8_t timerCtlPort() const { return (uint8_t)(base_ + 7); }
+    uint8_t mathDataPort() const { return (uint8_t)(base_ + 8); }
+    uint8_t mathCmdPort() const { return (uint8_t)(base_ + 9); }
     uint8_t clockCmdPort() const { return (uint8_t)(base_ + 10); }
     uint8_t clockDataPort() const { return (uint8_t)(base_ + 11); }
     uint8_t uartDataPort() const { return (uint8_t)(base_ + 12); }
@@ -171,12 +194,26 @@ private:
     // Drive the next byte of the master's interrupt-acknowledge CALL (see the .cpp).
     uint8_t  intAckByte();
 
+    // A data access or command write to the math chip: hold READY for the board's 2 wait
+    // states, or until PAUSE lets go, and return the pin-49 tick the chip sees it at.
+    uint64_t mathAccess(bool pauses);
+
     // The slave IR each on-board source is wired to (reference sec. 4.2, stock shunt).
     static constexpr int kSlaveTimer0 = 1, kSlaveTimer1 = 2, kSlaveTimer2 = 3;
+    static constexpr int kSlaveSvrq = 4, kSlaveEnd = 5;
     static constexpr int kSlaveTxRdy = 6, kSlaveRxRdy = 7;
     static constexpr int kMasterCascadeIr = 7;  // master IR7 = the slave's INT output
 
+    // What sits in the math socket (U13). The stock board ships it empty.
+    enum class Math { None, Am9511a, Am9512 };
+    bool mathFitted() const { return math_ != Math::None; }
+    Am95xx&       chip() { return math_ == Math::Am9512 ? (Am95xx&)fpu_ : apu_; }
+    const Am95xx& chip() const { return math_ == Math::Am9512 ? (const Am95xx&)fpu_ : apu_; }
+
     uint8_t   base_ = 0x50;  // the 16-port block base -- CompuPro standard is 50H
+    Math      math_ = Math::None;
+    Am9511a   apu_{"math"};
+    Am9512    fpu_{"math"};
     Msm5832   rtc_;
     Sig2651   uart_{"serial"};
     Intel8253 timer_{"timer"};

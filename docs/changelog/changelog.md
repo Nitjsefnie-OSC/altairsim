@@ -12,6 +12,14 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The SS-1 math socket takes a 9511A or a 9512.** The CompuPro System Support 1 has a new `math`
+property: `none` (the default, the empty socket of a stock board), `9511a` (AMD Am9511A, Intel
+8231A) or `9512` (AMD Am9512, Intel 8232). With a chip in the socket, ports `58` and `59` are
+the chip's stack and its command and status. Each command takes the cycle count of the data
+sheet, the board adds its wait states, and END and SVREQ go to the slave 8259A. For example,
+the SS-1 manual's 9511A test program prints `OK` under CP/M with `SET ss1 math=9511a`. The
+live `mathchip` property shows the chip's state.
+
 **An edge-triggered SS-1 interrupt needs its line held high.** In edge-triggered mode (ICW1
 LTIM = 0), the SS-1's 8259A kept a request after its IR line fell. A real 8259A drops the
 request when the line falls before the acknowledge. For example, an MP/M II XIOS put the 8253

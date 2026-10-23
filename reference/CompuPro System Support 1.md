@@ -12,14 +12,14 @@ block plus an optional 4K memory block it packs: **two Intel 8259A** interrupt c
 (master/slave, 15 sources), an **Intel 8253** interval timer (three independent 16-bit
 counters), a **Signetics/National 2651** UART serial channel with full RS-232 handshaking, an
 **OKI MSM5832** battery-backed real-time clock/calendar, a socket for an **AMD 9511A or 9512**
-math coprocessor (register-compatible with the Intel 8231A/8232, whose datasheets the manual
-reprints), and 4K of RAM/EPROM (two 2716-footprint sockets, one battery-backable in CMOS).
+math coprocessor (Intel's numbers are 8231A and 8232; the manual reprints Intel's data sheets),
+and 4K of RAM/EPROM (two 2716-footprint sockets, one battery-backable in CMOS).
 
 This is a distilled emulation reference: it keeps the programmer-visible port map, register
 layouts, and status/control bit polarities for every function, plus the board-specific wiring
 that differs from the plain Intel/OKI/AMD datasheet (the interrupt source assignments, the
 math-chip END/ERROR jumper, the clock's wait-state-injecting handshake, and the 8080/Z80
-PHANTOM* interrupt-acknowledge trick). The generic Intel 8259A/8253/8231A/8232 chip theory the
+PHANTOM* interrupt-acknowledge trick). The generic Intel 8259A/8253 and 8231A/8232 chip theory the
 manual reprints wholesale from Intel application notes and datasheets is summarized to what an
 emulator needs; the full mode/command semantics live in the chips' own behavior, not in
 anything CompuPro added. Switch/jumper hardware-configuration mechanics (which physical DIP
@@ -362,34 +362,36 @@ user-selected phantom-response policy for its own memory during INTA.
 
 ---
 
-## 7. Math coprocessor socket — AMD 9511A/9512 (register-compatible with Intel 8231A/8232)
+## 7. Math coprocessor socket — AMD 9511A/9512 (Intel 8231A/8232)
 
 An **empty socket**, not populated on the standard board (p.5, p.70) — the user supplies either
-an AMD 9511A (fixed+floating point, single precision) or AMD 9512 (floating point, single and
-double precision); these are pin/register compatible with Intel's 8231A and 8232 respectively,
-whose datasheets the manual reprints in full (pp.73–86) as the only available programming
-reference. **The two chips are not software-compatible with each other** in their number
-formats/command sets (p.70) — an emulator must pick one model to implement per configuration.
+an AMD **9511A** (fixed and floating point, single precision, derived functions) or an AMD
+**9512** (floating point, single and double precision). The board stencil reads
+U13-9511A/9512; Intel's numbers are 8231A and 8232 (p.91), and the manual reprints Intel's
+preliminary data sheets (pp.73–86). **The two chips are not software-compatible with each
+other** (p.70) — an emulator must pick one model per configuration. The chips themselves are
+distilled from AMD's own documents in [AMD 9511A](AMD%209511A.md) and
+[AMD 9512](AMD%209512.md); this section keeps only what the board adds.
 
 ### 7.1 Port map (p.70)
 
 | Port | Function |
 |:---:|---|
-| Base+8 | Data port (push/pop the operand stack; A0=0) |
-| Base+9 | Command port (write a command; read status; A0=1) |
-
-This matches the Intel chips' own `A0`-encoded read/write shape (p.74, p.80): `A0=0,WR=0` push
-data; `A0=0,RD=0` pop data; `A0=1,WR=0` issue command; `A0=1,RD=0` read status.
+| Base+8 | Data port (push/pop the operand stack; C/D̅ = 0) |
+| Base+9 | Command port (write a command; read status; C/D̅ = 1) |
 
 ### 7.2 Stack discipline (important emulation trap)
 
-Both chips maintain an internal LIFO operand stack with **no realignment instruction** — if a
-calculation is fed too few or too many operand bytes, or if too few/many result bytes are
-read, the stack becomes misaligned and **the only documented recovery is a full chip reset**
-(p.70): "The quickest and surest way to re-align the math processor stack is to reset the
-system." An emulator implementing one of these chips must track byte-count discipline
-precisely per command (single precision = 4 bytes/operand, double precision = 8 bytes, per
-the 8231A/8232 datasheets, pp.76, 82) since there is no other recovery path.
+Both chips keep an internal LIFO operand stack with **no realignment instruction** — if a
+calculation is fed too few or too many operand bytes, or too few or too many result bytes are
+read, the stack becomes misaligned. p.70: "The only way to re-align the stack through software
+is to read or write sufficient bytes to restore it. The quickest and surest way to re-align the
+math processor stack is to reset the system." An emulator must count bytes exactly per command
+(9511A: 2 bytes for 16-bit fixed, 4 for 32-bit fixed and float; 9512: 4 single, 8 double).
+
+The manual's math-chip test program (pp.70–72) is transcribed with its errata in
+[AMD 9511A](AMD%209511A.md) §8 and [AMD 9512](AMD%209512.md) §8. p.70 says the data sheets are
+on "pages 70-81"; they are on pp.73–86.
 
 ### 7.3 Board wiring specifics (p.91–92)
 
@@ -405,7 +407,7 @@ the 8231A/8232 datasheets, pp.76, 82) since there is no other recovery path.
 - **The END signal's polarity differs between the 9511A and the 9512** — jumper **J6** must be
   set to the "A" block for a 9511A or the "B" block for a 9512 (only needed if running
   interrupt-driven).
-- **ERROR is only available on the 9512** (8232 equivalent) — the 9511A has no such output.
+- **ERROR is only available on the 9512** (Intel 8232) — the 9511A has no such output.
   Unlike END, the ERROR line is only brought out to jumper **J7**, not to J8, so it cannot be
   routed to the slave 8259A in the standard configuration — only to an S-100 vectored
   interrupt via the master.
@@ -438,10 +440,14 @@ the 8231A/8232 datasheets, pp.76, 82) since there is no other recovery path.
   a mode flag in bits 3:2 (H10: bit2=PM, bit3=24-hour; D10: bit2=leap-year). Board auto-inserts
   6 µs (command write) / 150 µs (Hold set) wait states — model as "instant" unless
   timing-accurate wait-state injection matters.
-- **Math chip socket**: empty by default; if modeled, pick 9511A (Intel 8231A registers) or
-  9512 (Intel 8232 registers) — **not mutually compatible**. Stack-alignment errors are
-  unrecoverable except by reset. END polarity (J6) and ERROR-only-on-9512 are board-level
-  differences to expose as configuration, not auto-detect.
-- **No manual erratum was found** in this document — the port map (p.19), the per-function
-  descriptions, and the sample initialization/test programs (UART, clock, interrupts, math
-  chip) all cross-check consistently bit-for-bit against each other.
+- **Math chip socket**: empty by default; if modeled, pick the 9511A or the 9512 (Intel 8231A /
+  8232) — **not mutually compatible**. A misaligned stack is recovered only by pushing or
+  popping the right number of bytes, or by reset. END polarity (J6) and ERROR-only-on-9512 are
+  board-level differences. Chip detail: [AMD 9511A](AMD%209511A.md), [AMD 9512](AMD%209512.md).
+- **Errata, math-chip test program only** (pp.70–72): the printed object code is hand-made
+  (`0115 CE1001` for `JNZ TEST1` — address 0114 skipped, `CE` is not `JNZ`); `CR`/`LF` EQUs are
+  swapped; the unassembled 9512 path has `LXI G`, `MVI C,R` and compares against `TBL1`; p.70
+  cites the data sheets as "pages 70-81" (they are pp.73–86). Details in
+  [AMD 9511A](AMD%209511A.md) §8 and [AMD 9512](AMD%209512.md) §8. Elsewhere the port map
+  (p.19), the per-function descriptions and the UART, clock and interrupt sample programs
+  cross-check bit-for-bit.

@@ -7,6 +7,7 @@
 #include "host/endpoint.h"
 #include "host/stream.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace altair {
@@ -53,8 +54,9 @@ Ss1Board::~Ss1Board() {
 // command register and the timer control word are write-only; the clock data register
 // and the three timer counters are read/write. The UART's four ports are all read/write
 // except status (+13, read-only) and mode (+14, read/write with an internal MR1/MR2
-// pointer). The 8259A ports are both read (IRR/ISR/IMR) and write. Everything else in
-// the 16-port block floats -- which is exactly right for the empty math socket.
+// pointer). The 8259A ports are both read (IRR/ISR/IMR) and write. The math socket's two
+// ports are read/write with a chip fitted; empty, they float (the stock board), as does
+// the UART status port on a write.
 //
 // AND THE IntAck CYCLE, but only when the master would actually interrupt OR a CALL
 // fetch is already in progress: once the acknowledge starts, the board must keep
@@ -62,6 +64,9 @@ Ss1Board::~Ss1Board() {
 // in-service bit that drops the master's INT. Pure -- intaByte_ is read, not moved.
 bool Ss1Board::decodes(const BusCycle& c) const {
     if (!enabled_) return false;
+    if ((c.type == Cycle::IoWrite || c.type == Cycle::IoRead) && mathFitted() &&
+        (c.port() == mathDataPort() || c.port() == mathCmdPort()))
+        return true;
     if (c.type == Cycle::IoWrite) {
         uint8_t p = c.port();
         return p == picMaster0Port() || p == picMaster1Port() || p == picSlave0Port() ||
@@ -150,6 +155,14 @@ uint8_t Ss1Board::read(const BusCycle& c) {
     if (p == timer1Port()) return timer_.readCounter(1, pin49());
     if (p == timer2Port()) return timer_.readCounter(2, pin49());
 
+    // The math chip. Any read clears END (slave IR5), so both paths re-sample.
+    if (mathFitted() && (p == mathDataPort() || p == mathCmdPort())) {
+        uint8_t v = p == mathDataPort() ? chip().readData(mathAccess(true))
+                                        : chip().readStatus(mathAccess(false));
+        refresh();
+        return v;
+    }
+
     const Clock& clk = clock_ ? *clock_ : deadCard();
 
     uint8_t v = 0xFF;
@@ -189,12 +202,37 @@ void Ss1Board::write(const BusCycle& c) {
     if (p == timer1Port())   { timer_.writeCounter(1, c.data, pin49()); refresh(); return; }
     if (p == timer2Port())   { timer_.writeCounter(2, c.data, pin49()); refresh(); return; }
 
+    // The math chip. A command starts BUSY and will set END/SVREQ at its end; refresh()
+    // arms the deadline for that edge.
+    if (mathFitted() && p == mathDataPort()) { chip().writeData(c.data, mathAccess(true)); refresh(); return; }
+    if (mathFitted() && p == mathCmdPort())  { chip().writeCommand(c.data, mathAccess(true)); refresh(); return; }
+
     const Clock& clk = clock_ ? *clock_ : deadCard();
 
     if (p == uartDataPort())      uart_.writeData(c.data, clk);     // transmit
     else if (p == uartModePort()) uart_.writeMode(c.data);          // MR1 then MR2
     else if (p == uartCmdPort())  uart_.writeCommand(c.data, clk);  // TxEN/RxEN/DTR/RTS/...
     refresh();
+}
+
+// THE MATH CHIP'S WAIT STATES (reference sec. 7.3). The board holds READY for 2 wait states
+// on every math access, because PAUSE comes too late to catch the first one; while a
+// command runs, PAUSE holds a data access or a command write until the command ends. The
+// chip is handed the access at the tick PAUSE releases it, so a command written while
+// another runs starts when that one ends. Paced, the hold is exact; flat out the tick is
+// host time, which the held T-states do not move, so the wait is the clock's estimate.
+uint64_t Ss1Board::mathAccess(bool pauses) {
+    uint64_t now  = pin49();
+    uint64_t hold = 2;
+    if (pauses && now < chip().busyUntil()) {
+        if (clock_ && bus_) {
+            uint64_t t = bus_->busClock().tStateOf(chip().busyUntil(), *clock_);
+            if (t > clock_->now() + hold) hold = t - clock_->now();
+        }
+        now = chip().busyUntil();
+    }
+    holdReady((uint32_t)std::min<uint64_t>(hold, UINT32_MAX));
+    return now;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +249,11 @@ uint8_t Ss1Board::slaveLive() const {
     if (timer_.out(2, now)) v |= (uint8_t)(1u << kSlaveTimer2);  // slave IR3 = Timer 2 OUT
     if (uart_.txReady(clk)) v |= (uint8_t)(1u << kSlaveTxRdy);   // slave IR6 = 2651 TxRDY
     if (uart_.rxReady())    v |= (uint8_t)(1u << kSlaveRxRdy);   // slave IR7 = 2651 RxRDY
-    // slave IR0/IR4/IR5 are unassigned / the empty math socket -- always inactive.
+    if (mathFitted()) {
+        if (chip().svreqOut(now)) v |= (uint8_t)(1u << kSlaveSvrq);  // slave IR4 = math SVRQ
+        if (chip().endOut(now))   v |= (uint8_t)(1u << kSlaveEnd);   // slave IR5 = math END (J6)
+    }
+    // slave IR0 is unassigned -- always inactive.
     return v;
 }
 
@@ -262,6 +304,7 @@ int Ss1Board::intWinner() const {
 // known-good state. (Same stance, same reasoning, as SbcBoard::reset.)
 void Ss1Board::reset(Reset r) {
     rtc_.reset();
+    chip().reset();  // the chip's RESET is the board's CLEAR: pRESET*, POC* or SLAVE CLR*
     if (!clock_) return;
     if (r == Reset::PowerOn) {
         uart_.powerOn(*clock_);
@@ -336,6 +379,11 @@ uint64_t Ss1Board::nextEdge() const {
             if (uint64_t tick = timer_.nextEdge(n, now))
                 consider(bus_->busClock().tStateOf(tick, *clock_));
         }
+        // A running math command sets END (and SVREQ moves) at its end -- the same edge,
+        // for an unmasked IR4 or IR5.
+        if (mathFitted() && chip().busy(now) &&
+            (slave_.irEnabled(kSlaveSvrq) || slave_.irEnabled(kSlaveEnd)))
+            consider(bus_->busClock().tStateOf(chip().busyUntil(), *clock_));
     }
 
     return best;
@@ -348,6 +396,7 @@ void Ss1Board::serialize(StateWriter& w) const {
     timer_.serialize(w, pin49());
     master_.serialize(w);
     slave_.serialize(w);
+    chip().serialize(w, pin49());
     // intaByte_/intaAddr_ do not travel: a snapshot lands at an instruction boundary,
     // where no acknowledge is mid-flight, so intaByte_ is always 0.
 }
@@ -359,6 +408,7 @@ void Ss1Board::deserialize(StateReader& r) {
     timer_.deserialize(r, pin49());
     master_.deserialize(r);
     slave_.deserialize(r);
+    chip().deserialize(r, pin49());
     intaByte_ = 0;
     refresh();  // re-drive the interrupt wire and re-arm the deadline from restored state
 }
@@ -378,6 +428,27 @@ std::vector<Property> Ss1Board::properties() {
         x.get = [this] { return Value::ofInt(base_); };
         x.set = [this](const Value& v, std::string&) {
             base_ = (uint8_t)v.i();
+            return true;
+        };
+        p.push_back(std::move(x));
+    }
+    {
+        // A part in a socket: a strap like `base`. Changing it is pulling one chip and
+        // fitting another, so the new chip starts from reset.
+        Property x;
+        x.name    = "math";
+        x.help    = "The chip in the math socket (U13): none (the stock empty socket), 9511a "
+                    "(AMD Am9511A, Intel 8231A) or 9512 (AMD Am9512, Intel 8232)";
+        x.kind    = Kind::Enum;
+        x.choices = {"none", "9511a", "9512"};
+        x.get     = [this] {
+            return Value::ofStr(math_ == Math::Am9511a ? "9511a"
+                                : math_ == Math::Am9512 ? "9512" : "none");
+        };
+        x.set     = [this](const Value& v, std::string&) {
+            math_ = v.s() == "9511a" ? Math::Am9511a
+                  : v.s() == "9512"  ? Math::Am9512 : Math::None;
+            chip().reset();
             return true;
         };
         p.push_back(std::move(x));
@@ -417,6 +488,20 @@ std::vector<Property> Ss1Board::properties() {
         };
         p.push_back(std::move(x));
     }
+    {
+        // LIVE, read-only: the math chip -- busy or idle, its stack pointer, status, the
+        // top of the stack and its END/SVREQ (and a 9512's ERR) outputs. "none" with the
+        // socket empty.
+        Property x;
+        x.name = "mathchip";
+        x.help = "LIVE: the math chip -- busy/idle, stack pointer, status, top of stack, "
+                 "END/SVREQ/ERR";
+        x.kind = Kind::Str;
+        x.get  = [this] {
+            return Value::ofStr(mathFitted() ? chip().describe(pin49()) : "none");
+        };
+        p.push_back(std::move(x));
+    }
     return p;
 }
 
@@ -435,7 +520,7 @@ std::vector<Property> Ss1Board::unitProperties(const std::string& unit) {
 }
 
 std::vector<MapEntry> Ss1Board::ioMap() const {
-    return {
+    std::vector<MapEntry> m = {
         {picMaster0Port(), picMaster0Port(), "read/write", "8259A master -- ICW1/OCW2/OCW3, IRR/ISR"},
         {picMaster1Port(), picMaster1Port(), "read/write", "8259A master -- ICW2-4/OCW1 (mask)"},
         {picSlave0Port(), picSlave0Port(), "read/write", "8259A slave -- ICW1/OCW2/OCW3, IRR/ISR"},
@@ -451,6 +536,12 @@ std::vector<MapEntry> Ss1Board::ioMap() const {
         {clockCmdPort(), clockCmdPort(), "write", "MSM5832 clock -- command"},
         {clockDataPort(), clockDataPort(), "read/write", "MSM5832 clock -- data"},
     };
+    if (mathFitted()) {  // an empty socket decodes nothing
+        std::string part = math_ == Math::Am9512 ? "9512" : "9511A";
+        m.push_back({mathDataPort(), mathDataPort(), "read/write", part + " math chip -- stack push/pop"});
+        m.push_back({mathCmdPort(), mathCmdPort(), "read/write", part + " math chip -- command/status"});
+    }
+    return m;
 }
 
 bool Ss1Board::connect(const std::string& unit, const std::string& ep, std::string& err) {

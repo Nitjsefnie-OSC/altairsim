@@ -1144,4 +1144,223 @@ void test_ss1() {
         CHECK(b2->slave().imr() == 0xF5, "the restored slave keeps its mask");
         CHECK(b2->slave().isr() == (1u << 1), "the restored slave keeps its in-service bit");
     }
+
+    // =====================================================================
+    // The math socket (#393) -- base+8 data, base+9 command/status.
+    // =====================================================================
+
+    SECTION("SS-1 board -- the math socket is empty by default and floats");
+    {
+        Machine m;
+        auto* ss1 = buildIntMachine(m);
+        CHECK(storedText(ss1->properties(), "math", "?") == "none", "math defaults to none (the stock board)");
+        CHECK(m.bus.ioRead(0x58) == 0xFF, "IN 58 floats with the socket empty");
+        CHECK(m.bus.ioRead(0x59) == 0xFF, "IN 59 floats with the socket empty");
+        bool listed = false;
+        for (const MapEntry& e : ss1->ioMap()) listed |= e.lo == 0x58 || e.lo == 0x59;
+        CHECK(!listed, "an empty socket puts nothing in the I/O map");
+    }
+
+    // A machine with a 9511A in the socket. 4 MHz CPU: two T-states per pin-49 tick.
+    auto mathMachine = [](Machine& m) {
+        auto* ss1 = buildIntMachine(m);
+        std::string err;
+        CHECK(setProperty(*ss1, "math", "9511a", err), "fit a 9511A: math = 9511a");
+        m.bus.takeWaitStates();
+        return ss1;
+    };
+    auto push16 = [](Machine& m, uint16_t v) {
+        m.bus.ioWrite(0x58, (uint8_t)v);  // LS byte first
+        m.bus.ioWrite(0x58, (uint8_t)(v >> 8));
+    };
+    auto push32 = [](Machine& m, uint32_t v) {
+        for (int i = 0; i < 4; ++i) m.bus.ioWrite(0x58, (uint8_t)(v >> (8 * i)));
+    };
+    auto pop32 = [](Machine& m) {
+        uint32_t v = 0;
+        for (int i = 0; i < 4; ++i) v = (v << 8) | m.bus.ioRead(0x58);  // MS byte first
+        return v;
+    };
+    constexpr uint8_t kSadd = 0x6C, kFadd = 0x10, kSr = 0x80;
+    constexpr uint64_t kSaddT = 2 * 18, kFaddT = 2 * 368;  // T-states at 4 MHz
+
+    SECTION("SS-1 board -- a 9511A in the socket, through the bus");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        bool listed = false;
+        for (const MapEntry& e : ss1->ioMap()) listed |= e.lo == 0x58 || e.lo == 0x59;
+        CHECK(listed, "a fitted chip puts +8/+9 in the I/O map");
+
+        // The SS-1 manual's test program: 3000H + 4000H by SADD gives 70H then 00H.
+        push16(m, 0x3000);
+        push16(m, 0x4000);
+        m.bus.ioWrite(0x59, kSadd);
+        CHECK(m.bus.ioRead(0x59) == Am9511a::kBusy, "IN 59 at once reads BUSY");
+        m.clock.advance(kSaddT);
+        CHECK(m.bus.ioRead(0x59) == 0x00, "after 18 ticks: not busy, status 00");
+        CHECK(m.bus.ioRead(0x58) == 0x70, "IN 58: the MS byte of the sum, 70H");
+        CHECK(m.bus.ioRead(0x58) == 0x00, "IN 58: then the LS byte, 00H");
+    }
+
+    SECTION("SS-1 board -- 2 wait states on every math access, PAUSE holds longer");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        m.bus.ioWrite(0x58, 0x00);
+        CHECK(m.bus.takeWaitStates() == 2, "a data write while idle: the board's 2 wait states");
+        m.bus.ioRead(0x59);
+        CHECK(m.bus.takeWaitStates() == 2, "a status read: 2 wait states");
+
+        push32(m, 0x03A00000);  // 5.0
+        push32(m, 0x03C00000);  // 6.0
+        m.bus.ioWrite(0x59, kFadd);
+        m.bus.takeWaitStates();
+        m.bus.ioRead(0x59);
+        CHECK(m.bus.takeWaitStates() == 2, "a status read while BUSY is not held by PAUSE");
+        m.clock.advance(100);
+        CHECK(m.bus.ioRead(0x58) == 0x04, "a data read while BUSY gets the result (MS byte)");
+        CHECK(m.bus.takeWaitStates() == kFaddT - 100,
+              "PAUSE held it for the rest of FADD's 368 ticks, in T-states");
+        CHECK(!ss1->math().endOut(m.bus.busClock().now(m.clock) + 1000),
+              "the read landed when PAUSE let go, so it cleared END: no stale END after it");
+        CHECK(m.bus.ioRead(0x58) == 0xB0, "the rest of 11.0 = 04B00000");
+        m.bus.ioRead(0x58);
+        m.bus.ioRead(0x58);
+
+        // A command written while another runs starts when that one ends. (The run loop
+        // charges held wait states to the clock; here the clock is moved past FADD by hand.)
+        m.clock.advance(kFaddT);
+        push16(m, 1);
+        push16(m, 2);
+        uint64_t t0 = m.bus.busClock().now(m.clock);
+        m.bus.ioWrite(0x59, kSadd);
+        m.bus.ioWrite(0x59, kSadd);
+        CHECK(ss1->math().busyUntil() == t0 + 2 * 18,
+              "the second command waited for the first: it ends 36 ticks after the first began");
+    }
+
+    SECTION("SS-1 board -- math END raises slave IR5 and vectors to 2214H");
+    {
+        Machine m;
+        mathMachine(m);
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 5) & 0xFFu));
+        push16(m, 0x3000);
+        push16(m, 0x4000);
+        m.bus.ioWrite(0x59, kSadd);
+        m.clock.advance(kSaddT - 2);
+        CHECK(!m.bus.intPending(), "no interrupt while the command runs");
+        m.clock.advance(2);
+        CHECK(m.bus.intPending(), "the command ends: END on slave IR5 pulls pin 73");
+        CHECK(m.bus.intAck() == 0xCD, "INTA 1: CALL");
+        CHECK(m.bus.intAck() == 0x14, "INTA 2: address low (0x2200 + 5*4 = 0x2214)");
+        CHECK(m.bus.intAck() == 0x22, "INTA 3: address high");
+    }
+
+    SECTION("SS-1 board -- a status read clears END, so slave IR5 drops");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 5) & 0xFFu));
+        m.bus.ioWrite(0x59, kSadd);
+        m.clock.advance(kSaddT);
+        CHECK(ss1->slaveLive() & (1u << 5), "END is on slave IR5");
+        CHECK(m.bus.intPending(), "and pulls pin 73");
+        m.bus.ioRead(0x59);
+        CHECK(!(ss1->slaveLive() & (1u << 5)), "IN 59 cleared END (EACK* is tied high)");
+        CHECK(!m.bus.intPending(), "and the level-triggered request is gone");
+    }
+
+    SECTION("SS-1 board -- SVREQ (SR bit) on slave IR4, cleared by an SR = 0 command");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 4) & 0xFFu));
+        m.bus.ioWrite(0x59, kSr | kSadd);
+        m.clock.advance(kSaddT);
+        CHECK(ss1->slaveLive() & (1u << 4), "an SR = 1 command ends: SVREQ on slave IR4");
+        CHECK(m.bus.intAck() == 0xCD && m.bus.intAck() == 0x10 && m.bus.intAck() == 0x22,
+              "and it vectors to 2210H");
+        m.bus.ioRead(0x59);
+        CHECK(ss1->slaveLive() & (1u << 4), "a status read leaves SVREQ (SVACK* is tied high)");
+        m.bus.ioWrite(0x59, kSadd);
+        m.clock.advance(kSaddT);
+        CHECK(!(ss1->slaveLive() & (1u << 4)), "an SR = 0 command clears SVREQ at its end");
+    }
+
+    SECTION("SS-1 board -- a bus reset resets the math chip (CLEAR)");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        m.bus.ioWrite(0x58, 0x12);  // one stray byte: the stack is misaligned
+        m.bus.ioWrite(0x59, kSadd);
+        m.reset(Reset::Bus);
+        uint64_t now = m.bus.busClock().now(m.clock);
+        CHECK(!ss1->math().busy(now), "RESET stops the command");
+        CHECK(ss1->math().describe(now).find("sp=0 ") != std::string::npos,
+              "and puts the stack pointer back to its start");
+        CHECK(m.bus.ioRead(0x59) == 0x00, "status reads 00 after reset");
+    }
+
+    SECTION("SS-1 board -- snapshot carries the math chip, and the time left on a command");
+    {
+        Machine m;
+        auto* ss1 = mathMachine(m);
+        push32(m, 0x03A00000);
+        push32(m, 0x03C00000);
+        m.bus.ioWrite(0x59, kFadd);
+        m.clock.advance(100);  // 50 of FADD's 368 ticks gone
+
+        StateWriter w;
+        ss1->serialize(w);
+
+        Machine m2;
+        auto* b2 = mathMachine(m2);
+        StateReader r(w.data());
+        b2->deserialize(r);
+        CHECK(r.ok(), "the snapshot reads back without underrun");
+        uint64_t now2 = m2.bus.busClock().now(m2.clock);
+        CHECK(b2->math().busyUntil() == now2 + 318, "the restored command has 318 ticks left");
+        m2.clock.advance(2 * 318);
+        CHECK(pop32(m2) == 0x04B00000, "and the restored stack holds 5 + 6 = 11");
+    }
+
+    SECTION("SS-1 board -- a 9512 in the socket: the manual's 9512 test, END on IR5");
+    {
+        Machine m;
+        auto* ss1 = buildIntMachine(m);
+        std::string err;
+        CHECK(setProperty(*ss1, "math", "9512", err), "fit a 9512: math = 9512");
+        CHECK(storedText(ss1->properties(), "math", "?") == "9512", "math reads back 9512");
+        bool listed = false;
+        for (const MapEntry& e : ss1->ioMap()) listed |= e.lo == 0x58 && e.note.find("9512") == 0;
+        CHECK(listed, "the I/O map names the 9512");
+        initSs1Pics(m, 0x50, (uint8_t)(~(1u << 7) & 0xFFu), (uint8_t)(~(1u << 5) & 0xFFu));
+        m.bus.takeWaitStates();
+
+        // The SS-1 manual's 9512 path: push 1.0 twice (TBL3), SADD (01H), pop 2.0 (TBL4).
+        push32(m, 0x3F800000);
+        push32(m, 0x3F800000);
+        m.bus.ioWrite(0x59, 0x01);
+        CHECK(ss1->fpu().busy(m.bus.busClock().now(m.clock)), "the 9512 runs it, not the 9511A");
+        m.clock.advance(2 * 512 - 2);
+        CHECK(!m.bus.intPending(), "SADD runs 512 ticks");
+        m.clock.advance(2);
+        CHECK(m.bus.intPending(), "then END on slave IR5 pulls pin 73 (J6 set for the 9512)");
+        CHECK(pop32(m) == 0x40000000, "IN 58 x 4: 40H 00H 00H 00H, MS byte first");
+        CHECK(!m.bus.intPending(), "the reads cleared END");
+
+        // ERROR goes to J7 only: a divide by zero raises no slave IR.
+        push32(m, 0x3F800000);
+        push32(m, 0);
+        m.bus.ioWrite(0x59, 0x04);  // SDIV by 0
+        m.clock.advance(2 * 264);
+        uint64_t now = m.bus.busClock().now(m.clock);
+        CHECK(ss1->fpu().errOut(now), "the chip's ERR is up");
+        CHECK((ss1->slaveLive() & 0x31) == (1u << 5),
+              "but of IR0, IR4 and IR5 only END's IR5 is up: ERROR reaches no slave IR");
+
+        CHECK(setProperty(*ss1, "math", "9511a", err), "swap in a 9511A");
+        CHECK(m.bus.ioRead(0x59) == 0x00, "the new chip starts from reset");
+    }
 }

@@ -138,7 +138,7 @@ in the monitor prints this list with a one-line description of each (`SHOW BOARD
 | `fp` | The front panel — SENSE switches at `IN 0FFH`, and the lamps. |
 | `turnkey` | MITS 8800b Turnkey Module — a phantom boot PROM, an integrated 6850, and sense switches. |
 | `virtc` | MITS 88-VI/RTC — vectored interrupts (VI0–VI7 → `RST n`) and a real-time clock. |
-| `ss1` | CompuPro System Support 1 — a multifunction card: MSM5832 clock/calendar, a 2651 UART, an 8253 interval timer, and dual 8259A interrupt controllers in a master/slave cascade. |
+| `ss1` | CompuPro System Support 1 — a multifunction card: MSM5832 clock/calendar, a 2651 UART, an 8253 interval timer, dual 8259A interrupt controllers in a master/slave cascade, and a socket for an AMD 9511A or 9512 math chip. |
 | `hostbridge` | Guest ↔ host file transfer, sandboxed. **Ours, not a period card** — `R`/`W`/`HDIR`. |
 
 **More than thirty ready-built machines** are compiled into the binary; `altairsim --list`
