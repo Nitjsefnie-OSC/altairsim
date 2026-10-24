@@ -1,0 +1,65 @@
+name: altairsim fork CI
+
+# Fork-only exact-ref validation. This file exists only on the fork; it is
+# intentionally not sent upstream.
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Git branch, tag, or 40-character commit SHA to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: altairsim-osc-manual-${{ inputs.target_ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: build + fast suite (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout candidate ref
+        uses: actions/checkout@v5
+        with:
+          repository: Nitjsefnie-OSC/altairsim
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
+
+      # Provenance echo, block scalar. The run's head_sha/head_branch report the
+      # fork's default branch, so this log line is what proves which commit ran.
+      - name: Report checked-out SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ ! "$checked_out_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git rev-parse HEAD did not produce a 40-character commit SHA: $checked_out_sha"
+            exit 1
+          fi
+          printf 'checked-out SHA: %s\n' "$checked_out_sha"
+
+      # Mirrors upstream ci.yml's Linux PR leg (build + fast suite).
+      - name: Install expect (Linux)
+        timeout-minutes: 12
+        run: bash tools/ci-apt-install.sh expect
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DWERROR=on 2>&1 | tee configure.log
+          grep -E "SDL3 (found|not found)" configure.log || true
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Version
+        run: build/altairsim --version
+
+      - name: Test (fast)
+        run: ctest --test-dir build -C Release -LE slow --output-on-failure --parallel 4
