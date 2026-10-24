@@ -21,14 +21,15 @@ Ask the machine:
 
 ```
 altairsim> WHO IO FF
+port FF IN:  fp0
 port FF OUT: nobody (an OUT here goes nowhere)
 ```
 
 ```
 altairsim> SHOW BUS IO
 I/O
-  FF        fp0      read  SENSE switches SA8..SA15 -> D0..D7
-  10        sio0     read/write 6850 'a' -- status/control, data
+  FF         fp0      IN  --     SENSE switches SA8..SA15 -> D0..D7
+  10-11      sio0     IN  OUT    6850 'a' -- status/control, data
   ...
 ```
 

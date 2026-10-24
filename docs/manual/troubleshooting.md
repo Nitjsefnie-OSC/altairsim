@@ -255,6 +255,7 @@ the bus to report it:
 
 ```
 altairsim> SET BUS UNCLAIMED=WARN
+bus: unclaimed=WARN
 altairsim> RUN
 warning: IN 10 -> FF at PC=0043: no board decodes port 0x10. it floated to 0xFF.
 ```

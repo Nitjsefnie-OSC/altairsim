@@ -158,6 +158,7 @@ DUMP answers *"what is around here."* **EXAMINE answers *"what is AT here,"*** w
 ```
 altairsim> EX 100
 0100  C3  .  11000011
+C0Z0M0E0I0 A=00 BC=0000 DE=0000 HL=0000 SP=0000 IE=0 PC=0100  JMP F800
 altairsim> EX
 0101  00  .  00000000
 altairsim> EX
@@ -179,8 +180,9 @@ The panel has **no address latch of its own.** EXAMINE stops the processor, jams
 ```
 altairsim> EX F800
 F800  3E  >  00111110
+C0Z0M0E0I1 A=02 BC=0000 DE=0000 HL=F81F SP=BFFC IE=0 PC=F800  MVI A,03
 altairsim> STEP
-F800  3E 03   MVI A,03
+C0Z0M0E0I1 A=03 BC=0000 DE=0000 HL=F81F SP=BFFC IE=0 PC=F802  OUT 10
 ```
 
 **The PC is the cursor** — not a copy of it. Bare `EX` (EXAMINE NEXT) steps the program counter, because that is the only counter the panel has. Keeping a private latch beside it would mean a bare `EX` after a STEP quietly dragged the PC *backwards* to wherever the latch had been left.
@@ -376,8 +378,10 @@ A device that is not there does **not** silently become a `NullStream` — it is
 
 ```
 altairsim> CONNECT sio0:a console
+sio0:a: connected to console
 altairsim> CONNECT sio1:b console
-console: taken from sio0:a
+console taken from sio0:a
+sio1:b: connected to console
 ```
 
 **Exactly one unit may hold it, because there is exactly one keyboard.** Two boards reading it would each get half your keystrokes — invisible until you are debugging why every other character vanished. Interactively, connecting a second one **steals** it and says who from: you are moving the cable, and the last port you plug in is the one you meant.
@@ -395,6 +399,7 @@ And because looking at one byte is exactly when you need to know it *is* a byte:
 ```
 altairsim> EX 8000
 8000  FF  .  11111111   (nobody drives this -- the bus floated it)
+C0Z0M0E0I0 A=00 BC=0000 DE=0000 HL=0000 SP=0000 IE=0 PC=8000  RST 7
 ```
 
 ## SNAPSHOT and RESTORE: the machine's state, saved and reloaded
@@ -500,7 +505,7 @@ A single global base was never really available — `baud=9600` cannot mean 3840
 
 ```
 altairsim> REGION ADD mem0 type=ram at=8000 size=0x10K
-mem0: memory: [[board.region]] size: a K/M suffix is always decimal -- drop the hex marker: '0x10K'
+mem0: memory: [[board.region]] size: a K/M suffix is always decimal -- drop the base marker: '0x10K'
 ```
 
 Note that `at=F000` needs no `0x` — it's an address, so it's already hex.

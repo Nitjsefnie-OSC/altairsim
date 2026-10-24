@@ -13,7 +13,7 @@ $ altairsim basic4k
 altairsim> MOUNT acr0:tape "examples/basic4k/4K BASIC Ver 3-1.tap"
 acr0:tape: mounted examples/basic4k/4K BASIC Ver 3-1.tap
 altairsim> LOAD "examples/basic4k/LDR4K31.HEX"
-loaded 20 bytes from examples/basic4k/LDR4K31.HEX (0000-0013)
+loaded 20 bytes (1 page) from examples/basic4k/LDR4K31.HEX (0000-0013)
 altairsim> RUN 0
 [console -- ^E returns to the monitor]
 
@@ -161,14 +161,15 @@ so it cannot drift from what the binary does.
 
 ```
 altairsim> BOARDS
-  ID    TYPE    I/O       UNITS                       MEMORY
-  ----  ------  --------  --------------------------  ------------------------------
-  fp0   fp      FF        -                           -
-  cpu0  8080    -         1 cpu: 8080                 -
-  sio0  2sio    10,12     2 serial: a*, b             -
-  dsk0  dcdd    08,09,0A  4 disk: drive0(empty), ...  -
-  mem0  memory  -         1 rom: rom0                 0000-DFFF  ram  56K
-                                                      FF00-FFFF  rom  dbl  phantom:all
+  ID    TYPE        I/O       UNITS                                                               MEMORY
+  ----  ----------  --------  ------------------------------------------------------------------  --------------------------------
+  fp0   fp          FF        -                                                                   -
+  cpu0  8080        -         1 cpu: 8080                                                         -
+  sio0  2sio        10,12     2 serial: a*, b                                                     -
+  dsk0  dcdd        08,09,0A  4 disk: drive0(empty), drive1(empty), drive2(empty), drive3(empty)  -
+  hb0   hostbridge  B0,B1     -                                                                   -
+  mem0  memory      -         1 rom: rom0                                                         0000-DFFF  ram  56K
+                                                                                                  FF00-FFFF  rom  dbl  phantom:all
 
   * holds the console
 ```

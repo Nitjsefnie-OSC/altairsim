@@ -187,6 +187,8 @@ it resolves to. The resolved folder is the limit:
 
 ```
 altairsim> SHOW hb0
+hb0  (hostbridge)
+
   property         value            legal
   port             0xB0             0x0..0xFE
   hostdir          xfer
