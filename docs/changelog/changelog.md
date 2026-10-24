@@ -12,6 +12,11 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The manual and the quick start now say to start the macOS program from a terminal, not with
+a double-click.** Finder refuses a double-click on the notarized `altairsim`, online or
+offline, because Finder checks the file as a document. The manual keeps the `xattr` command
+for a Mac that cannot reach Apple.
+
 **A gamepad resting slightly off center keeps GOTCHA's direction correct.** Each host
 gamepad axis now reads zero within one eighth of full deflection from center. Before,
 GOTCHA's adjustment for the resting position could wrap a full move into the opposite
