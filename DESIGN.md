@@ -1807,8 +1807,8 @@ Until then, **§12.1's Host Bridge is the supported path**, and host-side image 
 > exist on every board, the CPU core and the `Clock`; `StateWriter`/`StateReader`
 > (`src/core/statefile.h`) are the byte-exact, little-endian, CRC-checked primitive; and
 > `Machine::snapshot()`/`restore()` write and read a file the two monitor commands drive. A
-> snapshot is machine **state**, restored into a machine built from the same config — it
-> refuses a topology that does not match (§13.1). **`RECORD`/`REPLAY` and `ReplayStream` are
+> snapshot is machine **state**, restored into a machine built from a config; RESTORE imports
+> what it can and names the rest (§13.2). **`RECORD`/`REPLAY` and `ReplayStream` are
 > NOT built** — the deterministic-replay half below still resolves at the prompt and says so
 > (§10.1). It builds directly on the snapshot foundation and is the next phase.
 
@@ -1839,6 +1839,27 @@ The line every `Board::serialize()` draws, and why the snapshot is small and por
 There are **no free-floating counters** to serialize — rotation, TDRE/TBMT, the RTC and the
 minidisk motor are all absolute deadlines or pure functions of `Clock::now()`, which is exactly
 what lets a deadline survive as one integer once `t_` travels with it.
+
+### 13.2 An older snapshot, or another machine: import what fits
+
+A snapshot outlives the release that wrote it, so RESTORE reads every format from 1 to
+`kFormatVersion` and imports **board by board** — each board's state is its own length-prefixed
+section, so one board that cannot be read costs only that board. Boards are matched by id
+(case-insensitive) and type, not by position, because a built-in machine gains and loses boards
+between releases. A board is **not** restored when it is on only one side, its type differs, its
+type's row in `stateSince()` (`machine.cpp`) is newer than the file, or it does not read its
+section to the exact byte. Each one gets a note, which the monitor and MCP print, and starts at
+power-on (`power()` + `reset(PowerOn)`): it cannot keep its old state, because restoring the
+clock emptied the event queue its deadlines were in.
+
+The exact-length check catches a layout that grew or shrank, even one that never bumped the
+version (several did while format 2 was current). It cannot catch a field that kept its size
+and changed its **meaning** — the SS-1 8253 phase in format 4 — which is why the table exists.
+**A change to a board's state bumps `kFormatVersion` and adds or raises that board's row.**
+
+Still refused whole, with the machine untouched: a bad checksum or magic, a truncated file, a
+format **newer** than this build (its layouts are unknown), and a file that shares no board with
+the machine.
 
 ---
 

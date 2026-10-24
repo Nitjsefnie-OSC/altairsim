@@ -167,19 +167,21 @@ public:
     //
     // Write the whole machine's STATE to a file, and read it back. A snapshot is CPU
     // + Clock time + every board's serialize() -- NOT its config. So RESTORE loads
-    // into a machine ALREADY BUILT from the same config (a built-in, or a CONFIG
-    // LOAD), and REFUSES a file whose board topology (ids and types, in order) does
-    // not match the live backplane -- with a sentence naming the mismatch. Config is
-    // a machine (CONFIG LOAD); a snapshot is its state, and the two stay separate.
+    // into a machine ALREADY BUILT from a config (a built-in, or a CONFIG LOAD). Config
+    // is a machine (CONFIG LOAD); a snapshot is its state, and the two stay separate.
     //
     // It lives here, not in the monitor, for the reason burn() does: one
     // implementation, more than one front end (the monitor now, MCP later).
     //
-    // False + `err` on any failure, and RESTORE is atomic on failure: it validates
-    // the whole file (checksum, version, topology) BEFORE applying a single byte, so
-    // a bad file leaves the running machine untouched.
+    // RESTORE IMPORTS WHAT IT CAN, so a snapshot moves to a newer release. Boards are
+    // matched by id and type; each board it cannot restore -- one on only one side, one
+    // whose state is from an older format (stateSince in machine.cpp), one whose section
+    // does not read back exactly -- starts as at power-on, and `notes` gets a line
+    // naming it. False + `err`, with the machine untouched, only for a file that is
+    // unreadable (checksum, magic, truncated), from a NEWER format, or that shares no
+    // board with this machine.
     bool snapshot(const std::string& path, std::string& err) const;
-    bool restore(const std::string& path, std::string& err);
+    bool restore(const std::string& path, std::string& err, std::vector<std::string>& notes);
 
     // ---- Who is driving? (DESIGN.md 3) ----
     //

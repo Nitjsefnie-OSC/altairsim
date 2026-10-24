@@ -620,7 +620,7 @@ turns a guess into a fact. Grouped by what you are trying to see:
 | See what led to the stop | `HISTORY [n]` / `HISTORY BUS [n]` | A flight recorder that is **always on** — the run-up to any break is already recorded. Each `HISTORY` line reads like a `STEP`; `HISTORY BUS` is raw cycles naming *who drove* and *who answered* (DMA names the board; a floated read shows `--`). |
 | Trace a region as it runs | `TRACE ON [file] [MASK=IN,OUT,IRQ,DMA,CONTENTION]` | Logs every matching cycle. A **tracepoint** — `BREAK <addr> TRACE ON` and `BREAK <addr> TRACE OFF` — flips tracing on entering a subroutine and off leaving it, without ever stopping the machine. An assistant has no console to trace to, so through the `monitor` tool the file is necessary: `TRACE ON <file>`, and for a tracepoint `TRACE ON <file>` then `TRACE OFF` first. The `bus_trace` tool gives the same cycles with no file. |
 | Copy the whole session | `SET CONSOLE log=session.txt` | Guest output and your input to a host file as they happen. |
-| Save and return to a moment | `SNAPSHOT <file>` / `RESTORE <file>` | Saves *state*, not configuration — `RESTORE` reads it back into a machine of the same shape (build the shape first with a machine file or `CONFIG LOAD`). |
+| Save and return to a moment | `SNAPSHOT <file>` / `RESTORE <file>` | Saves *state*, not configuration — build the machine first with a machine file or `CONFIG LOAD`; `RESTORE` matches boards by id and type, and names (in `not_restored`) each board it could not restore. |
 
 The full reference, with a worked session for each, is the **Debugger** document
 (`altairsim-debugger.pdf`, shipped beside this file); every command's one-line syntax is in

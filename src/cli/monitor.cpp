@@ -6123,12 +6123,17 @@ bool Monitor::exec(const std::string& line, std::ostream& out) {
         std::string shown = unquote(a[1]);
         std::string file  = resolveInput(shown);
         std::string err;
-        if (!m_.restore(file, err)) {
+        std::vector<std::string> notes;
+        if (!m_.restore(file, err, notes)) {
             out << "RESTORE: " << err << "\n";
             failed_ = true;
             return true;
         }
-        out << "restored from " << shown << "\n";
+        // A partial import is not a failure: what is listed starts as at power-on.
+        for (const auto& n : notes) out << "RESTORE: " << n << "\n";
+        out << "restored from " << shown;
+        if (!notes.empty()) out << " (" << notes.size() << " not restored; each starts as at power-on)";
+        out << "\n";
         flush(out);
         return true;
     }

@@ -416,11 +416,14 @@ restored from before-boot.snap
 ```
 
 **A snapshot is state, not configuration.** It does not carry the *shape* of the machine — which
-boards, at which ports — the way a machine file does. So RESTORE loads into a machine of the
-**same shape** (build it with the same machine file, or a `CONFIG LOAD`, first), and a file that
-does not match — a board missing, a type changed — is refused with the reason and your running
-machine is left untouched. A corrupt or truncated file is caught by its checksum and refused the
-same way.
+boards, at which ports — the way a machine file does. Build the machine first, with its machine
+file or a `CONFIG LOAD`. RESTORE matches each board in the file to a board in the machine by id
+and type, and restores each match. It reads a snapshot from an earlier release too, so a
+snapshot moves to a new release. Each board it cannot restore — on only one side, a different
+type, or with state from an older format — is named in a `RESTORE:` line and starts as at
+power-on. RESTORE refuses a corrupt or truncated file (the checksum catches it), a file from a
+newer release, and a file with no board in common with the machine. A refused file leaves the
+running machine untouched.
 
 `RECORD` and `REPLAY` — a recorded session you could play back exactly — would build on this.
 They are not planned; see below.

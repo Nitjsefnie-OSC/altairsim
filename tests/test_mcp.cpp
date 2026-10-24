@@ -2130,6 +2130,8 @@ void test_mcp() {
         CHECK(rep[1].at("result").at("structuredContent").at("ok").boolean(), "snapshot wrote");
         CHECK(rep[2].at("result").at("structuredContent").at("ok").boolean(),
               "restore read it back into the matching machine");
+        CHECK(rep[2].at("result").at("structuredContent").at("not_restored").items().empty(),
+              "and restored every board");
         std::filesystem::remove(path);
     }
 

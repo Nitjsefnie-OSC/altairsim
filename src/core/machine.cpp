@@ -223,12 +223,26 @@ void Machine::power() {
 // ---------------------------------------------------------------------------
 namespace {
 constexpr char     kMagic[8]     = {'A', 'L', 'T', 'R', 'S', 'N', 'P', '1'};
-// 2: the ACR/Sol tape decks gained an auto-stop mark (`stopAt_`) in their state. A v1
-// snapshot lacks it and is rejected with the format-mismatch message rather than misread.
+// 2: the ACR/Sol tape decks gained an auto-stop mark (`stopAt_`) in their state.
 // 3: the `sbc` board gained its auto-start latch and the onboard 1K RAM in its state.
 // 4: the `ss1` 8253 keeps each counter's phase in pin-49 ticks, not its load T-state.
 // 5: the `cadzilla` board gained its overlay SRAM in its state.
 constexpr uint32_t kFormatVersion = 5;
+
+// The format in which each board's state last changed in a way that a length check cannot
+// see. RESTORE does not trust such a board's section in an older file; the board starts at
+// power-on instead. A board not listed here has kept its layout since format 1, or its
+// section is checked by its length (Machine::restore). A change to a board's state
+// bumps kFormatVersion AND adds or raises that board's row here.
+uint32_t stateSince(const std::string& type) {
+    static const struct {
+        const char* type;
+        uint32_t    since;
+    } kRows[] = {{"acr", 2}, {"sol", 2}, {"sbc", 3}, {"ss1", 4}, {"cadzilla", 5}};
+    for (const auto& row : kRows)
+        if (type == row.type) return row.since;
+    return 1;
+}
 }  // namespace
 
 bool Machine::snapshot(const std::string& path, std::string& err) const {
@@ -270,7 +284,9 @@ bool Machine::snapshot(const std::string& path, std::string& err) const {
     return true;
 }
 
-bool Machine::restore(const std::string& path, std::string& err) {
+bool Machine::restore(const std::string& path, std::string& err,
+                      std::vector<std::string>& notes) {
+    notes.clear();
     std::ifstream f(path, std::ios::binary);
     if (!f) {
         err = "cannot open '" + path + "'";
@@ -300,37 +316,73 @@ bool Machine::restore(const std::string& path, std::string& err) {
         return false;
     }
     uint32_t ver = r.u32();
-    if (ver != kFormatVersion) {
+    if (ver == 0 || ver > kFormatVersion) {
         err = "'" + path + "' is snapshot format " + std::to_string(ver) + "; this build reads " +
-              std::to_string(kFormatVersion);
+              "formats 1 to " + std::to_string(kFormatVersion) + " -- it was written by a newer altairsim";
         return false;
     }
-    (void)r.str();  // the machine name, for the record; topology is what we enforce
+    (void)r.str();  // the machine name, for the record; the boards are matched by id
     uint32_t n = r.u32();
-    if (n != boards_.size()) {
-        err = "snapshot has " + std::to_string(n) + " boards; this machine has " +
-              std::to_string(boards_.size()) + " -- restore into the same configuration";
-        return false;
-    }
 
-    // PASS 1: read every section and VALIDATE the topology, applying nothing. A file
-    // that does not describe this exact backplane is refused whole, so a running
-    // machine is never left half-restored.
-    std::vector<uint8_t>              clockBytes = r.blob();
-    std::vector<std::vector<uint8_t>> boardBytes(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        std::string id   = r.str();
-        std::string type = r.str();
-        boardBytes[i]    = r.blob();
-        if (lowerAscii(id) != lowerAscii(boards_[i]->id) || type != boards_[i]->type()) {
-            err = "snapshot board " + std::to_string(i) + " is '" + id + "' (" + type +
-                  "); this machine has '" + boards_[i]->id + "' (" + boards_[i]->type() +
-                  ") -- restore into the same configuration";
-            return false;
-        }
+    // PASS 1: read every section, applying nothing. A truncated file is refused whole.
+    struct Saved {
+        std::string          id, type;
+        std::vector<uint8_t> bytes;
+    };
+    std::vector<uint8_t> clockBytes = r.blob();
+    std::vector<Saved>   saved;
+    for (uint32_t i = 0; i < n && r.ok(); ++i) {
+        Saved s;
+        s.id    = r.str();
+        s.type  = r.str();
+        s.bytes = r.blob();
+        saved.push_back(std::move(s));
     }
     if (!r.ok()) {
         err = "'" + path + "' is truncated";
+        return false;
+    }
+
+    // Match each board in the file to a board in this machine by id and type. A board on
+    // only one side is not an error: a machine gains and loses boards between releases,
+    // and the boards both sides hold are still worth having.
+    std::vector<const Saved*> match(boards_.size(), nullptr);
+    std::vector<bool>         noted(boards_.size(), false);
+    for (const auto& s : saved) {
+        bool found = false;
+        for (size_t i = 0; i < boards_.size(); ++i) {
+            if (match[i] || lowerAscii(s.id) != lowerAscii(boards_[i]->id)) continue;
+            if (s.type != boards_[i]->type()) {
+                notes.push_back("board '" + boards_[i]->id + "' is a " + s.type +
+                                " in the snapshot and a " + boards_[i]->type() +
+                                " in this machine");
+                noted[i] = true;
+                found    = true;
+                break;
+            }
+            match[i] = &s;
+            found    = true;
+            break;
+        }
+        if (!found)
+            notes.push_back("board '" + s.id + "' (" + s.type +
+                            ") is in the snapshot but not in this machine");
+    }
+    for (size_t i = 0; i < boards_.size(); ++i) {
+        if (!match[i]) continue;
+        uint32_t since = stateSince(boards_[i]->type());
+        if (ver < since) {
+            notes.push_back("board '" + boards_[i]->id + "' (" + boards_[i]->type() +
+                            "): its state is in snapshot format " + std::to_string(ver) +
+                            ", and this board needs format " + std::to_string(since) +
+                            " or later");
+            match[i] = nullptr;
+            noted[i] = true;
+        }
+    }
+    if (std::none_of(match.begin(), match.end(), [](const Saved* s) { return s != nullptr; })) {
+        err = "'" + path + "' holds no board that this machine has -- nothing was restored";
+        notes.clear();
         return false;
     }
 
@@ -342,9 +394,24 @@ bool Machine::restore(const std::string& path, std::string& err) {
         clock.deserialize(cr);
     }
     bus.busClock().rebase(clock);  // the count goes on from the restored T-state
-    for (uint32_t i = 0; i < n; ++i) {
-        StateReader br(boardBytes[i]);
-        boards_[i]->deserialize(br);
+    for (size_t i = 0; i < boards_.size(); ++i) {
+        Board& b = *boards_[i];
+        if (match[i]) {
+            StateReader br(match[i]->bytes);
+            b.deserialize(br);
+            // The board must read its section exactly. A section of another length is a
+            // layout this build does not know (a change the format version missed), so
+            // its bytes were misread and the board starts over below.
+            if (br.ok() && br.remaining() == 0) continue;
+            notes.push_back("board '" + b.id + "' (" + b.type() +
+                            "): its saved state does not fit this build");
+        } else if (!noted[i]) {
+            notes.push_back("board '" + b.id + "' (" + b.type() + ") is not in the snapshot");
+        }
+        // NOT RESTORED: the board starts as at power-on. Keeping its old state is not an
+        // option -- the clock just emptied the event queue, so its deadlines are gone.
+        b.power();
+        b.reset(Reset::PowerOn);
     }
     bus.invalidateDecode();
     for (auto& b : boards_) {
