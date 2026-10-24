@@ -10,99 +10,57 @@ register, the bit or the command that was wrong.
 
 ---
 
-## Unreleased
+## 1.3.5
 
-**The CADzilla board has its overlay.** The board has a second picture of 1 bit for each pixel,
-in its own memory. Where a bit is 1, the Bt453 shows overlay color 2 in place of the color from
-the table. A guest draws the overlay through an ACRTC screen with the CHR bit set, and the new
-`OLSEL` bit of the MODE register selects which half of the overlay memory it draws. The `OLEN`
-bit, which did nothing before, now shows the overlay. `SHOW` gives the new `olsel` line, and the
-`wiring` line names a CHR screen that is enabled for display.
+**1.3.5 adds a math chip to the CompuPro System Support 1 and an overlay to the CADzilla board.
+Board clocks now keep real time when the processor runs flat out. The macOS packages are
+signed, and the host bridge has several corrections.**
 
-**Two CADzilla display errors are corrected.** A fetch now reads 8 words that start at a
-multiple of 8, as on the hardware, so a start address that is not a multiple of 8 no longer
-moves the picture by part of a fetch. The area outside the picture is now black, as on the
-hardware; before, it had the color of entry 0 of the table.
+**Board clocks keep real time.** The 88-VI/RTC, the RTC-100 and the SS-1 interval timer counted
+their time in processor T-states. At flat out (`clock_hz = 0`, the default), they ticked as fast
+as the host ran the guest. For example, the MP/M II time of day ran fast, and the MP/M tick from
+SS-1 counter 0 came many times too often. Now each board keeps real time at every `clock_hz`.
+The SS-1 timer counts the 2 MHz bus clock of pin 49. The 88-VI/RTC also restarted its divider
+on each write to port `0xFE`, so each tick came late by the time the service routine took. Now
+only a write with bit 5 set restarts the divider.
 
-**Snapshots have a new format.** A snapshot now holds the overlay memory of a CADzilla board, so
-the snapshot format is now version 5. `RESTORE` does not accept a snapshot from release 1.3.4 or
-earlier.
+**The SS-1 math socket takes a 9511A or a 9512.** The new `math` property is `none` (the
+default, an empty socket), `9511a` or `9512`. With a chip in the socket, ports `58` and `59`
+are the chip's stack and its command and status. Each command takes the cycle count of the data
+sheet, and END and SVREQ go to the slave 8259A. For example, the SS-1 manual's 9511A test
+program prints `OK` under CP/M with `SET ss1 math=9511a`.
 
-**The SS-1 math socket takes a 9511A or a 9512.** The CompuPro System Support 1 has a new `math`
-property: `none` (the default, the empty socket of a stock board), `9511a` (AMD Am9511A, Intel
-8231A) or `9512` (AMD Am9512, Intel 8232). With a chip in the socket, ports `58` and `59` are
-the chip's stack and its command and status. Each command takes the cycle count of the data
-sheet, the board adds its wait states, and END and SVREQ go to the slave 8259A. For example,
-the SS-1 manual's 9511A test program prints `OK` under CP/M with `SET ss1 math=9511a`. The
-live `mathchip` property shows the chip's state.
+**An edge-triggered SS-1 interrupt needs its line held high.** In edge-triggered mode, the
+SS-1's 8259A kept a request after its IR line fell. A real 8259A drops the request when the line
+falls before the acknowledge. Now the request falls with the line. An acknowledge with no
+request now gives the default IR7, not `RST 7`.
 
-**An edge-triggered SS-1 interrupt needs its line held high.** In edge-triggered mode (ICW1
-LTIM = 0), the SS-1's 8259A kept a request after its IR line fell. A real 8259A drops the
-request when the line falls before the acknowledge. For example, an MP/M II XIOS put the 8253
-counter 0 square wave (mode 3) on slave IR1. When the guest disabled interrupts for longer than
-the high half of the wave, the tick still vectored to IR1 later. On a real SS-1 that tick is
-lost. Now the request falls with the line, as on the real chip. An acknowledge with no request
-now gives the 8259A's default IR7 (a CALL to the IR7 address, no ISR bit) instead of `RST 7`.
+**The CADzilla board has its overlay.** A second picture, of 1 bit for each pixel, shows overlay
+color 2 where a bit is 1. A guest draws it through an ACRTC screen with the CHR bit set. The new
+`OLSEL` bit selects the half of the overlay memory, and `OLEN` now shows the overlay. A fetch
+now starts at a multiple of 8 words, and the area outside the picture is black, as on the
+hardware.
 
-**The MCP `run` tool stops at an address.** A new `stop_at` argument stops the run when the PC
-gets to that address, before the instruction there runs. The reply gives `stopped` as
-`stop-at`. The stop is for that one call only, so there is no breakpoint to remove after it.
-For example, an assistant at a BDOS call can run to the return address to time the call.
+**Snapshots are now version 5.** A snapshot now holds the SS-1 timer phase and the CADzilla
+overlay memory. **`RESTORE` does not accept a snapshot from 1.3.4 or earlier.**
 
-**The SS-1 interval timer counts 2 MHz of real time.** The CompuPro SS-1's 8253 counted its
-2 MHz bus clock in processor T-states. At flat out (`clock_hz = 0`, the default), the timers
-counted as fast as the host ran the guest. A timer interrupt, such as the MP/M tick from
-counter 0, came many times too often. Now the 8253 counts the 2 MHz bus clock in real time at
-every `clock_hz`. With a crystal set, the timer was always correct.
+**Host bridge.**
+- A wildcard in `R` and `HDIR` skips a host file whose name starts with `.`, such as
+  `.DS_Store`. `HDIR .*` lists these files.
+- `W *.ASM SRC` copies each match into the host folder `SRC`.
+- Each part of a host path ignores case, also on Linux. Before, `R SRC/FOO.ASM` did not find
+  the folder `src`.
+- The sources of `R`, `W` and `HDIR` are 40% smaller. The programs are the same, byte for byte.
 
-**The RTC-100 interrupts once a second of real time.** The board counted its one-second
-interrupt in processor T-states. At flat out (`clock_hz = 0`, the default), the interrupt came
-as fast as the host ran the guest, many times each second. A guest that counts the interrupts
-to keep time ran fast. Now the interrupt comes once a second of real time at every `clock_hz`.
-The time that the guest reads from the clock was always correct.
+**The macOS packages are signed and notarized.** macOS starts the program with no message, also
+after a browser download, so the `xattr` step is gone. The first start of a new copy needs the
+internet. The *Troubleshooting* chapter says what to do on a Mac that is offline.
 
-**Host bridge wildcards skip dot files.** A wildcard in `R` and `HDIR` matched a host file
-whose name starts with `.`, such as `.DS_Store`. `R *.*` copied the file to the CP/M disk as
-` .DS_`, a name with an empty first part. You cannot type that name at the `A>` prompt, so the
-file was hard to erase. Now a wildcard skips these files, as a host shell does. `HDIR .*`
-lists them, and `R .gitignore GITIGNOR.TXT` copies one.
+**The MCP `run` tool stops at an address.** The new `stop_at` argument stops the run before the
+instruction at that address runs. The stop is for that one call only.
 
-**`W` copies a wildcard into a host folder.** `W *.ASM SRC` writes each match into the host
-folder `SRC`, under its own name. Before, `W` refused a second word after a wildcard. The folder
-must exist. When it does not, `W` prints one error and copies nothing. The CP/M example disks
-have this version of `W` (1.3).
-
-**The host bridge sources are smaller.** `R.ASM`, `W.ASM`, `HDIR.ASM` and `HB.INC` were
-103,624 bytes, and now they are 62,364 bytes. Tabs line up the columns, and the comments say
-only how the code works now. The programs are the same, byte for byte. The
-`altairsim-cpm-text` skill now says to use tabs in assembler source.
-
-**Host bridge folder names ignore case on Linux.** The board ignored case only in the last
-part of a host path. The CP/M command line is in upper case, so `R SRC/FOO.ASM` did not find
-the folder `src` on a case-sensitive host, and the copy failed. Now each
-part of the path ignores case, with the same rules as a file name. macOS and Windows were
-not affected.
-
-**The 88-VI/RTC keeps real time.** The board counted its 60 Hz and 10 kHz intervals in
-processor T-states. At flat out (`clock_hz = 0`, the default), the clock ticked as fast as the
-host ran the guest, and the MP/M II time of day ran fast. A guest that counted ticks for 2
-seconds counted 17,384, not 120. Now both `rtc_source` settings keep real time at every
-`clock_hz`. A write to port `0xFE` without bit 5 also restarted the divider. The service
-routine writes the port on every tick, so each tick came late by the time the routine took.
-Now only bit 5 restarts the divider.
-
-**The macOS packages are signed and notarized.** The program in both macOS archives is signed
-with a Developer ID, and Apple has notarized it. macOS starts it with no message, also when
-the package comes from a browser. Before, macOS refused to start the program, and you removed
-the quarantine mark with `xattr` first. The first start of a new copy needs the internet,
-because macOS asks Apple about the program. The *Troubleshooting* chapter says what to do when
-the Mac is offline.
-
-**Two machine file examples in the serial chapter load now.** The examples for a mirror on a
-pseudo-terminal and on a serial port gave the endpoint as `a = "…"` on the board. The program
-refused them, because `a` is a unit. They now use `[board.unit.a]` with `connect`, as the rest
-of the chapter does. Some other samples in the *User Manual* and the Monitor document now show
-lines that the program prints, such as `added: RUN FF00` after `STARTUP ADD`.
+**Other corrections.** Two machine file examples in the serial chapter now load. Other samples
+in the *User Manual* and the Monitor document now show what the program prints.
 
 ## 1.3.4
 
