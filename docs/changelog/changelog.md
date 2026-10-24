@@ -10,6 +10,14 @@ register, the bit or the command that was wrong.
 
 ---
 
+## Unreleased
+
+**A gamepad resting slightly off center keeps GOTCHA's direction correct.** Each host
+gamepad axis now reads zero within one eighth of full deflection from center. Before,
+GOTCHA's adjustment for the resting position could wrap a full move into the opposite
+direction. Full deflection still reads `7F` or `81`, and Dazzle Doodle's drawing range
+is unchanged.
+
 ## 1.3.5
 
 **1.3.5 adds a math chip to the CompuPro System Support 1 and an overlay to the CADzilla board.

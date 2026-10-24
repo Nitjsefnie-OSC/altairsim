@@ -7,8 +7,9 @@
 // Joystick seam and knows nothing of this; the composition root (src/main.cpp) creates
 // one of these and injects it. It uses SDL's GAMEPAD API, so any modern USB controller
 // maps to a JS-1 with no per-device configuration: the left stick is the joystick, the
-// four face buttons are SW1-SW4. A player with no controller can use the keyboard
-// (arrow keys + Space/Z/X/C), read here as a synthetic stick.
+// four face buttons are SW1-SW4. Each axis has a center dead zone of -4096..4096;
+// readings outside it keep their full SDL range. A player with no controller can use
+// the keyboard (arrow keys + Space/Z/X/C), read here as a synthetic stick.
 //
 // SELF-CONTAINED AND SELF-INITIALIZING. It brings up its OWN SDL subsystem
 // (SDL_INIT_GAMEPAD) lazily on the first poll() and tears down only that subsystem in

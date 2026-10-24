@@ -68,7 +68,12 @@ SW1–SW4 → **D4–D7**.
   injected at the composition root exactly like a `Display`: an `SdlJoystick` (a USB
   gamepad, or the keyboard) in the shipping binary, a `NullJoystick` headless, a stub in
   tests. **The board never touches SDL.**
-- **Axis mapping.** A host stick axis (SDL range −32768…32767) is arithmetic-shifted
+- **Axis mapping.** The SDL host maps gamepad readings from −4096 through +4096 to
+  zero on each axis (a dead zone of one eighth of full deflection from center).
+  Readings outside it pass through unchanged. A stick resting slightly off center
+  therefore reads `0x00`, so GOTCHA's complement-of-rest adjustment is `0xFF` and
+  cannot wrap a full deflection into the opposite direction. The keyboard is unchanged.
+  A host stick axis (SDL range −32768…32767) is arithmetic-shifted
   `>>8` to the two's-complement A/D byte: center 0 → `0x00`, full positive → `0x7F`,
   full negative → `0x81`. The negative end is held at −127, one short of the A/D's
   `0x80`, so the range is the same each way; `reference/JS-1.md` §4.1 gives the reason
@@ -221,6 +226,10 @@ plays at the pitch a real board gives. With `clock_hz = 0` the divisor is 2 MHz,
   T-states at 2 MHz and the parallel port 10; 22 at 4 MHz, 17 at 3 MHz, 11 flat out; a
   monitor `OUT` between runs costs the next instruction nothing; and a CPU tone loop
   renders at the pitch the hold gives it.
+- **`tests/test_d7a.cpp`** also drives an SDL virtual gamepad when SDL3 is available:
+  both signs of center drift, both full deflections, and both axes reach the guest
+  through the real host polling path. The checks cover GOTCHA's calibrated direction,
+  both dead-zone edges and the unchanged Dazzle Doodle drawing boundaries.
 - **`tests/test_level_pcm.cpp`**: a constant level, a square wave's zero crossings per
   second, no drift in the sample count across many small renders, and the weighted average
   of an edge inside a sample.

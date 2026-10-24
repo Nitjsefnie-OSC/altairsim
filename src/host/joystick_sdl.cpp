@@ -45,8 +45,12 @@ void SdlJoystick::poll() {
 
         StickState s;
         if (gp) {
-            s.x = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTX);
-            s.y = SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTY);
+            // Center drift must read zero before a game calibrates its stick with 8-bit adds.
+            auto centered = [](int16_t a) -> int16_t {
+                return a >= -4096 && a <= 4096 ? 0 : a;
+            };
+            s.x = centered(SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTX));
+            s.y = centered(SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTY));
             uint8_t b = 0;
             if (SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_SOUTH)) b |= 0x01;  // SW1
             if (SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_EAST))  b |= 0x02;  // SW2

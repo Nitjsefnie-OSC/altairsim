@@ -900,6 +900,12 @@ gets gamepad 1. Two controllers work with no setup, and each stick uses the keyb
 gamepad is not there. `SHOW <id>` shows what each stick uses now (a named controller, the
 keyboard, or nothing). `SHOW JOYSTICKS` lists the controllers that your computer has.
 
+Each gamepad axis has a **center dead zone**, extending one eighth of full deflection
+to either side of center. Within it the stick reads zero, so a small resting offset
+does not make GOTCHA steer the wrong way after calibration. Outside it the readings
+are unchanged: full deflection still gives `7F` or `81`. Dazzle Doodle still draws only
+within the middle half of the stick's range. The keyboard controls are unchanged.
+
 A machine that uses the sticks can set its video window to be a **display, not a keyboard**
 (`[display] keyboard = none`). Your keys then move the stick and do not go to a prompt.
 
