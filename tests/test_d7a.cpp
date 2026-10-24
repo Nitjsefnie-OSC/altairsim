@@ -8,6 +8,11 @@
 #include "host/joystick.h"
 #include "host/level_pcm.h"
 
+#ifdef ALTAIRSIM_ENABLE_SDL
+#include "host/joystick_sdl.h"
+#include <SDL3/SDL.h>
+#endif
+
 #include <cstdint>
 #include <map>
 #include <string>
@@ -226,6 +231,88 @@ void test_d7a() {
         CHECK(large(g.in(0x19), false), "full -X is a large negative move, not a wrapped positive one");
         CHECK(large(g.in(0x1A), false), "full down is a large negative move");
     }
+
+#ifdef ALTAIRSIM_ENABLE_SDL
+    SECTION("D+7A -- a host stick resting off center keeps full moves in the right direction");
+    {
+        bool inited = SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+        CHECK(inited, "the gamepad subsystem starts without a window");
+        if (inited) {
+            SDL_VirtualJoystickDesc desc;
+            SDL_INIT_INTERFACE(&desc);
+            desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+            desc.naxes = 2;
+            desc.nbuttons = 4;
+            desc.axis_mask = (1 << SDL_GAMEPAD_AXIS_LEFTX) | (1 << SDL_GAMEPAD_AXIS_LEFTY);
+            desc.button_mask = 0x0F;
+            desc.name = "D+7A test stick";
+            SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+            CHECK(id != 0, "a virtual gamepad is attached");
+            SDL_Joystick* pad = SDL_OpenJoystick(id);
+            CHECK(pad != nullptr, "the virtual axes can be driven");
+            if (pad) {
+                SdlJoystick host;
+                Rig g;
+                D7aBoard::setJoystick(&host);
+                int n = 0, index = -1;
+                SDL_JoystickID* ids = SDL_GetGamepads(&n);
+                for (int i = 0; i < n; ++i) if (ids[i] == id) index = i;
+                SDL_free(ids);
+                CHECK(index >= 0, "SDL exposes the virtual stick as a gamepad");
+                std::string err;
+                CHECK(setProperty(*g.d7a, "joystick1", std::to_string(index), err),
+                      "console 1 reads the virtual gamepad");
+
+                for (int axis : {0, 1}) {
+                    uint8_t port = axis == 0 ? 0x19 : 0x1A;
+                    for (int rest : {-4096, -300, -257, -256, -1, 0, 255, 256, 300, 4096}) {
+                        for (int full : {-32768, 32767}) {
+                            CHECK(SDL_SetJoystickVirtualAxis(pad, axis, (int16_t)rest),
+                                  "set the raw rest offset");
+                            g.d7a->pump();
+                            uint8_t center = g.in(port);
+                            CHECK(center == 0x00, "host center drift reads 0x00 on either axis");
+                            CHECK(SDL_SetJoystickVirtualAxis(pad, axis, (int16_t)full),
+                                  "set the raw full deflection");
+                            g.d7a->pump();
+                            bool positive = (full > 0) != (axis == 1);
+                            uint8_t reading = g.in(port);
+                            CHECK(reading == (positive ? 0x7F : 0x81),
+                                  "host mapping preserves full-scale guest bytes and Y inversion");
+                            uint8_t sum = (uint8_t)(reading + (uint8_t)~center);
+                            bool neg = sum & 0x80;
+                            uint8_t mag = neg ? (uint8_t)~sum : sum;
+                            CHECK(neg != positive, "GOTCHA keeps the full move's direction after calibration");
+                            CHECK(mag >= 0x40, "GOTCHA sees a large move after calibration");
+                        }
+                    }
+
+                    // Just outside the dead zone, and both edges of Doodle's drawing range.
+                    const struct { int raw; uint8_t x; uint8_t y; bool drawX; bool drawY; } cases[] = {
+                        {-4097, 0xEF, 0x11, true, true}, {4097, 0x10, 0xF0, true, true},
+                        {-16385, 0xBF, 0x41, false, false}, {-16129, 0xC0, 0x40, true, false},
+                        {-16128, 0xC1, 0x3F, true, true}, {16128, 0x3F, 0xC1, true, true},
+                        {16384, 0x40, 0xC0, false, true}, {16640, 0x41, 0xBF, false, false},
+                    };
+                    for (const auto& c : cases) {
+                        CHECK(SDL_SetJoystickVirtualAxis(pad, axis, (int16_t)c.raw),
+                              "set an axis outside the center dead zone");
+                        g.d7a->pump();
+                        uint8_t reading = g.in(port);
+                        CHECK(reading == (axis == 0 ? c.x : c.y),
+                              "outside the dead zone the guest byte is unchanged");
+                        bool draws = !((uint8_t)(reading + 0x40) & 0x80);
+                        CHECK(draws == (axis == 0 ? c.drawX : c.drawY),
+                              "Dazzle Doodle draws only within C0..3F");
+                    }
+                }
+                SDL_CloseJoystick(pad);
+            }
+            if (id) CHECK(SDL_DetachVirtualJoystick(id), "detach the virtual gamepad");
+            SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+        }
+    }
+#endif
 
     SECTION("D+7A -- buttons: active-low, console 1 in D0-D3, console 2 in D4-D7");
     {

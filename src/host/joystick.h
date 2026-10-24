@@ -20,8 +20,8 @@
 //
 // AXES ARE SDL-NATIVE (-32768..32767), on purpose. The 8-bit two's-complement byte a
 // D+7A A/D returns is the board's to compute (an arithmetic >>8), so the mapping stays
-// in the board where it is testable with no controller -- this seam carries the raw
-// host reading, not a period byte.
+// in the board where it is testable with no controller -- this seam carries a
+// host-scale reading (with the backend's center dead zone), not a period byte.
 
 #include <cstdint>
 #include <string>
