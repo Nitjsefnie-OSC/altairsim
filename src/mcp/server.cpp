@@ -2113,12 +2113,23 @@ Json callTool(Machine& m, McpSession& sess, const std::string& name, const Json&
     if (name == "restore") {
         std::string path = args.at("path").str();
         std::string err;
-        bool ok = m.restore(path, err);
+        std::vector<std::string> notes;
+        bool ok = m.restore(path, err, notes);
         if (!ok) return textResult(err, true);
         Json d = Json::obj();
         d["path"] = Json(path);
         d["ok"] = Json(true);
-        return dataResult(d, "machine state restored from " + path);
+        Json nr = Json::arr();
+        std::string text;
+        for (const auto& n : notes) {
+            nr.push(Json(n));
+            text += n + "\n";
+        }
+        d["not_restored"] = nr;
+        text += "machine state restored from " + path;
+        if (!notes.empty())
+            text += " (" + std::to_string(notes.size()) + " not restored; each starts as at power-on)";
+        return dataResult(d, text);
     }
 
     if (name == "bus_irq") {

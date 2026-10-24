@@ -7,6 +7,7 @@
 #include "host/disk.h"
 #include "host/media.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <utility>

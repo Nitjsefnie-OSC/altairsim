@@ -1098,10 +1098,13 @@ REGI ADD mem0 type=rom at=FF00 mount=builtin:dbl
 ```
 RESTORE <file>
 ```
-Load a SNAPSHOT back into THIS machine. The machine must be the same shape the
-snapshot was taken from -- the same boards, same ids, same order (build it with
-the same machine file, or a CONFIG LOAD, first) -- and a file that does not match
-is refused with the reason, the running machine untouched.
+Load a SNAPSHOT back into THIS machine. Build the machine first, with its
+machine file or a CONFIG LOAD. RESTORE matches each board in the file to a
+board in this machine by id and type, and restores each match. A snapshot from
+an earlier release is read too. RESTORE names each board that it cannot
+restore, and that board starts as at power-on. RESTORE refuses a corrupt file,
+a file from a newer release, and a file with no board in common with this
+machine. A refused file leaves the machine as it was.
 
 ```
 RESTORE before-boot.snap
