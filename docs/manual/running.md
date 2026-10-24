@@ -22,8 +22,10 @@ runs until you start one.
 
 ## macOS: the first run
 
-The macOS program is signed with a Developer ID, and Apple has checked it (notarized it). macOS
-starts it with no message, also when you got the package with a browser.
+The macOS program is signed with a Developer ID, and Apple has checked it (notarized it). When
+you start it from a terminal, macOS starts it with no message, also when you got the package
+with a browser. Do not double-click `altairsim` in Finder. macOS refuses a double-click on the
+program, even when the Mac is online.
 
 The first time that you start a new copy, macOS asks Apple about the program. This check needs
 the internet. If the Mac is offline, macOS can refuse to start the program. The chapter
