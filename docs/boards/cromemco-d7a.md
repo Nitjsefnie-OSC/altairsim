@@ -209,10 +209,6 @@ plays at the pitch a real board gives. With `clock_hz = 0` the divisor is 2 MHz,
 
 ## Verification
 
-- **`tests/test_d7a.cpp`** also drives an SDL virtual gamepad when SDL3 is available:
-  both signs of center drift, both full deflections, and both axes reach the guest
-  through the real host polling path. The checks cover GOTCHA's calibrated direction,
-  both dead-zone edges and the unchanged Dazzle Doodle drawing boundaries.
 - **`tests/test_d7a.cpp`** (headless, with a `StubJoystick`): port decode and the
   8-aligned strap; parallel latch/read; analog D/A round-trip and A/D independence; the
   axis → two's-complement mapping for both consoles (0x19/0x1A and 0x1B/0x1C), with
@@ -230,6 +226,10 @@ plays at the pitch a real board gives. With `clock_hz = 0` the divisor is 2 MHz,
   T-states at 2 MHz and the parallel port 10; 22 at 4 MHz, 17 at 3 MHz, 11 flat out; a
   monitor `OUT` between runs costs the next instruction nothing; and a CPU tone loop
   renders at the pitch the hold gives it.
+- **`tests/test_d7a.cpp`** also drives an SDL virtual gamepad when SDL3 is available:
+  both signs of center drift, both full deflections, and both axes reach the guest
+  through the real host polling path. The checks cover GOTCHA's calibrated direction,
+  both dead-zone edges and the unchanged Dazzle Doodle drawing boundaries.
 - **`tests/test_level_pcm.cpp`**: a constant level, a square wave's zero crossings per
   second, no drift in the sample count across many small renders, and the weighted average
   of an edge inside a sample.
