@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: How a pull request from another contributor (author not deltecent) is reviewed — read it, check the feature is needed, build and run it, prove its tests actually test the change, review it against the house rules, then either fix easy problems on their branch (only when maintainerCanModify is true) or post a review comment. Merge needs green CI AND the maintainer's approval. Use when asked to review, look at or merge PR #N, or for any PR not authored by deltecent.
+description: How a pull request from another contributor (author not deltecent) is reviewed — read it, check the feature is needed, build and run it, prove its tests actually test the change, review it against the house rules, then either fix easy problems on their branch (only when the branch can be pushed to: maintainerCanModify true and the fork not an organization's) or post a review comment. Merge needs green CI AND the maintainer's approval. Use when asked to review, look at or merge PR #N, or for any PR not authored by deltecent.
 ---
 
 # Review a contributor's PR
@@ -24,12 +24,18 @@ The rules, set by the maintainer:
 gh pr view <N> --json author,title,body,files,commits,headRefName,headRepositoryOwner,maintainerCanModify
 gh pr diff <N>
 gh pr checks <N>
+gh api users/<headRepositoryOwner.login> --jq .type
 ```
 
-- **Record `maintainerCanModify` now, before any work.** It says whether the contributor
-  left "Allow edits by maintainers" on. **If it is `false`, this review ends in a comment,
-  whatever the findings: skip steps 6 and 8, and every finding, easy or not, goes into the
-  step 7 review.** Never fix a PR I cannot push to — no branch on origin, no PR of our own.
+- **Record whether I can push to their branch, now, before any work.** I can only when
+  both are true:
+  - `maintainerCanModify` is `true`: the contributor left "Allow edits by maintainers" on.
+  - The owner type is `User`. GitHub does not let maintainers push to a fork that belongs
+    to an `Organization`, even when `maintainerCanModify` reads `true`. The PR page says so.
+
+  **If I cannot push, this review ends in a comment, whatever the findings: skip steps 6
+  and 8, and every finding, easy or not, goes into the step 7 review.** Never fix a PR I
+  cannot push to — no branch on origin, no PR of our own.
 - Read the linked issues and the `DESIGN.md` sections it touches.
 - **Did CI run?** A first-time contributor's workflow runs wait for approval. Report that to
   the maintainer; do not approve the run yourself.
@@ -59,7 +65,8 @@ cmake -B build -DWERROR=on && cmake --build build -j
 ./build/altair_tests <the suites it touches>
 ```
 
-`gh pr checkout` also sets the branch's upstream to their fork, which step 8 needs. **Quote
+`gh pr checkout` records their fork as the branch's push remote. The local branch is
+`pr-<N>`, but theirs is `headRefName`, so step 8 pushes to their branch by name. **Quote
 the pass lines.** A new warning is a finding: CI builds with `-Werror` on all three
 toolchains.
 
@@ -105,7 +112,7 @@ request to the contributor.
 
 ## 6. Easy or substantial?
 
-**Only when `maintainerCanModify` is true.** It is a judgement call:
+**Only when step 1 found I can push to their branch.** It is a judgement call:
 
 - **Easy** — local and mechanical, with no guess about what they meant: missing docs, a
   naming fix, a missing or weak test, a warning, a small bug in their own new code.
@@ -128,7 +135,7 @@ maintainer. Sign it `--AltairSim Claude`. Write it to the `simplified-english` l
 Then report to the maintainer and stop. When the contributor pushes again, start over at
 step 1.
 
-## 8. Fix it — easy, and `maintainerCanModify` was true
+## 8. Fix it — easy, and step 1 found I can push
 
 1. In the step 3 worktree, on `pr-<N>`, make the fixes. Run the tests and the step 4
    negative control again.
@@ -137,11 +144,11 @@ step 1.
 3. **Commit only on approval**, as my own commit on top of theirs (`ship-change` step 1:
    staged by name, `type(scope): summary`, no attribution).
 4. **Check `maintainerCanModify` again** — the contributor can turn it off at any time — then
-   push to their branch:
+   push to their branch by name:
 
    ```sh
    gh pr view <N> --json maintainerCanModify
-   git push
+   git push "$(git config branch.pr-<N>.pushremote)" HEAD:<headRefName>
    ```
 
    The push goes to someone else's repository, so it prompts for the maintainer's yes. If the
