@@ -17,6 +17,14 @@ a double-click.** Finder refuses a double-click on the notarized `altairsim`, on
 offline, because Finder checks the file as a document. The manual keeps the `xattr` command
 for a Mac that cannot reach Apple.
 
+**`RESTORE` reads a snapshot from an earlier release.** Before, `RESTORE` refused a snapshot
+when its format version was not the newest. It also refused a snapshot when one board was
+added, removed or changed. A snapshot from 1.3.4 could not go into 1.3.5. Now `RESTORE` matches
+the boards by id and type and restores each match. It prints a line for each board that it
+cannot restore, and that board starts as at power-on. For example, a 1.3.4 snapshot of a
+machine with an SS-1 board restores all the boards except the `ss1` board. The SS-1 timer
+state changed in 1.3.5. The MCP `restore` tool gives these lines in `not_restored`.
+
 **A gamepad resting slightly off center keeps GOTCHA's direction correct.** Each host
 gamepad axis now reads zero within one eighth of full deflection from center. Before,
 GOTCHA's adjustment for the resting position could wrap a full move into the opposite

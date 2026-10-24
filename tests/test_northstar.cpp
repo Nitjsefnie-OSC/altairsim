@@ -17,6 +17,7 @@
 #include "core/debug.h"
 #include "core/machine.h"
 #include "core/statefile.h"
+#include "host/cardimg.h"
 #include "host/media.h"
 #include "test.h"
 
@@ -67,7 +68,7 @@ struct Rig {
         m.add("8080", "cpu0", err);
         m.power();
     }
-    ~Rig() { setMediaResolver({}); }
+    ~Rig() { setMediaResolver(openHostMedia); }  // the one tests/main.cpp installs
 
     uint8_t rd(uint16_t a) { return m.bus.memRead(a); }
 

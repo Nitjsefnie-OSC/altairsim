@@ -20,6 +20,7 @@
 #include "host/stream.h"
 #include "test.h"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>

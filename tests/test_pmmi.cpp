@@ -315,7 +315,8 @@ void test_pmmi() {
 
         g.modemctl(0x40);  // engage
         CHECK(g.m.snapshot(snap, err), "snapshot the looped machine");
-        CHECK(g.m.restore(snap, err), "restore it");
+        std::vector<std::string> notes;
+        CHECK(g.m.restore(snap, err, notes) && notes.empty(), "restore it, whole");
         std::remove(snap.c_str());
 
         g.send('X');
@@ -733,7 +734,8 @@ void test_pmmi() {
         CHECK((g.modem() & kMsAp) == 0, "mid-call: AP (bit 4) low, off-hook");
 
         CHECK(g.m.snapshot(snap, err), "snapshot the machine mid-call");
-        CHECK(g.m.restore(snap, err), "restore it");
+        std::vector<std::string> notes;
+        CHECK(g.m.restore(snap, err, notes) && notes.empty(), "restore it, whole");
         std::remove(snap.c_str());
 
         CHECK((g.modem() & kMsAp) != 0, "restored ON-HOOK: AP (bit 4) high -- the live call did not travel");

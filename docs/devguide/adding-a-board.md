@@ -143,6 +143,10 @@ reads back byte-for-byte on every target. Three rules decide what goes in:
   the same `refresh()`/`arm…()` you already call when a jumper moves. Store the deadline as
   an absolute T-state if you need the timing back; it stays valid because the clock's time
   travels with it.
+- **A change to your state is a format change.** Bump `kFormatVersion` in
+  `core/machine.cpp` and add or raise your board's row in `stateSince()` there. RESTORE then
+  starts your board at power-on from an older snapshot instead of misreading it, and still
+  restores every other board (`DESIGN.md` §13.2).
 
 ### Its settings — and this is the part that pays
 

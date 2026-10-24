@@ -869,10 +869,13 @@ static const std::vector<CommandDef> kCommands = {
      "\n"
      "  SNAPSHOT before-boot.snap\n"},
     {"RESTORE", true, nullptr, "RESTORE <file>",                          // REST
-     "Load a SNAPSHOT back into THIS machine. The machine must be the same shape the\n"
-     "snapshot was taken from -- the same boards, same ids, same order (build it with\n"
-     "the same machine file, or a CONFIG LOAD, first) -- and a file that does not match\n"
-     "is refused with the reason, the running machine untouched.\n"
+     "Load a SNAPSHOT back into THIS machine. Build the machine first, with its\n"
+     "machine file or a CONFIG LOAD. RESTORE matches each board in the file to a\n"
+     "board in this machine by id and type, and restores each match. A snapshot from\n"
+     "an earlier release is read too. RESTORE names each board that it cannot\n"
+     "restore, and that board starts as at power-on. RESTORE refuses a corrupt file,\n"
+     "a file from a newer release, and a file with no board in common with this\n"
+     "machine. A refused file leaves the machine as it was.\n"
      "\n"
      "  RESTORE before-boot.snap\n"},
     {"NOBREAK", true, nullptr, "NOBREAK [id]",
