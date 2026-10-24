@@ -471,6 +471,11 @@ clock  (emulated time -- T-states since POWER, and what they are worth)
   elapsed    0.102953 s   (205905 T-states)
   crystal    2000000 Hz   SET cpu0 clock_hz=N
   pacing     paced -- emulated seconds keep step with real ones
+
+  Elapsed is the GUEST's time, counted from the crystal above: the same
+  division a 9600-baud line does to turn a character into T-states. It is
+  not how long you have been sitting here, and running flat out is exactly
+  when the two differ most.
 ```
 
 The program counts the T-states since power on, and divides them by the crystal. The result is

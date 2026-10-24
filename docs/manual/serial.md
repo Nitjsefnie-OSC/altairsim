@@ -630,7 +630,9 @@ In a machine file:
 ```toml
 [[board]]
 id = "sio0"
-a = "console|pty:/tmp/console"
+
+  [board.unit.a]
+  connect = "console|pty:/tmp/console"
 ```
 
 `?ro` makes this mirror watch-only also. When no program has the name open, the mirror discards
@@ -662,7 +664,9 @@ In a machine file:
 ```toml
 [[board]]
 id = "sio0"
-a = "console|serial:/dev/cu.usbserial-AL009KFH?baud=19200"
+
+  [board.unit.a]
+  connect = "console|serial:/dev/cu.usbserial-AL009KFH?baud=19200"
 ```
 
 `?ro` makes this mirror watch-only also. Use `&` to give two options:
@@ -763,6 +767,7 @@ The settings belong to the console, so they stop where the console stops:
 
 ```
 altairsim> CONSOLE strip7out=on
+console: strip7out=true
 altairsim> CONNECT sio0:a socket:2323
 sio0:a: connected to socket:2323
 ```

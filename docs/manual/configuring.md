@@ -678,7 +678,9 @@ file".
 
 ```
 altairsim> STARTUP ADD MOUNT dsk0:drive0 "CP-M 2.2.dsk"
+added: MOUNT dsk0:drive0 "CP-M 2.2.dsk"
 altairsim> STARTUP ADD RUN FF00
+added: RUN FF00
 altairsim> STARTUP
   1  MOUNT dsk0:drive0 "CP-M 2.2.dsk"
   2  RUN FF00

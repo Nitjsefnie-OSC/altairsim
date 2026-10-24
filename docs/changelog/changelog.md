@@ -98,6 +98,12 @@ the quarantine mark with `xattr` first. The first start of a new copy needs the 
 because macOS asks Apple about the program. The *Troubleshooting* chapter says what to do when
 the Mac is offline.
 
+**Two machine file examples in the serial chapter load now.** The examples for a mirror on a
+pseudo-terminal and on a serial port gave the endpoint as `a = "…"` on the board. The program
+refused them, because `a` is a unit. They now use `[board.unit.a]` with `connect`, as the rest
+of the chapter does. Some other samples in the *User Manual* and the Monitor document now show
+lines that the program prints, such as `added: RUN FF00` after `STARTUP ADD`.
+
 ## 1.3.4
 
 **1.3.4 adds two CompuPro floppy controllers, `--set` and `SHOW SERIAL`. It makes a halted

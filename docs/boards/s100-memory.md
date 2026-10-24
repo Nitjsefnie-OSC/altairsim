@@ -99,13 +99,18 @@ The `builtin:` prefix follows the same scheme idiom the design already uses for 
 
 ```
 altairsim> SHOW ROMS
-  name       size   crc32     description
-  ---------------------------------------------------------------------
-  dbl        256    ????????  MITS 88-DCDD disk boot loader, rev 4.1
-  ...
+name             file             size  CRC32     decodes    description
+acuter           ACUTER.HEX       2048  4A4E608D  F000-F7FF  CUTER Modified for 88-2SIO and 88-ACR
+altmon           ALTMON.HEX       1013  705203BE  F800-FBF4  Altair 1K ROM Monitor by M. Douglas
+amon             AMON.HEX         3807  C00DC413  F000-FFFE  Altair ROM Monitor by M. Eberhard
+cdbl             CDBL.HEX          245  0558293E  FF00-FFF4  88-DCDD and 88-MDS Combo Disk Boot Loader by M. Eberhard
+cuter            CUTER13.HEX      2043  B0106ED2  C000-C7FA  SOLOS for Non-Sol User
+dbl              DBL.HEX           256  8E658905  FF00-FFFF  88-DCDD Disk Boot Loader
+...
 
-  Built in. Use  mount = "builtin:<name>"  in a [[board.region]].
-  A bare path loads a host file instead — see docs/roms.md for provenance.
+Use as: mount = "builtin:<name>".  The description names who wrote each one,
+and the CRC32 says exactly which image this is; full provenance is in the
+project's source tree, not in the package.
 ```
 
 Built-ins are a **convenience, never a lock-in**: a path always overrides, so anyone with a different dump of the same part can use it without patching the simulator.
@@ -173,7 +178,7 @@ altairsim> LOAD dbl.hex RAW mem0        ; the PROM burner. Not a bus cycle.
 mem0: loaded 256 bytes from dbl.hex (FF00-FFFF, region 2)
 
 altairsim> DEPOSIT FF00 41              ; a bus cycle. mem0 doesn't decode it.
-FF00: no board decodes writes here (mem0 region 2 is rom). byte discarded.
+FF00: no board decodes writes here (mem0 answers reads -- it is ROM). byte discarded.
                                         ; ^ not silence. see Quirks.
 ```
 
@@ -254,6 +259,15 @@ mem0  (memory)
   fill             random           zero|random
   seed             1                
   pages            0000-DFFF,FF00-FFFF (read-only)
+
+  [[board.region]]  (in a machine file)
+
+  key              type             legal
+  type             enum             ram|rom
+  at               int              0000..FFFF
+  size             int              1..65536
+  mount            string
+  relocate         bool             true|false
 ```
 
 **`pages` is the hole, stated as a range list.** This card answers for `0000-DFFF` and
