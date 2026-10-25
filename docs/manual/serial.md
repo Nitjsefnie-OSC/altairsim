@@ -469,10 +469,10 @@ also prints when you `DISCONNECT` the line, load another machine or quit. **With
 job sits in the buffer until one of those three does it**: the timer is off, so unless a form
 feed (`?onff`) or the `?max` ceiling ends it first, `DISCONNECT` is what sends it.
 
-**The `?idle` timer runs on your computer's clock, not the simulated machine's.** A finished
-job prints **N** seconds after its last byte even while the machine is stopped at the
-`altairsim>` prompt — you do not have to keep the machine running, and you do not have to
-disconnect.
+**The `?idle` timer runs on your computer's clock, not the simulated machine's.** While the
+timer is on (`?idle` above zero), a finished job prints **N** seconds after its last byte
+even while the machine is stopped at the `altairsim>` prompt — you do not have to keep the
+machine running, and you do not have to disconnect.
 
 **Use a *raw* queue**, which passes the bytes to the printer unchanged. A normal queue can
 change a printer control language that it does not recognize. Make the raw queue one time, in

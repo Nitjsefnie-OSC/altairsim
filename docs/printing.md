@@ -89,8 +89,9 @@ Clock. Getting this backwards is the exact mistake that made the VDM-1 cursor
 strobe.
 
 **`pump()` does not stop when the guest stops.** `Machine::pump()` runs from inside
-the run loop (`src/cli/monitor.cpp`) once a slice *and* from the line editor's idle
-hook while the machine is stopped at the prompt (DESIGN.md 7.4). A guest that halts,
+the run loop (`src/cli/monitor.cpp`) once a slice *and* from the idle hook
+`Monitor::repl` arms on the line editor, which fires on each 50 ms idle tick while
+the machine is stopped at the prompt. A guest that halts,
 hits a breakpoint, or is stopped with ATTN right after printing — the commonest case
 of all, since a program that just finished a report is often a program that just
 finished — therefore still submits: the prompt's idle hook keeps the timer alive, and
