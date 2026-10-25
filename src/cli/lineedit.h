@@ -59,9 +59,11 @@ public:
 
     // Run this while the editor is PARKED waiting for the operator to type (roughly
     // every 50 ms of idle). It is how the monitor keeps a stopped machine's video
-    // window alive at the prompt -- the editor knows nothing of SDL, so the work goes
-    // through here (the caller wires it to Display::pollEvents()). Only fires on the
-    // raw-mode interactive path; a pipe/script has no window and never idles here.
+    // window alive at the prompt -- and how every board gets its host turn while the
+    // machine is stopped: the caller wires it to Display::pollEvents() and also
+    // calls Machine::pump(). The editor knows nothing of SDL, so the work goes
+    // through here. Only fires on the raw-mode interactive path; a pipe/script has
+    // no window and never idles here.
     void setIdleHook(std::function<void()> fn) { onIdle_ = std::move(fn); }
 
     // Wire Tab completion. The editor calls this with the line up to the cursor and acts
