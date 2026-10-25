@@ -470,9 +470,11 @@ job sits in the buffer until one of those three does it**: the timer is off, so 
 feed (`?onff`) or the `?max` ceiling ends it first, `DISCONNECT` is what sends it.
 
 **The `?idle` timer runs on your computer's clock, not the simulated machine's.** While the
-timer is on (`?idle` above zero), a finished job prints **N** seconds after its last byte
+timer is on (`?idle` above zero), a finished job prints `?idle=N` seconds after its last byte
 even while the machine is stopped at the `altairsim>` prompt — you do not have to keep the
-machine running, and you do not have to disconnect.
+machine running, and, in an interactive session, you do not have to disconnect. The prompt
+flush holds only there: a session run from a pipe or a script has no idle tick at the
+prompt, so there the job waits until you `DISCONNECT`, load another machine or quit.
 
 **Use a *raw* queue**, which passes the bytes to the printer unchanged. A normal queue can
 change a printer control language that it does not recognize. Make the raw queue one time, in
