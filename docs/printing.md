@@ -334,7 +334,7 @@ no reason to wire a macOS-only CUPS bridge for it. `printer:` submits a correct 
 on every platform regardless — what a locked-down CUPS does with it is the host's call,
 not the endpoint's.
 
-**`socket:` delivers during a RUN; `printer:` delivers on DISCONNECT.** These two are
+**`printer:` is the predictable route by hand; `socket:` must dial first.** These two are
 not interchangeable for how you drive them, and the difference is in the transport. A
 `socket:` call-out only sends once the TCP connection is *established*, and the dial is
 advanced in `pump()` (`host/tcp.cpp`) — the run loop, and, at the prompt, the line
