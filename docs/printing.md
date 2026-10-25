@@ -88,18 +88,23 @@ the VDM-1's cursor blink (`Display::hostSeconds()`, PR #69), and not on the
 Clock. Getting this backwards is the exact mistake that made the VDM-1 cursor
 strobe.
 
-**`pump()` stops when the guest stops.** `Machine::pump()` is called from inside
-the run loop (`src/cli/monitor.cpp:1082`) and nowhere else. A timer ticked only
-from `pump()` would never fire if the guest halts, breakpoints, or the operator
-hits ATTN right after printing — the commonest case of all, since a program that
-just finished a report is often a program that just finished. The buffer must
-therefore also be submitted on `DISCONNECT`, on `CONFIG LOAD` (which replaces the
-machine wholesale), and at exit. As built, all three are the **stream's
-destructor**: DISCONNECT swaps in a `NullStream` and destroys the old stream, and
-CONFIG LOAD and exit destroy the boards and their streams — so one `noexcept`
-destructor submit covers every teardown path with no board changed. The idle timer
-is the *usual* boundary, not the only one. `MediaFile::commit()` is the precedent:
-the thing that guarantees the bytes land is not the thing that usually pushes them.
+**`pump()` does not stop when the guest stops.** `Machine::pump()` runs from inside
+the run loop (`src/cli/monitor.cpp`) once a slice *and* from the line editor's idle
+hook while the machine is stopped at the prompt (DESIGN.md 7.4). A guest that halts,
+hits a breakpoint, or is stopped with ATTN right after printing — the commonest case
+of all, since a program that just finished a report is often a program that just
+finished — therefore still submits: the prompt's idle hook keeps the timer alive, and
+the job goes out after `idle` seconds with no `RUN` and no `DISCONNECT`. What
+`pump()` cannot reach is teardown, so the buffer is still submitted on `DISCONNECT`,
+on `CONFIG LOAD` (which replaces the machine wholesale), and at exit. As built, all
+three are the **stream's destructor**: DISCONNECT swaps in a `NullStream` and
+destroys the old stream, and CONFIG LOAD and exit destroy the boards and their
+streams — so one `noexcept` destructor submit covers every teardown path with no
+board changed. The destructor is also the boundary `idle=0` rides to the end, and the
+only one a piped session parked at its prompt has: the idle hook is the interactive
+prompt's tick, and a pipe has none. The idle timer is the *usual* boundary, not the
+only one. `MediaFile::commit()` is the precedent: the thing that guarantees the bytes
+land is not the thing that usually pushes them.
 
 **Reset is not a boundary** (correction to an earlier draft of this note). A warm
 reset keeps the line connected — a real reset does not unplug the printer — and the
@@ -155,7 +160,7 @@ written. One branch in the parser buys the door staying open: a token with no
 
 | Name | Meaning | Default |
 |---|---|---|
-| `idle` | Host seconds of silence that end a job. `0` = never; the verb is the only boundary. | 5 |
+| `idle` | Host seconds of silence that end a job. `0` = never; with `0`, the job ends at teardown (DISCONNECT, CONFIG LOAD, exit), or earlier on a form feed (`onff`) or the `max` ceiling. | 5 |
 | `onff` | Also end a job on a form feed (`0x0C`). | `false` |
 | `max` | Byte ceiling on one job, so a runaway loop cannot eat memory. | a large finite number |
 
@@ -330,12 +335,13 @@ not the endpoint's.
 
 **`socket:` delivers during a RUN; `printer:` delivers on DISCONNECT.** These two are
 not interchangeable for how you drive them, and the difference is in the transport. A
-`socket:` call-out only sends once the TCP connection is *established*, and that is
-advanced in `pump()` — which runs only inside the run loop (`host/tcp.cpp`). So
-`socket:` is right for a **real guest program printing while the machine runs**, but
-bytes typed by hand with `OUT` at the monitor prompt sit unsent until a `RUN`. `printer:`
-is the opposite: its job is submitted synchronously at a boundary, and `DISCONNECT`
-flushes it there and then — so it is the one you can drive **by hand** from the prompt.
+`socket:` call-out only sends once the TCP connection is *established*, and the dial is
+advanced in `pump()` (`host/tcp.cpp`) — the run loop, and, at the prompt, the line
+editor's idle hook (§2.1). A byte written with no connection up yet goes nowhere, so
+`socket:` is for a **real guest program printing while the machine runs**; by hand from
+the prompt it works too, once the idle ticks have brought the dial up. `printer:` is the
+predictable hand route all the same: its job is buffered until a boundary submits it,
+and `DISCONNECT` flushes it there and then — nothing dropped, no dial to wait out.
 For a bench poke-test, reach for `printer:`; for a booted CP/M or BASIC that prints,
 either works and `socket:` is cleaner.
 

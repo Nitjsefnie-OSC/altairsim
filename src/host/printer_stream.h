@@ -28,8 +28,11 @@
 //   * teardown: the DESTRUCTOR submits any open job, which is the ONE boundary every
 //     lifecycle path reaches -- DISCONNECT (the board swaps in a NullStream and this
 //     is destroyed), CONFIG LOAD (the machine is replaced wholesale), and exit. The
-//     idle timer stops when the guest stops (pump() is only called from the run
-//     loop), so the destructor is the safety net, the MediaFile::commit() precedent.
+//     idle timer does NOT stop when the guest stops: pump() runs from the run loop
+//     and from the line editor's idle hook at the prompt (Monitor::repl, DESIGN.md
+//     7.4), so a stop lands you at a prompt that keeps the timer alive. The destructor
+//     remains the safety net -- idle=0 rides it to the end, and a piped session has no
+//     idle tick at the prompt -- the MediaFile::commit() precedent.
 //
 // AN EMPTY BUFFER NEVER SUBMITS. A form feed closes the job and the idle timer then
 // expires with nothing in hand; if that submitted, every printout would be followed

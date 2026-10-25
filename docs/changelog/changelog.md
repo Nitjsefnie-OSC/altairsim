@@ -12,6 +12,13 @@ register, the bit or the command that was wrong.
 
 ## Unreleased
 
+**The manual now says when the printer's idle flush runs and what ends a job with `?idle=0`.**
+A job's idle timer runs on the host's clock, so the job prints `?idle=N` seconds after the
+last byte even while the machine is stopped at the `altairsim>` prompt. With `?idle=0` the job
+sits in the buffer until you `DISCONNECT` the line, load another machine or quit, unless a
+form feed (`?onff`) or the `?max` ceiling ends it first. The examples now say that `linewriter`
+is the name of the print queue.
+
 **The manual and the quick start now say to start the macOS program from a terminal, not with
 a double-click.** Finder refuses a double-click on the notarized `altairsim`, online or
 offline, because Finder checks the file as a document. The manual keeps the `xattr` command

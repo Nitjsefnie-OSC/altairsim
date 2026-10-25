@@ -437,6 +437,9 @@ On macOS and Linux, a line can go to a print queue on your computer:
 altairsim> CONNECT lpt0:prn printer:linewriter
 ```
 
+Here `linewriter` is the name of the print queue, as you made it in the printer settings of
+your operating system. The examples below use it, and other queue names, the same way.
+
 The **Windows** builds do not have host printing yet. On Windows, send the output to a file
 (`out:`) or a socket (`socket:`). To see what your build can do, connect to `printer:` with no
 name. The program lists the queues that it can reach, or tells you that the build has no host
@@ -462,7 +465,14 @@ altairsim> CONNECT lpt0:prn "printer:Generic / Text Only?idle=0&onff"
 
 `?onff` with no value turns the option on. The first option that applies ends the job. **An
 empty buffer never prints**, so a form feed and then silence does not print a blank page. A job
-also prints when you `DISCONNECT` the line, load another machine or quit.
+also prints when you `DISCONNECT` the line, load another machine or quit. **With `?idle=0`, the
+job sits in the buffer until one of those three does it**: the timer is off, so unless a form
+feed (`?onff`) or the `?max` ceiling ends it first, `DISCONNECT` is what sends it.
+
+**The `?idle` timer runs on your computer's clock, not the simulated machine's.** A finished
+job prints **N** seconds after its last byte even while the machine is stopped at the
+`altairsim>` prompt — you do not have to keep the machine running, and you do not have to
+disconnect.
 
 **Use a *raw* queue**, which passes the bytes to the printer unchanged. A normal queue can
 change a printer control language that it does not recognize. Make the raw queue one time, in
